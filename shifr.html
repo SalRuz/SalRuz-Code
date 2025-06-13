@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Онлайн переводчик текста в специальный шифр">
+    <title>Шифровальщик текста | SecureEncoder</title>
+    <style>
+        :root {
+            --primary: #4a6bdf;
+            --primary-dark: #3a56b2;
+            --secondary: #2ecc71;
+            --dark: #2c3e50;
+            --light: #ecf0f1;
+            --danger: #e74c3c;
+            --font-main: 'Segoe UI', system-ui, -apple-system, sans-serif;
+        }
+        
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        
+        body {
+            font-family: var(--font-main);
+            line-height: 1.6;
+            background-color: #f5f7fa;
+            color: var(--dark);
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+        }
+        
+        header {
+            background: var(--primary);
+            color: white;
+            padding: 25px;
+            text-align: center;
+        }
+        
+        h1 {
+            font-size: 2.2rem;
+            margin-bottom: 10px;
+        }
+        
+        .subtitle {
+            opacity: 0.9;
+            font-weight: normal;
+        }
+        
+        main {
+            padding: 25px;
+        }
+        
+        .input-group {
+            margin-bottom: 25px;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: var(--dark);
+        }
+        
+        textarea {
+            width: 100%;
+            min-height: 150px;
+            padding: 15px;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            font-family: var(--font-main);
+            font-size: 1rem;
+            resize: vertical;
+            transition: border 0.3s;
+        }
+        
+        textarea:focus {
+            border-color: var(--primary);
+            outline: none;
+            box-shadow: 0 0 0 3px rgba(74, 107, 223, 0.2);
+        }
+        
+        .output-container {
+            position: relative;
+            margin-bottom: 25px;
+        }
+        
+        #output {
+            width: 100%;
+            min-height: 150px;
+            padding: 15px;
+            background-color: var(--light);
+            border: 2px dashed #bdc3c7;
+            border-radius: 8px;
+            font-family: var(--font-main);
+            font-size: 1rem;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+        
+        .buttons {
+            display: flex;
+            gap: 15px;
+            margin-top: 20px;
+        }
+        
+        button {
+            flex: 1;
+            padding: 14px;
+            border: none;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+        
+        .btn-primary {
+            background-color: var(--primary);
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            background-color: var(--primary-dark);
+        }
+        
+        .btn-secondary {
+            background-color: var(--secondary);
+            color: white;
+        }
+        
+        .btn-secondary:hover {
+            opacity: 0.9;
+        }
+        
+        .notification {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            background: rgba(0, 0, 0, 0.7);
+            color: white;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 0.9rem;
+            opacity: 0;
+            transition: opacity 0.3s;
+            pointer-events: none;
+        }
+        
+        .notification.show {
+            opacity: 1;
+        }
+        
+        footer {
+            text-align: center;
+            padding: 20px;
+            color: #7f8c8d;
+            font-size: 0.9rem;
+        }
+        
+        @media (max-width: 768px) {
+            body {
+                padding: 10px;
+            }
+            
+            h1 {
+                font-size: 1.8rem;
+            }
+            
+            .buttons {
+                flex-direction: column;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>SalRuzO code</h1>
+            <p class="subtitle">Переводчик текста в специальный шифр</p>
+        </header>
+        
+        <main>
+            <div class="input-group">
+                <label for="inputText">Исходный текст:</label>
+                <textarea id="inputText" placeholder="Введите текст для шифрования..." autofocus></textarea>
+            </div>
+            
+            <div class="output-container">
+                <label for="output">Зашифрованный текст:</label>
+                <div id="output" contenteditable="true" placeholder="Здесь появится результат..."></div>
+                <div class="notification" id="notification">Скопировано!</div>
+            </div>
+            
+            <div class="buttons">
+                <button class="btn-primary" id="encodeBtn">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+                    </svg>
+                    Зашифровать
+                </button>
+                <button class="btn-secondary" id="copyBtn">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                    </svg>
+                    Копировать
+                </button>
+            </div>
+        </main>
+        
+        <footer>
+            <p>© 2025 SalRuzO | У меня нет прав</p>
+        </footer>
+    </div>
+
+    <script>
+        // Шифр замены
+        const cipher = {
+            'А': '*', 'Б': '6', 'В': '8', 'Г': '[', 'Д': '9', 'Е': '<', 'Ё': ':',
+            'Ж': '§', 'З': '}', 'И': '!', 'Й': '~', 'К': '{', 'Л': '/', 'М': '^',
+            'Н': '=', 'О': '∆', 'П': '#', 'Р': '?', 'С': '(', 'Т': '7', 'У': '√',
+            'Ф': '&', 'Х': '+', 'Ц': '¢', 'Ч': '÷', 'Ы': '|', 'Ь': '¿', 'Ъ': '-¿',
+            'Ш': '¶', 'Щ': 'π', 'Э': ')', 'Ю': '%', 'Я': '@',
+            'а': '*', 'б': '6', 'в': '8', 'г': '[', 'д': '9', 'е': '<', 'ё': ':',
+            'ж': '§', 'з': '}', 'и': '!', 'й': '~', 'к': '{', 'л': '/', 'м': '^',
+            'н': '=', 'о': '∆', 'п': '#', 'р': '?', 'с': '(', 'т': '7', 'у': '√',
+            'ф': '&', 'х': '+', 'ц': '¢', 'ч': '÷', 'ы': '|', 'ь': '¿', 'ъ': '-¿',
+            'ш': '¶', 'щ': 'π', 'э': ')', 'ю': '%', 'я': '@', ' ': ' '
+        };
+
+        // DOM элементы
+        const inputText = document.getElementById('inputText');
+        const output = document.getElementById('output');
+        const encodeBtn = document.getElementById('encodeBtn');
+        const copyBtn = document.getElementById('copyBtn');
+        const notification = document.getElementById('notification');
+
+        // Очистка текста от лишних символов
+        function cleanText(text) {
+            return text.replace(/[^А-Яа-яЁё\s]/g, '');
+        }
+
+        // Перевод текста в шифр
+        function encodeText(text) {
+            const cleaned = cleanText(text);
+            return cleaned.split('').map(char => cipher[char] || char).join('');
+        }
+
+        // Показ уведомления
+        function showNotification(message) {
+            notification.textContent = message;
+            notification.classList.add('show');
+            setTimeout(() => {
+                notification.classList.remove('show');
+            }, 2000);
+        }
+
+        // Обработчики событий
+        encodeBtn.addEventListener('click', () => {
+            const text = inputText.value;
+            if (text.trim() === '') {
+                output.textContent = '';
+                output.setAttribute('data-placeholder', 'Здесь появится результат...');
+                return;
+            }
+            output.textContent = encodeText(text);
+        });
+
+        copyBtn.addEventListener('click', async () => {
+            if (!output.textContent.trim()) {
+                showNotification('Нет текста для копирования');
+                return;
+            }
+            
+            try {
+                await navigator.clipboard.writeText(output.textContent);
+                showNotification('Скопировано!');
+            } catch (err) {
+                showNotification('Ошибка копирования');
+                console.error('Ошибка копирования:', err);
+            }
+        });
+
+        // Автоматическое обновление при вводе
+        inputText.addEventListener('input', () => {
+            encodeBtn.click();
+        });
+
+        // Инициализация
+        document.addEventListener('DOMContentLoaded', () => {
+            output.setAttribute('data-placeholder', 'Здесь появится результат...');
+        });
+    </script>
+</body>
+</html>
