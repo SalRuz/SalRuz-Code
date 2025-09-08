@@ -3,307 +3,988 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="Онлайн переводчик текста в специальный шифр">
-    <title>Шифровальщик текста | SecureEncoder</title>
+    <title>Angry Birds Clone</title>
     <style>
-        :root {
-            --primary: #4a6bdf;
-            --primary-dark: #3a56b2;
-            --secondary: #2ecc71;
-            --dark: #2c3e50;
-            --light: #ecf0f1;
-            --danger: #e74c3c;
-            --font-main: 'Segoe UI', system-ui, -apple-system, sans-serif;
-        }
-        
-        * {
-            box-sizing: border-box;
+        body {
             margin: 0;
             padding: 0;
+            font-family: Arial, sans-serif;
+            background: linear-gradient(to bottom, #87CEEB, #E0F7FA);
+            overflow: hidden;
+            user-select: none;
         }
         
-        body {
-            font-family: var(--font-main);
-            line-height: 1.6;
-            background-color: #f5f7fa;
-            color: var(--dark);
-            padding: 20px;
-        }
-        
-        .container {
-            max-width: 900px;
-            margin: 0 auto;
-            background: white;
-            border-radius: 12px;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        #game-container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
             overflow: hidden;
         }
         
-        header {
-            background: var(--primary);
-            color: white;
-            padding: 25px;
-            text-align: center;
-        }
-        
-        h1 {
-            font-size: 2.2rem;
-            margin-bottom: 10px;
-        }
-        
-        .subtitle {
-            opacity: 0.9;
-            font-weight: normal;
-        }
-        
-        main {
-            padding: 25px;
-        }
-        
-        .input-group {
-            margin-bottom: 25px;
-        }
-        
-        label {
-            display: block;
-            margin-bottom: 8px;
-            font-weight: 600;
-            color: var(--dark);
-        }
-        
-        textarea {
-            width: 100%;
-            min-height: 150px;
-            padding: 15px;
-            border: 2px solid #ddd;
-            border-radius: 8px;
-            font-family: var(--font-main);
-            font-size: 1rem;
-            resize: vertical;
-            transition: border 0.3s;
-        }
-        
-        textarea:focus {
-            border-color: var(--primary);
-            outline: none;
-            box-shadow: 0 0 0 3px rgba(74, 107, 223, 0.2);
-        }
-        
-        .output-container {
-            position: relative;
-            margin-bottom: 25px;
-        }
-        
-        #output {
-            width: 100%;
-            min-height: 150px;
-            padding: 15px;
-            background-color: var(--light);
-            border: 2px dashed #bdc3c7;
-            border-radius: 8px;
-            font-family: var(--font-main);
-            font-size: 1rem;
-            white-space: pre-wrap;
-            word-wrap: break-word;
-        }
-        
-        .buttons {
-            display: flex;
-            gap: 15px;
-            margin-top: 20px;
-        }
-        
-        button {
-            flex: 1;
-            padding: 14px;
-            border: none;
-            border-radius: 8px;
-            font-size: 1rem;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.2s;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 8px;
-        }
-        
-        .btn-primary {
-            background-color: var(--primary);
-            color: white;
-        }
-        
-        .btn-primary:hover {
-            background-color: var(--primary-dark);
-        }
-        
-        .btn-secondary {
-            background-color: var(--secondary);
-            color: white;
-        }
-        
-        .btn-secondary:hover {
-            opacity: 0.9;
-        }
-        
-        .notification {
+        #menu {
             position: absolute;
-            top: 15px;
-            right: 15px;
-            background: rgba(0, 0, 0, 0.7);
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            background: rgba(135, 206, 235, 0.9);
+            z-index: 100;
+        }
+        
+        #menu h1 {
+            color: #FF0000;
+            font-size: 3em;
+            margin-bottom: 30px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+        }
+        
+        #levels-container {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 20px;
+            width: 80%;
+            max-width: 600px;
+        }
+        
+        .level-btn {
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            background: #FFD700;
+            border: 3px solid #FFA500;
+            font-size: 1.5em;
+            font-weight: bold;
+            cursor: pointer;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+            transition: all 0.3s ease;
+        }
+        
+        .level-btn:hover:not(.locked) {
+            transform: scale(1.1);
+            background: #FFC107;
+        }
+        
+        .level-btn.locked {
+            background: #888;
+            color: #555;
+            cursor: not-allowed;
+            border-color: #666;
+        }
+        
+        .level-btn.completed {
+            background: #4CAF50;
+            border-color: #388E3C;
+        }
+        
+        #game-area {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 100 100"><rect width="100" height="100" fill="%2387CEEB"/><path d="M0 80 L100 80" stroke="%234CAF50" stroke-width="20"/></svg>');
+            background-size: 100% 100%;
+            display: none;
+        }
+        
+        #slingshot {
+            position: absolute;
+            left: 100px;
+            bottom: 100px;
+            width: 40px;
+            height: 120px;
+            background: url('image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="40" height="120" viewBox="0 0 40 120"><rect x="15" y="0" width="10" height="120" fill="%238B4513"/><path d="M5 120 L15 80 L25 80 L35 120" fill="%238B4513"/></svg>') no-repeat;
+        }
+        
+        .bird {
+            position: absolute;
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: #FF0000;
+            cursor: pointer;
+            z-index: 10;
+            box-shadow: inset -5px -5px 5px rgba(255,255,255,0.5), inset 5px 5px 5px rgba(0,0,0,0.2);
+        }
+        
+        .block {
+            position: absolute;
+            background: #8B4513;
+            border: 2px solid #5D2906;
+            box-sizing: border-box;
+        }
+        
+        .pig {
+            position: absolute;
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            background: #98FB98;
+            border: 3px solid #2E8B57;
+            box-shadow: inset -5px -5px 5px rgba(255,255,255,0.5);
+        }
+        
+        .pig::before {
+            content: '';
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: #000;
+        }
+        
+        .pig::after {
+            content: '';
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: #000;
+        }
+        
+        #score-display {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            font-size: 24px;
+            font-weight: bold;
+            color: #FFF;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+            z-index: 20;
+        }
+        
+        #level-display {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            font-size: 24px;
+            font-weight: bold;
+            color: #FFF;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+            z-index: 20;
+        }
+        
+        #back-btn {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            padding: 10px 20px;
+            background: #FF5722;
             color: white;
-            padding: 8px 16px;
-            border-radius: 20px;
-            font-size: 0.9rem;
-            opacity: 0;
-            transition: opacity 0.3s;
+            border: none;
+            border-radius: 5px;
+            font-size: 16px;
+            cursor: pointer;
+            z-index: 30;
+            display: none;
+        }
+        
+        #restart-btn {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            padding: 10px 20px;
+            background: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            font-size: 16px;
+            cursor: pointer;
+            z-index: 30;
+            display: none;
+        }
+        
+        #game-over {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.7);
+            display: none;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 50;
+        }
+        
+        #game-over h2 {
+            color: white;
+            font-size: 3em;
+            margin-bottom: 20px;
+        }
+        
+        #game-over p {
+            color: white;
+            font-size: 1.5em;
+            margin-bottom: 30px;
+        }
+        
+        #next-level-btn, #retry-btn {
+            padding: 15px 30px;
+            font-size: 1.2em;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 10px;
+        }
+        
+        #next-level-btn {
+            background: #4CAF50;
+            color: white;
+        }
+        
+        #retry-btn {
+            background: #FF9800;
+            color: white;
+        }
+        
+        .trajectory {
+            position: absolute;
             pointer-events: none;
+            z-index: 5;
         }
         
-        .notification.show {
-            opacity: 1;
-        }
-        
-        footer {
-            text-align: center;
-            padding: 20px;
-            color: #7f8c8d;
-            font-size: 0.9rem;
-        }
-        
-        @media (max-width: 768px) {
-            body {
-                padding: 10px;
-            }
-            
-            h1 {
-                font-size: 1.8rem;
-            }
-            
-            .buttons {
-                flex-direction: column;
-            }
+        .trajectory-point {
+            position: absolute;
+            width: 6px;
+            height: 6px;
+            background: rgba(255, 255, 255, 0.5);
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
         }
     </style>
 </head>
 <body>
-    <div class="container">
-        <header>
-            <h1>SalRuzO code</h1>
-            <p class="subtitle">Переводчик текста в специальный шифр</p>
-        </header>
+    <div id="game-container">
+        <!-- Главное меню -->
+        <div id="menu">
+            <h1>ANGRY BIRDS</h1>
+            <div id="levels-container"></div>
+        </div>
         
-        <main>
-            <div class="input-group">
-                <label for="inputText">Исходный текст:</label>
-                <textarea id="inputText" placeholder="Введите текст для шифрования..." autofocus></textarea>
-            </div>
+        <!-- Игровая область -->
+        <div id="game-area">
+            <div id="slingshot"></div>
+            <div id="score-display">Очки: 0</div>
+            <div id="level-display">Уровень: 1</div>
+            <button id="back-btn">Меню</button>
+            <button id="restart-btn">Перезапуск</button>
             
-            <div class="output-container">
-                <label for="output">Зашифрованный текст:</label>
-                <div id="output" contenteditable="true" placeholder="Здесь появится результат..."></div>
-                <div class="notification" id="notification">Скопировано!</div>
+            <!-- Экран окончания уровня -->
+            <div id="game-over">
+                <h2 id="game-over-title">Уровень пройден!</h2>
+                <p id="final-score">Очки: 0</p>
+                <p id="stars">★ ★ ★</p>
+                <button id="next-level-btn">Следующий уровень</button>
+                <button id="retry-btn">Попробовать снова</button>
             </div>
-            
-            <div class="buttons">
-                <button class="btn-primary" id="encodeBtn">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
-                    </svg>
-                    Зашифровать
-                </button>
-                <button class="btn-secondary" id="copyBtn">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-                        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-                    </svg>
-                    Копировать
-                </button>
-            </div>
-        </main>
-        
-        <footer>
-            <p>© 2025 SalRuzO | У меня нет прав</p>
-        </footer>
+        </div>
     </div>
 
     <script>
-        // Шифр замены
-        const cipher = {
-            'А': '*', 'Б': '6', 'В': '8', 'Г': '[', 'Д': '9', 'Е': '<', 'Ё': ':',
-            'Ж': '§', 'З': '}', 'И': '!', 'Й': '~', 'К': '{', 'Л': '/', 'М': '^',
-            'Н': '=', 'О': '∆', 'П': '#', 'Р': '?', 'С': '(', 'Т': '7', 'У': '√',
-            'Ф': '&', 'Х': '+', 'Ц': '¢', 'Ч': '÷', 'Ы': '|', 'Ь': '¿', 'Ъ': '-¿',
-            'Ш': '¶', 'Щ': 'π', 'Э': ')', 'Ю': '%', 'Я': '@',
-            'а': '*', 'б': '6', 'в': '8', 'г': '[', 'д': '9', 'е': '<', 'ё': ':',
-            'ж': '§', 'з': '}', 'и': '!', 'й': '~', 'к': '{', 'л': '/', 'м': '^',
-            'н': '=', 'о': '∆', 'п': '#', 'р': '?', 'с': '(', 'т': '7', 'у': '√',
-            'ф': '&', 'х': '+', 'ц': '¢', 'ч': '÷', 'ы': '|', 'ь': '¿', 'ъ': '-¿',
-            'ш': '¶', 'щ': 'π', 'э': ')', 'ю': '%', 'я': '@', ' ': ' '
-        };
-
-        // DOM элементы
-        const inputText = document.getElementById('inputText');
-        const output = document.getElementById('output');
-        const encodeBtn = document.getElementById('encodeBtn');
-        const copyBtn = document.getElementById('copyBtn');
-        const notification = document.getElementById('notification');
-
-        // Очистка текста от лишних символов
-        function cleanText(text) {
-            return text.replace(/[^А-Яа-яЁё\s]/g, '');
-        }
-
-        // Перевод текста в шифр
-        function encodeText(text) {
-            const cleaned = cleanText(text);
-            return cleaned.split('').map(char => cipher[char] || char).join('');
-        }
-
-        // Показ уведомления
-        function showNotification(message) {
-            notification.textContent = message;
-            notification.classList.add('show');
-            setTimeout(() => {
-                notification.classList.remove('show');
-            }, 2000);
-        }
-
-        // Обработчики событий
-        encodeBtn.addEventListener('click', () => {
-            const text = inputText.value;
-            if (text.trim() === '') {
-                output.textContent = '';
-                output.setAttribute('data-placeholder', 'Здесь появится результат...');
-                return;
+        // Основные переменные игры
+        const gameArea = document.getElementById('game-area');
+        const menu = document.getElementById('menu');
+        const levelsContainer = document.getElementById('levels-container');
+        const scoreDisplay = document.getElementById('score-display');
+        const levelDisplay = document.getElementById('level-display');
+        const backBtn = document.getElementById('back-btn');
+        const restartBtn = document.getElementById('restart-btn');
+        const gameOverScreen = document.getElementById('game-over');
+        const gameOverTitle = document.getElementById('game-over-title');
+        const finalScoreDisplay = document.getElementById('final-score');
+        const starsDisplay = document.getElementById('stars');
+        const nextLevelBtn = document.getElementById('next-level-btn');
+        const retryBtn = document.getElementById('retry-btn');
+        
+        // Настройки игры
+        const GRAVITY = 0.5;
+        const FRICTION = 0.99;
+        const BOUNCE = 0.7;
+        const SLINGSHOT_POWER = 2.5;
+        
+        // Состояние игры
+        let currentLevel = 1;
+        let score = 0;
+        let isDragging = false;
+        let activeBird = null;
+        let birdStartX = 0;
+        let birdStartY = 0;
+        let velocityX = 0;
+        let velocityY = 0;
+        let gameObjects = [];
+        let pigs = [];
+        let blocks = [];
+        let isGameOver = false;
+        let trajectoryPoints = [];
+        let trajectoryElements = [];
+        
+        // Сохранение прогресса
+        let unlockedLevels = JSON.parse(localStorage.getItem('unlockedLevels')) || [1];
+        let levelScores = JSON.parse(localStorage.getItem('levelScores')) || {};
+        
+        // Создание кнопок уровней
+        function createLevelButtons() {
+            levelsContainer.innerHTML = '';
+            for (let i = 1; i <= 10; i++) {
+                const levelBtn = document.createElement('div');
+                levelBtn.className = 'level-btn';
+                levelBtn.textContent = i;
+                levelBtn.dataset.level = i;
+                
+                if (!unlockedLevels.includes(i)) {
+                    levelBtn.classList.add('locked');
+                } else if (levelScores[i]) {
+                    levelBtn.classList.add('completed');
+                    levelBtn.textContent = `${i}\n${levelScores[i]}`;
+                }
+                
+                levelBtn.addEventListener('click', () => {
+                    if (unlockedLevels.includes(i)) {
+                        startLevel(i);
+                    }
+                });
+                
+                levelsContainer.appendChild(levelBtn);
             }
-            output.textContent = encodeText(text);
-        });
-
-        copyBtn.addEventListener('click', async () => {
-            if (!output.textContent.trim()) {
-                showNotification('Нет текста для копирования');
+        }
+        
+        // Конфигурации уровней
+        const levelConfigurations = [
+            {
+                pigs: [{ x: 600, y: 350 }],
+                blocks: [
+                    { x: 575, y: 300, width: 50, height: 50 },
+                    { x: 575, y: 250, width: 50, height: 50 },
+                    { x: 625, y: 300, width: 50, height: 50 },
+                    { x: 625, y: 250, width: 50, height: 50 }
+                ]
+            },
+            {
+                pigs: [{ x: 700, y: 350 }, { x: 800, y: 350 }],
+                blocks: [
+                    { x: 675, y: 300, width: 50, height: 50 },
+                    { x: 675, y: 250, width: 50, height: 50 },
+                    { x: 775, y: 300, width: 50, height: 50 },
+                    { x: 775, y: 250, width: 50, height: 50 },
+                    { x: 725, y: 200, width: 100, height: 30 }
+                ]
+            },
+            {
+                pigs: [{ x: 650, y: 350 }, { x: 750, y: 250 }],
+                blocks: [
+                    { x: 625, y: 300, width: 50, height: 50 },
+                    { x: 625, y: 250, width: 50, height: 50 },
+                    { x: 725, y: 200, width: 50, height: 50 },
+                    { x: 725, y: 150, width: 50, height: 50 },
+                    { x: 675, y: 100, width: 100, height: 30 }
+                ]
+            },
+            {
+                pigs: [{ x: 600, y: 300 }, { x: 700, y: 350 }, { x: 800, y: 300 }],
+                blocks: [
+                    { x: 575, y: 250, width: 50, height: 50 },
+                    { x: 675, y: 300, width: 50, height: 50 },
+                    { x: 775, y: 250, width: 50, height: 50 },
+                    { x: 625, y: 200, width: 50, height: 30 },
+                    { x: 725, y: 200, width: 50, height: 30 },
+                    { x: 675, y: 150, width: 50, height: 30 }
+                ]
+            },
+            {
+                pigs: [{ x: 650, y: 250 }, { x: 750, y: 350 }],
+                blocks: [
+                    { x: 625, y: 200, width: 50, height: 50 },
+                    { x: 725, y: 300, width: 50, height: 50 },
+                    { x: 625, y: 150, width: 50, height: 30 },
+                    { x: 725, y: 250, width: 50, height: 30 },
+                    { x: 675, y: 100, width: 50, height: 30 },
+                    { x: 675, y: 50, width: 50, height: 30 }
+                ]
+            },
+            {
+                pigs: [{ x: 600, y: 350 }, { x: 700, y: 250 }, { x: 800, y: 350 }],
+                blocks: [
+                    { x: 575, y: 300, width: 50, height: 50 },
+                    { x: 675, y: 200, width: 50, height: 50 },
+                    { x: 775, y: 300, width: 50, height: 50 },
+                    { x: 625, y: 250, width: 50, height: 30 },
+                    { x: 725, y: 250, width: 50, height: 30 },
+                    { x: 675, y: 150, width: 50, height: 30 },
+                    { x: 675, y: 100, width: 50, height: 30 }
+                ]
+            },
+            {
+                pigs: [{ x: 650, y: 350 }, { x: 750, y: 250 }, { x: 850, y: 350 }],
+                blocks: [
+                    { x: 625, y: 300, width: 50, height: 50 },
+                    { x: 725, y: 200, width: 50, height: 50 },
+                    { x: 825, y: 300, width: 50, height: 50 },
+                    { x: 675, y: 250, width: 50, height: 30 },
+                    { x: 775, y: 250, width: 50, height: 30 },
+                    { x: 725, y: 150, width: 50, height: 30 },
+                    { x: 725, y: 100, width: 50, height: 30 },
+                    { x: 725, y: 50, width: 50, height: 30 }
+                ]
+            },
+            {
+                pigs: [{ x: 600, y: 250 }, { x: 700, y: 350 }, { x: 800, y: 250 }, { x: 900, y: 350 }],
+                blocks: [
+                    { x: 575, y: 200, width: 50, height: 50 },
+                    { x: 675, y: 300, width: 50, height: 50 },
+                    { x: 775, y: 200, width: 50, height: 50 },
+                    { x: 875, y: 300, width: 50, height: 50 },
+                    { x: 625, y: 150, width: 50, height: 30 },
+                    { x: 725, y: 250, width: 50, height: 30 },
+                    { x: 825, y: 150, width: 50, height: 30 },
+                    { x: 675, y: 100, width: 50, height: 30 },
+                    { x: 775, y: 100, width: 50, height: 30 }
+                ]
+            },
+            {
+                pigs: [{ x: 650, y: 350 }, { x: 750, y: 250 }, { x: 850, y: 350 }, { x: 750, y: 150 }],
+                blocks: [
+                    { x: 625, y: 300, width: 50, height: 50 },
+                    { x: 725, y: 200, width: 50, height: 50 },
+                    { x: 825, y: 300, width: 50, height: 50 },
+                    { x: 725, y: 100, width: 50, height: 50 },
+                    { x: 675, y: 250, width: 50, height: 30 },
+                    { x: 775, y: 250, width: 50, height: 30 },
+                    { x: 675, y: 150, width: 50, height: 30 },
+                    { x: 775, y: 150, width: 50, height: 30 },
+                    { x: 725, y: 50, width: 50, height: 30 }
+                ]
+            },
+            {
+                pigs: [{ x: 600, y: 350 }, { x: 700, y: 250 }, { x: 800, y: 350 }, { x: 700, y: 150 }, { x: 900, y: 250 }],
+                blocks: [
+                    { x: 575, y: 300, width: 50, height: 50 },
+                    { x: 675, y: 200, width: 50, height: 50 },
+                    { x: 775, y: 300, width: 50, height: 50 },
+                    { x: 675, y: 100, width: 50, height: 50 },
+                    { x: 875, y: 200, width: 50, height: 50 },
+                    { x: 625, y: 250, width: 50, height: 30 },
+                    { x: 725, y: 250, width: 50, height: 30 },
+                    { x: 825, y: 250, width: 50, height: 30 },
+                    { x: 725, y: 150, width: 50, height: 30 },
+                    { x: 825, y: 150, width: 50, height: 30 },
+                    { x: 775, y: 100, width: 50, height: 30 },
+                    { x: 775, y: 50, width: 50, height: 30 }
+                ]
+            }
+        ];
+        
+        // Инициализация игры
+        function initGame() {
+            createLevelButtons();
+            
+            // Обработчики событий
+            backBtn.addEventListener('click', () => {
+                gameArea.style.display = 'none';
+                menu.style.display = 'flex';
+                resetGame();
+            });
+            
+            restartBtn.addEventListener('click', () => {
+                startLevel(currentLevel);
+            });
+            
+            nextLevelBtn.addEventListener('click', () => {
+                if (currentLevel < 10) {
+                    currentLevel++;
+                    startLevel(currentLevel);
+                } else {
+                    // Все уровни пройдены
+                    gameArea.style.display = 'none';
+                    menu.style.display = 'flex';
+                    resetGame();
+                }
+            });
+            
+            retryBtn.addEventListener('click', () => {
+                startLevel(currentLevel);
+            });
+        }
+        
+        // Сброс игры
+        function resetGame() {
+            isGameOver = false;
+            score = 0;
+            gameObjects = [];
+            pigs = [];
+            blocks = [];
+            clearTrajectory();
+            
+            // Удаляем все объекты с игровой области
+            const objects = document.querySelectorAll('.bird, .pig, .block');
+            objects.forEach(obj => obj.remove());
+        }
+        
+        // Начало уровня
+        function startLevel(level) {
+            resetGame();
+            currentLevel = level;
+            menu.style.display = 'none';
+            gameArea.style.display = 'block';
+            backBtn.style.display = 'block';
+            restartBtn.style.display = 'block';
+            
+            levelDisplay.textContent = `Уровень: ${currentLevel}`;
+            scoreDisplay.textContent = `Очки: ${score}`;
+            
+            // Создаем птицу
+            createBird();
+            
+            // Загружаем конфигурацию уровня
+            const config = levelConfigurations[currentLevel - 1];
+            
+            // Создаем свиней
+            config.pigs.forEach(pigConfig => {
+                createPig(pigConfig.x, pigConfig.y);
+            });
+            
+            // Создаем блоки
+            config.blocks.forEach(blockConfig => {
+                createBlock(blockConfig.x, blockConfig.y, blockConfig.width, blockConfig.height);
+            });
+            
+            // Добавляем обработчики событий для птицы
+            document.addEventListener('mousedown', handleMouseDown);
+            document.addEventListener('mousemove', handleMouseMove);
+            document.addEventListener('mouseup', handleMouseUp);
+            document.addEventListener('touchstart', handleTouchStart, { passive: false });
+            document.addEventListener('touchmove', handleTouchMove, { passive: false });
+            document.addEventListener('touchend', handleTouchEnd);
+            
+            // Запускаем игровой цикл
+            requestAnimationFrame(gameLoop);
+        }
+        
+        // Создание птицы
+        function createBird() {
+            const bird = document.createElement('div');
+            bird.className = 'bird';
+            bird.style.left = '100px';
+            bird.style.bottom = '100px';
+            gameArea.appendChild(bird);
+            
+            activeBird = {
+                element: bird,
+                x: 100,
+                y: window.innerHeight - 100 - 40, // 40 - высота птицы
+                width: 40,
+                height: 40,
+                velocityX: 0,
+                velocityY: 0,
+                isLaunched: false
+            };
+            
+            gameObjects.push(activeBird);
+        }
+        
+        // Создание свиньи
+        function createPig(x, y) {
+            const pig = document.createElement('div');
+            pig.className = 'pig';
+            pig.style.left = `${x}px`;
+            pig.style.bottom = `${y}px`;
+            gameArea.appendChild(pig);
+            
+            const pigObj = {
+                element: pig,
+                x: x,
+                y: window.innerHeight - y - 50, // 50 - высота свиньи
+                width: 50,
+                height: 50,
+                isDestroyed: false
+            };
+            
+            pigs.push(pigObj);
+            gameObjects.push(pigObj);
+        }
+        
+        // Создание блока
+        function createBlock(x, y, width, height) {
+            const block = document.createElement('div');
+            block.className = 'block';
+            block.style.left = `${x}px`;
+            block.style.bottom = `${y}px`;
+            block.style.width = `${width}px`;
+            block.style.height = `${height}px`;
+            gameArea.appendChild(block);
+            
+            const blockObj = {
+                element: block,
+                x: x,
+                y: window.innerHeight - y - height,
+                width: width,
+                height: height,
+                isDestroyed: false
+            };
+            
+            blocks.push(blockObj);
+            gameObjects.push(blockObj);
+        }
+        
+        // Обработка нажатия мыши
+        function handleMouseDown(e) {
+            if (isGameOver || !activeBird || activeBird.isLaunched) return;
+            
+            const mouseX = e.clientX;
+            const mouseY = e.clientY;
+            const birdRect = activeBird.element.getBoundingClientRect();
+            const birdCenterX = birdRect.left + birdRect.width / 2;
+            const birdCenterY = birdRect.top + birdRect.height / 2;
+            
+            if (Math.sqrt(Math.pow(mouseX - birdCenterX, 2) + Math.pow(mouseY - birdCenterY, 2)) < 30) {
+                isDragging = true;
+                birdStartX = activeBird.x;
+                birdStartY = activeBird.y;
+            }
+        }
+        
+        // Обработка движения мыши
+        function handleMouseMove(e) {
+            if (!isDragging || isGameOver || !activeBird || activeBird.isLaunched) return;
+            
+            const mouseX = e.clientX;
+            const mouseY = e.clientY;
+            const gameAreaRect = gameArea.getBoundingClientRect();
+            
+            // Ограничиваем перемещение птицы
+            let newX = Math.max(50, Math.min(mouseX - gameAreaRect.left, birdStartX));
+            let newY = Math.max(window.innerHeight - 200, Math.min(mouseY - gameAreaRect.top, birdStartY + 50));
+            
+            activeBird.x = newX;
+            activeBird.y = newY;
+            updateBirdPosition();
+            
+            // Обновляем траекторию
+            updateTrajectory(mouseX - birdStartX, mouseY - birdStartY);
+        }
+        
+        // Обработка отпускания мыши
+        function handleMouseUp() {
+            if (!isDragging || isGameOver || !activeBird || activeBird.isLaunched) return;
+            
+            isDragging = false;
+            
+            // Запускаем птицу
+            launchBird();
+            clearTrajectory();
+        }
+        
+        // Обработка касания
+        function handleTouchStart(e) {
+            e.preventDefault();
+            if (isGameOver || !activeBird || activeBird.isLaunched) return;
+            
+            const touch = e.touches[0];
+            const mouseX = touch.clientX;
+            const mouseY = touch.clientY;
+            const birdRect = activeBird.element.getBoundingClientRect();
+            const birdCenterX = birdRect.left + birdRect.width / 2;
+            const birdCenterY = birdRect.top + birdRect.height / 2;
+            
+            if (Math.sqrt(Math.pow(mouseX - birdCenterX, 2) + Math.pow(mouseY - birdCenterY, 2)) < 30) {
+                isDragging = true;
+                birdStartX = activeBird.x;
+                birdStartY = activeBird.y;
+            }
+        }
+        
+        // Обработка движения пальца
+        function handleTouchMove(e) {
+            e.preventDefault();
+            if (!isDragging || isGameOver || !activeBird || activeBird.isLaunched) return;
+            
+            const touch = e.touches[0];
+            const mouseX = touch.clientX;
+            const mouseY = touch.clientY;
+            const gameAreaRect = gameArea.getBoundingClientRect();
+            
+            // Ограничиваем перемещение птицы
+            let newX = Math.max(50, Math.min(mouseX - gameAreaRect.left, birdStartX));
+            let newY = Math.max(window.innerHeight - 200, Math.min(mouseY - gameAreaRect.top, birdStartY + 50));
+            
+            activeBird.x = newX;
+            activeBird.y = newY;
+            updateBirdPosition();
+            
+            // Обновляем траекторию
+            updateTrajectory(mouseX - birdStartX, mouseY - birdStartY);
+        }
+        
+        // Обработка окончания касания
+        function handleTouchEnd() {
+            if (!isDragging || isGameOver || !activeBird || activeBird.isLaunched) return;
+            
+            isDragging = false;
+            
+            // Запускаем птицу
+            launchBird();
+            clearTrajectory();
+        }
+        
+        // Обновление позиции птицы
+        function updateBirdPosition() {
+            if (!activeBird) return;
+            activeBird.element.style.left = `${activeBird.x}px`;
+            activeBird.element.style.top = `${activeBird.y}px`;
+        }
+        
+        // Запуск птицы
+        function launchBird() {
+            if (!activeBird || activeBird.isLaunched) return;
+            
+            // Рассчитываем скорость на основе растяжения рогатки
+            velocityX = (birdStartX - activeBird.x) * SLINGSHOT_POWER;
+            velocityY = (birdStartY - activeBird.y) * SLINGSHOT_POWER;
+            
+            activeBird.velocityX = velocityX;
+            activeBird.velocityY = velocityY;
+            activeBird.isLaunched = true;
+        }
+        
+        // Обновление траектории
+        function updateTrajectory(deltaX, deltaY) {
+            clearTrajectory();
+            
+            // Рассчитываем начальную скорость
+            const powerX = -deltaX * SLINGSHOT_POWER;
+            const powerY = -deltaY * SLINGSHOT_POWER;
+            
+            // Прогнозируем траекторию
+            let x = activeBird.x + 20; // Центр птицы
+            let y = activeBird.y + 20;
+            let vx = powerX;
+            let vy = powerY;
+            
+            for (let i = 0; i < 20; i++) {
+                // Применяем физику
+                vy += GRAVITY;
+                vx *= FRICTION;
+                x += vx;
+                y += vy;
+                
+                // Создаем точку траектории
+                const point = document.createElement('div');
+                point.className = 'trajectory-point';
+                point.style.left = `${x}px`;
+                point.style.top = `${y}px`;
+                gameArea.appendChild(point);
+                trajectoryElements.push(point);
+                
+                // Проверяем выход за границы
+                if (x > window.innerWidth || y > window.innerHeight || y < 0) {
+                    break;
+                }
+            }
+        }
+        
+        // Очистка траектории
+        function clearTrajectory() {
+            trajectoryElements.forEach(point => point.remove());
+            trajectoryElements = [];
+        }
+        
+        // Игровой цикл
+        function gameLoop() {
+            if (isGameOver) return;
+            
+            update();
+            render();
+            
+            requestAnimationFrame(gameLoop);
+        }
+        
+        // Обновление состояния игры
+        function update() {
+            if (!activeBird || !activeBird.isLaunched) return;
+            
+            // Применяем физику к птице
+            activeBird.velocityY += GRAVITY;
+            activeBird.velocityX *= FRICTION;
+            activeBird.x += activeBird.velocityX;
+            activeBird.y += activeBird.velocityY;
+            
+            // Проверка столкновений с границами
+            if (activeBird.x > window.innerWidth) {
+                endGame();
                 return;
             }
             
-            try {
-                await navigator.clipboard.writeText(output.textContent);
-                showNotification('Скопировано!');
-            } catch (err) {
-                showNotification('Ошибка копирования');
-                console.error('Ошибка копирования:', err);
+            if (activeBird.y > window.innerHeight) {
+                endGame();
+                return;
             }
-        });
-
-        // Автоматическое обновление при вводе
-        inputText.addEventListener('input', () => {
-            encodeBtn.click();
-        });
-
-        // Инициализация
-        document.addEventListener('DOMContentLoaded', () => {
-            output.setAttribute('data-placeholder', 'Здесь появится результат...');
-        });
+            
+            // Проверка столкновений с объектами
+            checkCollisions();
+            
+            // Проверка завершения уровня
+            if (pigs.every(pig => pig.isDestroyed)) {
+                completeLevel();
+            }
+        }
+        
+        // Отображение объектов
+        function render() {
+            updateBirdPosition();
+            
+            // Обновляем позиции свиней и блоков
+            pigs.forEach(pig => {
+                if (!pig.isDestroyed) {
+                    pig.element.style.left = `${pig.x}px`;
+                    pig.element.style.top = `${pig.y}px`;
+                }
+            });
+            
+            blocks.forEach(block => {
+                if (!block.isDestroyed) {
+                    block.element.style.left = `${block.x}px`;
+                    block.element.style.top = `${block.y}px`;
+                }
+            });
+        }
+        
+        // Проверка столкновений
+        function checkCollisions() {
+            // Птица со свиньями
+            pigs.forEach(pig => {
+                if (pig.isDestroyed) return;
+                
+                if (checkCollision(activeBird, pig)) {
+                    pig.isDestroyed = true;
+                    pig.element.style.display = 'none';
+                    score += 100;
+                    scoreDisplay.textContent = `Очки: ${score}`;
+                    
+                    // Эффект разрушения
+                    createExplosion(pig.x + pig.width/2, pig.y + pig.height/2);
+                }
+            });
+            
+            // Птица с блоками
+            blocks.forEach(block => {
+                if (block.isDestroyed) return;
+                
+                if (checkCollision(activeBird, block)) {
+                    block.isDestroyed = true;
+                    block.element.style.display = 'none';
+                    score += 50;
+                    scoreDisplay.textContent = `Очки: ${score}`;
+                    
+                    // Применяем отскок
+                    if (activeBird.velocityX > 0) {
+                        activeBird.velocityX *= -BOUNCE;
+                    }
+                    
+                    if (activeBird.velocityY > 0) {
+                        activeBird.velocityY *= -BOUNCE;
+                    }
+                }
+            });
+        }
+        
+        // Проверка столкновения между двумя объектами
+        function checkCollision(obj1, obj2) {
+            return obj1.x < obj2.x + obj2.width &&
+                   obj1.x + obj1.width > obj2.x &&
+                   obj1.y < obj2.y + obj2.height &&
+                   obj1.y + obj1.height > obj2.y;
+        }
+        
+        // Создание эффекта взрыва
+        function createExplosion(x, y) {
+            // Можно добавить анимацию взрыва здесь
+            const explosion = document.createElement('div');
+            explosion.style.position = 'absolute';
+            explosion.style.left = `${x - 25}px`;
+            explosion.style.top = `${y - 25}px`;
+            explosion.style.width = '50px';
+            explosion.style.height = '50px';
+            explosion.style.borderRadius = '50%';
+            explosion.style.background = 'radial-gradient(circle, #ff9900, #ff0000)';
+            explosion.style.opacity = '0.8';
+            explosion.style.zIndex = '15';
+            gameArea.appendChild(explosion);
+            
+            // Анимация взрыва
+            let scale = 1;
+            const animate = () => {
+                scale += 0.1;
+                explosion.style.transform = `scale(${scale})`;
+                explosion.style.opacity = 0.8 - scale * 0.1;
+                
+                if (scale < 3) {
+                    requestAnimationFrame(animate);
+                } else {
+                    explosion.remove();
+                }
+            };
+            
+            requestAnimationFrame(animate);
+        }
+        
+        // Завершение уровня
+        function completeLevel() {
+            isGameOver = true;
+            
+            // Сохраняем очки уровня
+            levelScores[currentLevel] = score;
+            localStorage.setItem('levelScores', JSON.stringify(levelScores));
+            
+            // Открываем следующий уровень
+            if (currentLevel < 10 && !unlockedLevels.includes(currentLevel + 1)) {
+                unlockedLevels.push(currentLevel + 1);
+                localStorage.setItem('unlockedLevels', JSON.stringify(unlockedLevels));
+            }
+            
+            // Обновляем звезды (упрощенная система)
+            let stars = 1;
+            if (score > 150) stars = 2;
+            if (score > 300) stars = 3;
+            
+            // Показываем экран завершения
+            gameOverTitle.textContent = "Уровень пройден!";
+            finalScoreDisplay.textContent = `Очки: ${score}`;
+            starsDisplay.textContent = "★".repeat(stars) + "☆".repeat(3 - stars);
+            gameOverScreen.style.display = 'flex';
+            
+            // Обновляем кнопки уровней
+            createLevelButtons();
+        }
+        
+        // Завершение игры (птица улетела или упала)
+        function endGame() {
+            isGameOver = true;
+            
+            // Проверяем, остались ли еще свиньи
+            if (pigs.some(pig => !pig.isDestroyed)) {
+                gameOverTitle.textContent = "Попробуйте снова!";
+                finalScoreDisplay.textContent = `Очки: ${score}`;
+                starsDisplay.textContent = "☆☆☆";
+                gameOverScreen.style.display = 'flex';
+            } else {
+                completeLevel();
+            }
+        }
+        
+        // Инициализация игры при загрузке
+        window.addEventListener('load', initGame);
     </script>
 </body>
 </html>
