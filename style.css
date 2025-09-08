@@ -1,0 +1,174 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    overflow: hidden;
+    touch-action: none;
+    background: #87CEEB;
+    font-family: Arial, sans-serif;
+}
+
+#sky {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-image: url('https://avatars.mds.yandex.net/i?id=b29088c523cba4eb85abbf5b7ac5c21f_l-5576144-images-thumbs&n=13');
+    background-size: cover;
+    background-position: center;
+    z-index: -2;
+}
+
+#world {
+    position: relative;
+    width: 100vw;
+    height: 100vh;
+    perspective: 1000px;
+    transform-style: preserve-3d;
+    overflow: hidden;
+}
+
+.ground-layer {
+    position: absolute;
+    width: 300vw;
+    height: 300vw;
+    transform: rotateX(60deg) translateZ(0);
+    background-image: 
+        url('https://avatars.mds.yandex.net/i?id=3fcce0972ba28d311c0d935387819989b194f6d1-7546197-images-thumbs&n=13'),
+        url('https://sfo3.digitaloceanspaces.com/landocs/rp24/resourcepack-images-large/758207.webp');
+    background-repeat: repeat;
+    background-size: 100% 100%;
+    border: 1px solid #444;
+    box-shadow: 0 0 20px rgba(0,0,0,0.3);
+    z-index: -1;
+}
+
+.ground-layer::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-image: url('https://i.pinimg.com/originals/64/71/0d/64710db7d84fd16ab016630275216fa9.jpg');
+    background-repeat: repeat;
+    background-size: 100% 100%;
+    transform: translateZ(-1px);
+}
+
+#player-hand {
+    position: fixed;
+    bottom: 10vh;
+    left: 50%;
+    transform: translateX(-50%) scale(0.8);
+    width: 120px;
+    pointer-events: none;
+    z-index: 10;
+}
+
+#items-container {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+}
+
+.item-earth {
+    position: absolute;
+    width: 40px;
+    height: 40px;
+    background-image: url('https://sfo3.digitaloceanspaces.com/landocs/rp24/resourcepack-images-large/758207.webp');
+    background-size: cover;
+    border-radius: 8px;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.5);
+    animation: float 2s infinite ease-in-out;
+}
+
+@keyframes float {
+    0%, 100% { transform: translateY(0px); }
+    50% { transform: translateY(-10px); }
+}
+
+#inventory {
+    position: fixed;
+    top: 10px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 10px;
+    z-index: 20;
+}
+
+.slot {
+    width: 50px;
+    height: 50px;
+    background: rgba(0,0,0,0.5);
+    border: 2px solid #555;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-weight: bold;
+    position: relative;
+}
+
+.slot img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: none;
+}
+
+.slot .count {
+    position: absolute;
+    bottom: 2px;
+    right: 4px;
+    font-size: 12px;
+}
+
+#controls {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 20px;
+    z-index: 30;
+}
+
+.btn {
+    width: 60px;
+    height: 60px;
+    background: rgba(0,0,0,0.6);
+    color: white;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 24px;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+}
+
+/* Анимация добычи */
+.mine-animation {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    background: rgba(255,255,255,0.3);
+    animation: crack 3s linear forwards;
+    pointer-events: none;
+    z-index: 5;
+}
+
+@keyframes crack {
+    0% { background: rgba(255,255,255,0.1); }
+    100% { background: rgba(255,0,0,0.5); }
+}
