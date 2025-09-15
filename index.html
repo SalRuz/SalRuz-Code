@@ -2,198 +2,549 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>Растения против Зомби (Упрощённая версия)</title>
+    <title>Растения против зомби (демо)</title>
     <style>
-        body { margin: 0; background: #333; display: flex; justify-content: center; align-items: center; height: 100vh; }
-        canvas { border: 2px solid #000; background: #90ee90; } /* Зелёный газон */
-        #ui { position: absolute; top: 10px; left: 10px; color: white; font-family: Arial; }
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Arial', sans-serif;
+            background: linear-gradient(135deg, #87CEEB, #1E90FF);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+        }
+        
+        #game-container {
+            width: 100%;
+            max-width: 800px;
+            background: #8FBC8F;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+            padding: 20px;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        #header {
+            text-align: center;
+            margin-bottom: 15px;
+            color: #2E8B57;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.2);
+        }
+        
+        #sun-counter {
+            background: #FFD700;
+            color: #8B4513;
+            font-weight: bold;
+            padding: 10px 15px;
+            border-radius: 8px;
+            margin: 10px 0;
+            box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.2);
+        }
+        
+        #plant-panel {
+            display: flex;
+            justify-content: center;
+            gap: 15px;
+            margin-bottom: 15px;
+            flex-wrap: wrap;
+        }
+        
+        .plant-button {
+            width: 70px;
+            height: 70px;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            background-size: cover;
+            background-position: center;
+            transition: all 0.3s;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+        }
+        
+        .plant-button:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 6px 12px rgba(0, 0, 0, 0.3);
+        }
+        
+        .plant-button:active {
+            transform: translateY(1px);
+        }
+        
+        #sunflower {
+            background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="50" cy="50" r="40" fill="%23FFD700"/><circle cx="50" cy="50" r="30" fill="%23FFA500"/><circle cx="50" cy="50" r="20" fill="%23FF8C00"/></svg>');
+        }
+        
+        #peashooter {
+            background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect x="30" y="60" width="40" height="40" fill="%232E8B57"/><rect x="40" y="20" width="20" height="40" fill="%2332CD32"/><circle cx="50" cy="10" r="8" fill="%23FF0000"/></svg>');
+        }
+        
+        #field {
+            display: grid;
+            grid-template-columns: repeat(9, 60px);
+            grid-template-rows: repeat(5, 60px);
+            gap: 2px;
+            background: #8B4513;
+            border-radius: 10px;
+            padding: 5px;
+        }
+        
+        .cell {
+            background: #A0522D;
+            border-radius: 5px;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .plant {
+            position: absolute;
+            top: 5px;
+            left: 5px;
+            width: 50px;
+            height: 50px;
+            border-radius: 5px;
+            background-size: cover;
+            background-position: center;
+            transition: transform 0.2s;
+        }
+        
+        .plant:active {
+            transform: scale(0.9);
+        }
+        
+        .zombie {
+            position: absolute;
+            top: 5px;
+            left: 5px;
+            width: 50px;
+            height: 50px;
+            background: linear-gradient(to bottom, #8B0000, #A52A2A);
+            border-radius: 50% 50% 40% 40%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: bold;
+            font-size: 12px;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3);
+            transition: all 0.3s;
+        }
+        
+        .zombie:after {
+            content: "";
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            width: 30px;
+            height: 30px;
+            background: #FFD700;
+            border-radius: 50%;
+        }
+        
+        .projectile {
+            position: absolute;
+            width: 10px;
+            height: 10px;
+            background: #00FF00;
+            border-radius: 50%;
+            z-index: 10;
+        }
+        
+        #game-over {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 36px;
+            z-index: 100;
+            display: none;
+        }
+        
+        #restart-btn {
+            margin-top: 20px;
+            padding: 10px 20px;
+            background: #FF4500;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 18px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        #restart-btn:hover {
+            background: #FF6347;
+            transform: scale(1.05);
+        }
     </style>
 </head>
 <body>
-    <canvas id="gameCanvas" width="900" height="500"></canvas>
-    <div id="ui">
-        <p>Солнце: <span id="sunCount">50</span></p>
-        <p>Выберите растение: <button onclick="selectPlant('sunflower')">Подсолнух (50)</button> <button onclick="selectPlant('peashooter')">Горохострел (100)</button></p>
-        <p>Статус: <span id="status">Игра начата!</span></p>
+    <div id="game-container">
+        <h1 id="header">Растения против зомби (Демо)</h1>
+        <div id="sun-counter">Солнце: 100</div>
+        
+        <div id="plant-panel">
+            <button id="sunflower" class="plant-button" data-plant="sunflower"></button>
+            <button id="peashooter" class="plant-button" data-plant="peashooter"></button>
+        </div>
+        
+        <div id="field"></div>
+        
+        <div id="game-over">
+            ИГРА ОКОНЧЕНА!
+            <button id="restart-btn">Играть заново</button>
+        </div>
     </div>
 
     <script>
-        const canvas = document.getElementById('gameCanvas');
-        const ctx = canvas.getContext('2d');
-        const gridSize = 100; // Размер клетки (5 рядов x 9 колонок)
-        const rows = 5, cols = 9;
-        let sun = 50; // Начальное солнце
-        let selectedPlant = null;
-        let plants = []; // Массив растений
-        let zombies = []; // Массив зомби
-        let projectiles = []; // Снаряды (горохи)
-        let suns = []; // Падающее солнце
-        let gameOver = false;
-        let level = 1; // Уровень (волны зомби)
-
-        // Классы для объектов
-        class Plant {
-            constructor(type, x, y) {
-                this.type = type;
-                this.x = x;
-                this.y = y;
-                this.health = 100;
-                this.lastShot = 0; // Для горохострела
-                this.lastSun = 0; // Для подсолнуха
-            }
-            draw() {
-                ctx.fillStyle = this.type === 'sunflower' ? 'yellow' : 'green';
-                ctx.fillRect(this.x, this.y, gridSize - 10, gridSize - 10);
-                ctx.fillStyle = 'black';
-                ctx.fillText(this.type, this.x + 10, this.y + 50);
-            }
-            update() {
-                if (this.type === 'sunflower' && Date.now() - this.lastSun > 10000) { // Солнце каждые 10 сек
-                    suns.push({x: this.x + 20, y: this.y + 20, falling: false});
-                    this.lastSun = Date.now();
+        // Игровые переменные
+        let sun = 100;
+        let plants = [];
+        let zombies = [];
+        let projectiles = [];
+        let gameActive = true;
+        let gameInterval;
+        let zombieSpawnInterval;
+        let sunInterval;
+        
+        // DOM элементы
+        const sunCounter = document.getElementById('sun-counter');
+        const field = document.getElementById('field');
+        const gameOver = document.getElementById('game-over');
+        const restartBtn = document.getElementById('restart-btn');
+        
+        // Создание игрового поля
+        function createField() {
+            field.innerHTML = '';
+            for (let row = 0; row < 5; row++) {
+                for (let col = 0; col < 9; col++) {
+                    const cell = document.createElement('div');
+                    cell.className = 'cell';
+                    cell.dataset.row = row;
+                    cell.dataset.col = col;
+                    field.appendChild(cell);
                 }
-                if (this.type === 'peashooter' && Date.now() - this.lastShot > 2000) { // Стрельба каждые 2 сек
-                    let targetZombie = zombies.find(z => z.row === Math.floor(this.y / gridSize) && z.x > this.x);
-                    if (targetZombie) {
-                        projectiles.push({x: this.x + gridSize, y: this.y + 40, row: Math.floor(this.y / gridSize)});
-                        this.lastShot = Date.now();
+            }
+        }
+        
+        // Обновление счетчика солнца
+        function updateSunCounter() {
+            sunCounter.textContent = `Солнце: ${sun}`;
+        }
+        
+        // Постановка растения
+        function plantPlant(row, col, plantType) {
+            const cell = document.querySelector(`.cell[data-row="${row}"][data-col="${col}"]`);
+            
+            // Проверка на наличие растения
+            if (cell.querySelector('.plant')) return;
+            
+            // Создаем растение
+            const plant = document.createElement('div');
+            plant.className = 'plant';
+            plant.dataset.row = row;
+            plant.dataset.col = col;
+            plant.dataset.type = plantType;
+            
+            // Добавляем в DOM
+            cell.appendChild(plant);
+            
+            // Добавляем в массив растений
+            plants.push({
+                row,
+                col,
+                type: plantType,
+                health: plantType === 'sunflower' ? 100 : 150,
+                lastAttack: Date.now()
+            });
+        }
+        
+        // Создание зомби
+        function spawnZombie() {
+            if (!gameActive) return;
+            
+            const row = Math.floor(Math.random() * 5);
+            const cell = document.querySelector(`.cell[data-row="${row}"][data-col="0"]`);
+            
+            // Проверяем, пуста ли клетка
+            if (cell.querySelector('.zombie') || cell.querySelector('.plant')) return;
+            
+            const zombie = document.createElement('div');
+            zombie.className = 'zombie';
+            zombie.dataset.row = row;
+            zombie.dataset.col = 0;
+            zombie.textContent = '100';
+            
+            cell.appendChild(zombie);
+            
+            zombies.push({
+                row,
+                col: 0,
+                health: 100,
+                speed: 1000,
+                lastMove: Date.now()
+            });
+        }
+        
+        // Движение зомби
+        function moveZombies() {
+            zombies.forEach((zombie, index) => {
+                // Проверяем, жив ли зомби
+                if (zombie.health <= 0) {
+                    zombies.splice(index, 1);
+                    const cell = document.querySelector(`.cell[data-row="${zombie.row}"][data-col="${zombie.col}"]`);
+                    const zombieElement = cell.querySelector('.zombie');
+                    if (zombieElement) cell.removeChild(zombieElement);
+                    return;
+                }
+                
+                // Двигаем зомби вправо
+                if (Date.now() - zombie.lastMove > zombie.speed) {
+                    zombie.lastMove = Date.now();
+                    
+                    // Удаляем из текущей клетки
+                    let currentCell = document.querySelector(`.cell[data-row="${zombie.row}"][data-col="${zombie.col}"]`);
+                    if (currentCell) {
+                        const zombieElement = currentCell.querySelector('.zombie');
+                        if (zombieElement) currentCell.removeChild(zombieElement);
+                    }
+                    
+                    // Перемещаем в новую клетку
+                    zombie.col++;
+                    if (zombie.col >= 9) {
+                        // Зомби достиг дома - игра окончена
+                        gameOverGame();
+                        return;
+                    }
+                    
+                    // Добавляем в новую клетку
+                    let newCell = document.querySelector(`.cell[data-row="${zombie.row}"][data-col="${zombie.col}"]`);
+                    if (newCell) {
+                        const zombieElement = document.createElement('div');
+                        zombieElement.className = 'zombie';
+                        zombieElement.dataset.row = zombie.row;
+                        zombieElement.dataset.col = zombie.col;
+                        zombieElement.textContent = zombie.health;
+                        newCell.appendChild(zombieElement);
                     }
                 }
-            }
-        }
-
-        class Zombie {
-            constructor(row) {
-                this.x = canvas.width - 50;
-                this.y = row * gridSize + 20;
-                this.row = row;
-                this.health = 100;
-                this.speed = 1;
-            }
-            draw() {
-                ctx.fillStyle = 'gray';
-                ctx.fillRect(this.x, this.y, 50, 80);
-                ctx.fillStyle = 'black';
-                ctx.fillText('Zombie', this.x + 5, this.y + 40);
-            }
-            update() {
-                this.x -= this.speed;
-                // Атака растений
-                let plant = plants.find(p => Math.floor(p.y / gridSize) === this.row && Math.abs(p.x - this.x) < gridSize);
-                if (plant) {
-                    plant.health -= 1;
-                    if (plant.health <= 0) plants = plants.filter(p => p !== plant);
-                }
-                if (this.x < 0) gameOver = true; // Зомби дошёл до дома
-            }
-        }
-
-        class Projectile {
-            constructor(x, y, row) {
-                this.x = x;
-                this.y = y;
-                this.row = row;
-                this.speed = 5;
-            }
-            draw() {
-                ctx.fillStyle = 'lime';
-                ctx.fillRect(this.x, this.y, 20, 10);
-            }
-            update() {
-                this.x += this.speed;
-                let zombie = zombies.find(z => z.row === this.row && Math.abs(z.x - this.x) < 30);
-                if (zombie) {
-                    zombie.health -= 20;
-                    if (zombie.health <= 0) zombies = zombies.filter(z => z !== zombie);
-                    projectiles = projectiles.filter(p => p !== this);
-                }
-                if (this.x > canvas.width) projectiles = projectiles.filter(p => p !== this);
-            }
-        }
-
-        // Падающее солнце
-        function spawnSun() {
-            suns.push({x: Math.random() * canvas.width, y: 0, falling: true});
-        }
-
-        // Обновление UI
-        function updateUI() {
-            document.getElementById('sunCount').innerText = sun;
-            document.getElementById('status').innerText = gameOver ? 'Игра окончена! (Перезагрузите страницу)' : `Уровень ${level}`;
-        }
-
-        // Выбор растения
-        function selectPlant(type) {
-            selectedPlant = type;
-        }
-
-        // Клик по canvas (размещение растения или сбор солнца)
-        canvas.addEventListener('click', (e) => {
-            const rect = canvas.getBoundingClientRect();
-            const mx = e.clientX - rect.left;
-            const my = e.clientY - rect.top;
-            const gridX = Math.floor(mx / gridSize) * gridSize;
-            const gridY = Math.floor(my / gridSize) * gridSize;
-
-            // Сбор солнца
-            let collectedSun = suns.find(s => Math.abs(s.x - mx) < 20 && Math.abs(s.y - my) < 20);
-            if (collectedSun) {
-                sun += 25;
-                suns = suns.filter(s => s !== collectedSun);
-                return;
-            }
-
-            // Размещение растения
-            if (selectedPlant && !plants.some(p => p.x === gridX && p.y === gridY)) {
-                let cost = selectedPlant === 'sunflower' ? 50 : 100;
-                if (sun >= cost) {
-                    sun -= cost;
-                    plants.push(new Plant(selectedPlant, gridX, gridY));
-                    selectedPlant = null;
-                }
-            }
-        });
-
-        // Основной игровой цикл
-        function gameLoop() {
-            if (gameOver) return;
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-            // Рисуем сетку
-            for (let i = 0; i < rows; i++) for (let j = 0; j < cols; j++) {
-                ctx.strokeRect(j * gridSize, i * gridSize, gridSize, gridSize);
-            }
-
-            // Обновляем и рисуем растения
-            plants.forEach(p => { p.update(); p.draw(); });
-
-            // Обновляем и рисуем зомби
-            zombies.forEach(z => { z.update(); z.draw(); });
-
-            // Обновляем и рисуем снаряды
-            projectiles.forEach(p => { p.update(); p.draw(); });
-
-            // Падающее солнце
-            suns.forEach(s => {
-                if (s.falling) s.y += 2;
-                if (s.y > canvas.height) suns = suns.filter(su => su !== s);
-                ctx.fillStyle = 'orange';
-                ctx.fillRect(s.x, s.y, 20, 20);
             });
-
-            updateUI();
-
-            // Спавн зомби и солнца
-            if (Math.random() < 0.01 * level) zombies.push(new Zombie(Math.floor(Math.random() * rows))); // Волны
-            if (Math.random() < 0.005) spawnSun();
-
-            // Проверка победы (все зомби мертвы, переходим на уровень)
-            if (zombies.length === 0 && Math.random() < 0.01) level++;
-
-            requestAnimationFrame(gameLoop);
         }
-
-        gameLoop(); // Запуск игры
+        
+        // Атака растений
+        function attackZombies() {
+            plants.forEach(plant => {
+                if (plant.type === 'peashooter') {
+                    // Проверяем, есть ли зомби в той же строке
+                    const zombieInRow = zombies.find(z => z.row === plant.row);
+                    
+                    if (zombieInRow && Date.now() - plant.lastAttack > 1000) {
+                        plant.lastAttack = Date.now();
+                        
+                        // Создаем снаряд
+                        const projectile = document.createElement('div');
+                        projectile.className = 'projectile';
+                        projectile.style.left = `${plant.col * 60 + 25}px`;
+                        projectile.style.top = `${plant.row * 60 + 25}px`;
+                        field.appendChild(projectile);
+                        
+                        projectiles.push({
+                            x: plant.col * 60 + 25,
+                            y: plant.row * 60 + 25,
+                            target: zombieInRow,
+                            speed: 5
+                        });
+                    }
+                }
+            });
+        }
+        
+        // Движение снарядов
+        function moveProjectiles() {
+            projectiles.forEach((projectile, index) => {
+                if (!projectile.target || projectile.target.health <= 0) {
+                    projectiles.splice(index, 1);
+                    const elem = document.querySelector(`.projectile`);
+                    if (elem) elem.remove();
+                    return;
+                }
+                
+                // Двигаем к цели
+                const targetX = projectile.target.col * 60 + 25;
+                const targetY = projectile.target.row * 60 + 25;
+                
+                const dx = targetX - projectile.x;
+                const dy = targetY - projectile.y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                
+                if (distance < 5) {
+                    // Попадание
+                    projectile.target.health -= 20;
+                    projectile.target.health = Math.max(0, projectile.target.health);
+                    
+                    // Обновляем отображение здоровья
+                    const zombieElement = document.querySelector(`.zombie[data-row="${projectile.target.row}"][data-col="${projectile.target.col}"]`);
+                    if (zombieElement) zombieElement.textContent = projectile.target.health;
+                    
+                    // Удаляем снаряд
+                    projectiles.splice(index, 1);
+                    const elem = document.querySelector(`.projectile`);
+                    if (elem) elem.remove();
+                } else {
+                    // Двигаем снаряд
+                    projectile.x += (dx / distance) * projectile.speed;
+                    projectile.y += (dy / distance) * projectile.speed;
+                    
+                    const elem = document.querySelector(`.projectile`);
+                    if (elem) {
+                        elem.style.left = `${projectile.x}px`;
+                        elem.style.top = `${projectile.y}px`;
+                    }
+                }
+            });
+        }
+        
+        // Производство солнца
+        function produceSun() {
+            plants.forEach(plant => {
+                if (plant.type === 'sunflower' && Date.now() - plant.lastAttack > 5000) {
+                    plant.lastAttack = Date.now();
+                    
+                    // Создаем солнце
+                    const sunCell = document.querySelector(`.cell[data-row="${plant.row}"][data-col="${plant.col}"]`);
+                    const sunElement = document.createElement('div');
+                    sunElement.className = 'sun';
+                    sunElement.style.position = 'absolute';
+                    sunElement.style.left = `${plant.col * 60 + 10}px`;
+                    sunElement.style.top = `${plant.row * 60 + 10}px`;
+                    sunElement.style.width = '40px';
+                    sunElement.style.height = '40px';
+                    sunElement.style.background = 'radial-gradient(circle, #FFD700, #FFA500)';
+                    sunElement.style.borderRadius = '50%';
+                    sunElement.style.zIndex = '5';
+                    sunElement.textContent = '+25';
+                    
+                    sunCell.appendChild(sunElement);
+                    
+                    // Анимация поднятия солнца
+                    let yPos = plant.row * 60 + 10;
+                    const moveInterval = setInterval(() => {
+                        yPos -= 5;
+                        sunElement.style.top = `${yPos}px`;
+                        
+                        if (yPos < -20) {
+                            clearInterval(moveInterval);
+                            sun += 25;
+                            updateSunCounter();
+                            sunCell.removeChild(sunElement);
+                        }
+                    }, 30);
+                }
+            });
+        }
+        
+        // Завершение игры
+        function gameOverGame() {
+            gameActive = false;
+            clearInterval(gameInterval);
+            clearInterval(zombieSpawnInterval);
+            clearInterval(sunInterval);
+            gameOver.style.display = 'flex';
+        }
+        
+        // Перезапуск игры
+        function restartGame() {
+            gameActive = true;
+            sun = 100;
+            plants = [];
+            zombies = [];
+            projectiles = [];
+            
+            sunCounter.textContent = `Солнце: ${sun}`;
+            gameOver.style.display = 'none';
+            
+            createField();
+            
+            // Запуск игровых интервалов
+            gameInterval = setInterval(() => {
+                moveZombies();
+                moveProjectiles();
+                attackZombies();
+                produceSun();
+            }, 50);
+            
+            zombieSpawnInterval = setInterval(spawnZombie, 3000);
+            sunInterval = setInterval(() => {
+                sun += 5;
+                updateSunCounter();
+            }, 2000);
+        }
+        
+        // Инициализация игры
+        function initGame() {
+            createField();
+            
+            // Кнопки растений
+            document.querySelectorAll('.plant-button').forEach(button => {
+                button.addEventListener('click', () => {
+                    const plantType = button.dataset.plant;
+                    const cost = plantType === 'sunflower' ? 50 : 100;
+                    
+                    if (sun >= cost) {
+                        // Устанавливаем режим посадки
+                        document.querySelectorAll('.cell').forEach(cell => {
+                            cell.addEventListener('click', function handleClick() {
+                                if (gameActive) {
+                                    const row = parseInt(this.dataset.row);
+                                    const col = parseInt(this.dataset.col);
+                                    
+                                    // Проверяем, пуста ли клетка
+                                    if (!this.querySelector('.plant') && !this.querySelector('.zombie')) {
+                                        plantPlant(row, col, plantType);
+                                        sun -= cost;
+                                        updateSunCounter();
+                                        this.removeEventListener('click', handleClick);
+                                    }
+                                }
+                            });
+                        });
+                    }
+                });
+            });
+            
+            // Перезапуск
+            restartBtn.addEventListener('click', restartGame);
+            
+            // Запуск игровых интервалов
+            gameInterval = setInterval(() => {
+                moveZombies();
+                moveProjectiles();
+                attackZombies();
+                produceSun();
+            }, 50);
+            
+            zombieSpawnInterval = setInterval(spawnZombie, 3000);
+            sunInterval = setInterval(() => {
+                sun += 5;
+                updateSunCounter();
+            }, 2000);
+        }
+        
+        // Запуск игры при загрузке
+        window.addEventListener('DOMContentLoaded', initGame);
     </script>
 </body>
 </html>
