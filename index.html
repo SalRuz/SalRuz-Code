@@ -35,36 +35,85 @@
             margin-top: 20px;
             display: none;
         }
+        .loader {
+            display: none;
+            margin-top: 20px;
+            font-size: 20px;
+            color: #555;
+        }
+        .error {
+            color: #dc3545;
+            margin-top: 10px;
+        }
     </style>
 </head>
 <body>
     <h1>🎲 Случайные картинки с интернета</h1>
     <button id="generateBtn">Показать случайную картинку</button>
+    <div class="loader" id="loader">Загрузка...</div>
     <div>
         <img id="randomImage" alt="Случайное изображение">
+        <p id="errorMessage" class="error"></p>
     </div>
 
     <script>
         const button = document.getElementById('generateBtn');
         const image = document.getElementById('randomImage');
+        const loader = document.getElementById('loader');
+        const errorMessage = document.getElementById('errorMessage');
 
-        button.addEventListener('click', () => {
-            // Генерируем случайный ID (Unsplash принимает любые строки)
-            const randomId = Math.random().toString(36).substring(2, 15);
-            const imageUrl = `https://source.unsplash.com/random/800x600?${randomId}`;
+        // Функция для генерации случайного числа в диапазоне
+        function getRandomInt(max) {
+            return Math.floor(Math.random() * max);
+        }
 
-            // Показываем загрузку
-            image.style.display = 'block';
-            image.src = imageUrl;
+        // Функция загрузки с ретраем
+        async function loadImageWithRetry(attempt = 1) {
+            if (attempt > 3) {
+                throw new Error("Не удалось загрузить изображение после 3 попыток.");
+            }
 
-            // Опционально: обновляем alt при загрузке
-            image.onload = () => {
-                image.alt = "Случайное изображение загружено";
-            };
+            // Чередуем источники на случай, если один не работает
+            let url;
+            if (attempt % 2 === 1) {
+                // Unsplash
+                const randomQuery = Math.random().toString(36).substring(2, 8);
+                url = `https://source.unsplash.com/random/800x600?${randomQuery}`;
+            } else {
+                // Picsum (фолбэк)
+                const randomId = getRandomInt(1000) + 1;
+                url = `https://picsum.photos/800/600?random=${randomId}`;
+            }
 
-            image.onerror = () => {
-                image.alt = "Ошибка загрузки изображения";
-            };
+            return new Promise((resolve, reject) => {
+                image.onload = () => {
+                    resolve();
+                };
+                image.onerror = () => {
+                    console.warn(`Попытка ${attempt} не удалась. Пробуем снова...`);
+                    setTimeout(() => {
+                        loadImageWithRetry(attempt + 1).then(resolve).catch(reject);
+                    }, 1000); // Задержка перед повтором
+                };
+                image.src = url;
+            });
+        }
+
+        button.addEventListener('click', async () => {
+            // Сбрасываем состояние
+            errorMessage.textContent = "";
+            image.style.display = 'none';
+            loader.style.display = 'block';
+
+            try {
+                await loadImageWithRetry();
+                image.style.display = 'block';
+                loader.style.display = 'none';
+            } catch (err) {
+                loader.style.display = 'none';
+                errorMessage.textContent = "❌ Ошибка: " + err.message;
+                image.style.display = 'none';
+            }
         });
     </script>
 </body>
