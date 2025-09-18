@@ -3,118 +3,156 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Случайные картинки</title>
+    <title>Генератор случайных изображений</title>
     <style>
         body {
             font-family: Arial, sans-serif;
-            text-align: center;
-            padding: 40px;
-            background-color: #f5f5f5;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f0f0f0;
         }
+        
+        .container {
+            background-color: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            text-align: center;
+        }
+        
         h1 {
             color: #333;
+            margin-bottom: 30px;
         }
-        button {
-            padding: 12px 24px;
+        
+        .image-container {
+            margin: 30px 0;
+            min-height: 400px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background-color: #f9f9f9;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        
+        #randomImage {
+            max-width: 100%;
+            max-height: 500px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+        }
+        
+        .placeholder {
+            color: #999;
             font-size: 18px;
-            margin: 20px 0;
-            cursor: pointer;
-            background-color: #007bff;
+        }
+        
+        button {
+            background-color: #4CAF50;
             color: white;
             border: none;
+            padding: 12px 30px;
+            font-size: 16px;
             border-radius: 5px;
+            cursor: pointer;
+            transition: background-color 0.3s;
         }
+        
         button:hover {
-            background-color: #0056b3;
+            background-color: #45a049;
         }
-        img {
-            max-width: 100%;
-            height: auto;
-            border-radius: 10px;
-            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
-            margin-top: 20px;
+        
+        button:active {
+            transform: scale(0.98);
+        }
+        
+        .loading {
             display: none;
-        }
-        .loader {
-            display: none;
+            color: #666;
             margin-top: 20px;
-            font-size: 20px;
-            color: #555;
         }
+        
         .error {
-            color: #dc3545;
-            margin-top: 10px;
+            color: #d32f2f;
+            margin-top: 20px;
+            display: none;
         }
     </style>
 </head>
 <body>
-    <h1>🎲 Случайные картинки с интернета</h1>
-    <button id="generateBtn">Показать случайную картинку</button>
-    <div class="loader" id="loader">Загрузка...</div>
-    <div>
-        <img id="randomImage" alt="Случайное изображение">
-        <p id="errorMessage" class="error"></p>
+    <div class="container">
+        <h1>Генератор случайных изображений</h1>
+        
+        <div class="image-container">
+            <div class="placeholder" id="placeholder">
+                Нажмите кнопку для загрузки изображения
+            </div>
+            <img id="randomImage" style="display: none;" alt="Случайное изображение">
+        </div>
+        
+        <button onclick="loadRandomImage()">Загрузить случайное изображение</button>
+        
+        <div class="loading" id="loading">Загрузка...</div>
+        <div class="error" id="error">Ошибка при загрузке изображения</div>
     </div>
 
     <script>
-        const button = document.getElementById('generateBtn');
-        const image = document.getElementById('randomImage');
-        const loader = document.getElementById('loader');
-        const errorMessage = document.getElementById('errorMessage');
-
-        // Функция для генерации случайного числа в диапазоне
-        function getRandomInt(max) {
-            return Math.floor(Math.random() * max);
+        // Список тем для поиска изображений
+        const themes = [
+            'природа', 'горы', 'море', 'лес', 'закат', 'город', 'архитектура',
+            'животные', 'цветы', 'космос', 'абстракция', 'пейзаж', 'озеро',
+            'небо', 'облака', 'дорога', 'мост', 'здание', 'парк', 'река'
+        ];
+        
+        function getRandomTheme() {
+            return themes[Math.floor(Math.random() * themes.length)];
         }
-
-        // Функция загрузки с ретраем
-        async function loadImageWithRetry(attempt = 1) {
-            if (attempt > 3) {
-                throw new Error("Не удалось загрузить изображение после 3 попыток.");
-            }
-
-            // Чередуем источники на случай, если один не работает
-            let url;
-            if (attempt % 2 === 1) {
-                // Unsplash
-                const randomQuery = Math.random().toString(36).substring(2, 8);
-                url = `https://source.unsplash.com/random/800x600?${randomQuery}`;
-            } else {
-                // Picsum (фолбэк)
-                const randomId = getRandomInt(1000) + 1;
-                url = `https://picsum.photos/800/600?random=${randomId}`;
-            }
-
-            return new Promise((resolve, reject) => {
-                image.onload = () => {
-                    resolve();
-                };
-                image.onerror = () => {
-                    console.warn(`Попытка ${attempt} не удалась. Пробуем снова...`);
-                    setTimeout(() => {
-                        loadImageWithRetry(attempt + 1).then(resolve).catch(reject);
-                    }, 1000); // Задержка перед повтором
-                };
-                image.src = url;
-            });
+        
+        function loadRandomImage() {
+            const placeholder = document.getElementById('placeholder');
+            const img = document.getElementById('randomImage');
+            const loading = document.getElementById('loading');
+            const error = document.getElementById('error');
+            
+            // Скрываем ошибки и показываем загрузку
+            error.style.display = 'none';
+            loading.style.display = 'block';
+            placeholder.style.display = 'none';
+            img.style.display = 'none';
+            
+            // Генерируем случайные параметры
+            const width = 600 + Math.floor(Math.random() * 400);
+            const height = 400 + Math.floor(Math.random() * 300);
+            const theme = getRandomTheme();
+            const randomId = Math.floor(Math.random() * 1000);
+            
+            // Используем сервис случайных изображений
+            const imageUrl = `https://source.unsplash.com/${width}x${height}/?${theme}&sig=${randomId}`;
+            
+            // Создаем новый объект изображения для предзагрузки
+            const tempImg = new Image();
+            
+            tempImg.onload = function() {
+                img.src = imageUrl;
+                img.style.display = 'block';
+                loading.style.display = 'none';
+            };
+            
+            tempImg.onerror = function() {
+                loading.style.display = 'none';
+                error.style.display = 'block';
+                placeholder.style.display = 'block';
+            };
+            
+            tempImg.src = imageUrl;
         }
-
-        button.addEventListener('click', async () => {
-            // Сбрасываем состояние
-            errorMessage.textContent = "";
-            image.style.display = 'none';
-            loader.style.display = 'block';
-
-            try {
-                await loadImageWithRetry();
-                image.style.display = 'block';
-                loader.style.display = 'none';
-            } catch (err) {
-                loader.style.display = 'none';
-                errorMessage.textContent = "❌ Ошибка: " + err.message;
-                image.style.display = 'none';
-            }
-        });
+        
+        // Загружаем первое изображение при загрузке страницы
+        window.onload = function() {
+            loadRandomImage();
+        };
     </script>
 </body>
 </html>
