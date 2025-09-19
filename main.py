@@ -1,6 +1,7 @@
 # main.py
 
 import logging
+import os
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from keep_alive import keep_alive
@@ -32,12 +33,25 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> N
     logger.error(msg="Exception while handling an update:", exc_info=context.error)
 
 def main() -> None:
-    # 🔁 ЗАМЕНИТЕ НА ВАШ ТОКЕН ОТ @BotFather
-    import os
-    TOKEN = os.getenv("7996632086:AAEzYgDiOEGMldWSJRkS8eOfzk_ECGdz074")
+    # Получаем токен из переменной окружения
+    TOKEN = os.getenv("BOT_TOKEN")
 
+    # 🔍 ОТЛАДКА: Печатаем токен (в логах Render вы увидите его значение)
+    print(f"DEBUG: TOKEN = '{TOKEN}'")
+
+    # Проверка: если токен пустой или None — выводим ошибку и выходим
+    if not TOKEN or TOKEN.strip() == "":
+        print("❌ ОШИБКА: Токен не найден! Проверьте переменную окружения BOT_TOKEN в Render.")
+        print("ℹ️  Убедитесь, что:")
+        print("   - Переменная называется точно: BOT_TOKEN")
+        print("   - Значение не пустое и скопировано правильно из @BotFather")
+        print("   - Вы нажали 'Save, rebuild and deploy' после добавления токена")
+        return  # Завершаем выполнение, чтобы избежать InvalidToken
+
+    # Создаём приложение бота
     application = Application.builder().token(TOKEN).build()
 
+    # Добавляем обработчики
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("ping", ping))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_mention))
@@ -47,5 +61,5 @@ def main() -> None:
     application.run_polling()
 
 if __name__ == '__main__':
-    keep_alive()
+    keep_alive()  # Запускаем Flask-сервер, чтобы Render не засыпал
     main()
