@@ -34,7 +34,7 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> N
 def main() -> None:
     # 🔁 ЗАМЕНИТЕ НА ВАШ ТОКЕН ОТ @BotFather
     import os
-    TOKEN = os.getenv("7996632086:AAFUAxjbocE22k7JeExMpxcYC_gsQEk_hpI")
+    TOKEN = os.getenv("7996632086:AAEzYgDiOEGMldWSJRkS8eOfzk_ECGdz074")
 
     application = Application.builder().token(TOKEN).build()
 
