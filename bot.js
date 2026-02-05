@@ -4,9 +4,9 @@ const fs = require('fs');
 const path = require('path');
 
 // ============= НАСТРОЙКИ =============
-const TELEGRAM_TOKEN = 'ВАШ_TELEGRAM_BOT_TOKEN'; // Получите у @BotFather
-const ALLOWED_USERS = [123456789]; // Ваш Telegram ID (узнать у @userinfobot)
-const MC_BOT_FILE = 'minecraft-bot.js'; // Файл с ботом для Minecraft
+const TELEGRAM_TOKEN = '8512207770:AAEKLtYEph7gleybGhF2lc7Gwq82Kj1yedM'; // Получите у @BotFather
+const ALLOWED_USERS = [1170970828]; // Ваш Telegram ID (узнать у @userinfobot)
+const MC_BOT_FILE = 'bot.js'; // Файл с ботом для Minecraft
 
 // Создание Telegram бота
 const bot = new TelegramBot(TELEGRAM_TOKEN, { polling: true });
