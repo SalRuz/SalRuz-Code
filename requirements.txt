@@ -1,2 +1,13 @@
-python-telegram-bot==21.11.1
-flask==3.0.3
+# Основные зависимости для Minecraft бота
+mineflayer@^4.14.0              # Основная библиотека для создания ботов
+mineflayer-pathfinder@^2.4.5    # Навигация и поиск пути
+mineflayer-pvp@^1.3.2            # PvP функционал
+mineflayer-collectblock@^1.4.1  # Сбор блоков и предметов
+minecraft-data@^3.46.0          # База данных Minecraft
+
+# Telegram бот
+node-telegram-bot-api@^0.64.0   # API для Telegram
+
+# Требования к системе
+node.js >= 14.0.0
+npm >= 6.0.0
