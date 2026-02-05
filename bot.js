@@ -8,8 +8,9 @@ const TELEGRAM_TOKEN = '8512207770:AAEKLtYEph7gleybGhF2lc7Gwq82Kj1yedM';
 const ALLOWED_USERS = [1170970828];
 const MC_BOT_FILE = 'bot.js';
 
-// ============= ПРОВЕРКА LOCK ФАЙЛА =============
-const lockFile = '.bot.lock';
+// ============= ИСПОЛЬЗУЕМ РАЗНЫЕ LOCK ФАЙЛЫ =============
+const lockFile = '.telegram-bot.lock';  // Изменено!
+const mcLockFile = '.minecraft-bot.lock';  // Для MC бота
 
 // Функция проверки живого процесса
 function isProcessRunning(pid) {
@@ -21,46 +22,50 @@ function isProcessRunning(pid) {
     }
 }
 
-// Проверяем существующий lock файл
+// Проверяем существующий lock файл TELEGRAM бота
 if (fs.existsSync(lockFile)) {
     try {
         const oldPid = parseInt(fs.readFileSync(lockFile, 'utf8'));
         
-        // Проверяем, жив ли старый процесс
         if (isProcessRunning(oldPid)) {
-            console.log('⚠️ Бот уже запущен (PID:', oldPid, ')');
+            console.log('⚠️ Telegram бот уже запущен (PID:', oldPid, ')');
             console.log('Остановите его командой:');
             console.log('  Windows: taskkill /PID', oldPid, '/F');
             console.log('  Linux/Mac: kill', oldPid);
-            console.log('\nИли удалите файл .bot.lock вручную');
+            console.log('\nИли удалите файл', lockFile);
             process.exit(1);
         } else {
-            // Старый процесс мёртв, удаляем lock
-            console.log('🧹 Удаляю старый lock файл...');
+            console.log('🧹 Удаляю старый lock файл Telegram бота...');
             fs.unlinkSync(lockFile);
         }
     } catch (err) {
-        // Ошибка чтения - удаляем lock
         fs.unlinkSync(lockFile);
     }
 }
 
-// Создаём новый lock файл
+// Создаём lock файл для Telegram бота
 fs.writeFileSync(lockFile, process.pid.toString());
-console.log('🔒 Lock файл создан (PID:', process.pid, ')');
+console.log('🔒 Telegram lock файл создан (PID:', process.pid, ')');
 
 // Очистка при выходе
 function cleanup() {
     console.log('\n🧹 Очистка...');
     try {
+        // Удаляем lock файл Telegram бота
         if (fs.existsSync(lockFile)) {
             fs.unlinkSync(lockFile);
         }
+        // Удаляем временные файлы
         if (fs.existsSync('mc_command.txt')) {
             fs.unlinkSync('mc_command.txt');
         }
+        // Останавливаем MC бота
         if (mcBotProcess) {
             mcBotProcess.kill();
+        }
+        // Удаляем lock файл MC бота
+        if (fs.existsSync(mcLockFile)) {
+            fs.unlinkSync(mcLockFile);
         }
     } catch (err) {
         console.error('Ошибка очистки:', err.message);
@@ -105,28 +110,22 @@ try {
 // Обработка ошибок polling
 bot.on('polling_error', (error) => {
     if (error.code === 'ETELEGRAM' && error.message.includes('409')) {
-        console.error('\n❌ ОШИБКА: Другой экземпляр бота уже работает!');
+        console.error('\n❌ ОШИБКА: Другой экземпляр Telegram бота уже работает!');
         console.log('\n🔧 Решение:');
         console.log('1. Закройте ВСЕ окна консоли');
         console.log('2. Выполните команду:');
         console.log('   Windows: taskkill /F /IM node.exe');
-        console.log('   Linux/Mac: killall node');
-        console.log('3. Удалите файл: del .bot.lock (или rm .bot.lock)');
+        console.log('3. Удалите файлы:');
+        console.log('   del .telegram-bot.lock');
+        console.log('   del .minecraft-bot.lock');
         console.log('4. Запустите бота снова\n');
         cleanup();
         process.exit(1);
     } else if (error.code === 'ETELEGRAM' && error.message.includes('401')) {
         console.error('\n❌ ОШИБКА: Неверный токен бота!');
-        console.log('Проверьте токен в настройках\n');
         cleanup();
         process.exit(1);
-    } else {
-        console.error('Polling error:', error.message);
     }
-});
-
-bot.on('error', (error) => {
-    console.error('Bot error:', error.message);
 });
 
 // Переменные для управления процессом
@@ -139,10 +138,10 @@ let currentServer = { host: 'localhost', port: 6666 };
 const mainKeyboard = {
     reply_markup: {
         keyboard: [
-            ['🟢 Запустить бота', '🔴 Остановить бота'],
+            ['🟢 Запустить MC бота', '🔴 Остановить MC бота'],
             ['📊 Статус', '📜 Логи'],
             ['⚙️ Настройки сервера', '📝 Команды'],
-            ['🔄 Перезапуск бота', '❌ Выключить всё']
+            ['🔄 Перезапуск MC бота', '🧹 Очистить логи']
         ],
         resize_keyboard: true
     }
@@ -159,8 +158,7 @@ const commandsKeyboard = {
             [{ text: '🏃 Следовать за мной', callback_data: 'cmd_come' }],
             [{ text: '🛑 Остановить действие', callback_data: 'cmd_stop' }],
             [{ text: '🎒 Показать инвентарь', callback_data: 'cmd_inventory' }],
-            [{ text: '❤️ Проверить здоровье', callback_data: 'cmd_health' }],
-            [{ text: '📍 Где ты?', callback_data: 'cmd_coords' }]
+            [{ text: '❤️ Проверить здоровье', callback_data: 'cmd_health' }]
         ]
     }
 };
@@ -174,7 +172,6 @@ function addLog(message) {
     if (botLogs.length > 100) {
         botLogs.shift();
     }
-    console.log('MC:', message.trim());
 }
 
 function startMCBot(chatId) {
@@ -183,11 +180,16 @@ function startMCBot(chatId) {
         return;
     }
 
+    // Удаляем старый lock файл MC бота если есть
+    if (fs.existsSync(mcLockFile)) {
+        fs.unlinkSync(mcLockFile);
+    }
+
     // Проверяем наличие файла bot.js
     if (!fs.existsSync(MC_BOT_FILE)) {
         bot.sendMessage(chatId, 
             '❌ Файл bot.js не найден!\n\n' +
-            'Убедитесь, что файл с Minecraft ботом называется bot.js и находится в той же папке.'
+            'Убедитесь, что файл с Minecraft ботом называется bot.js'
         );
         return;
     }
@@ -198,26 +200,31 @@ function startMCBot(chatId) {
             ...process.env, 
             MC_HOST: currentServer.host, 
             MC_PORT: currentServer.port.toString(),
-            MC_MASTER: 'SalRuzO'
+            MC_LOCK_FILE: mcLockFile  // Передаём имя lock файла
         }
     });
 
     botStatus = 'online';
-    botLogs = [];
     addLog('🚀 Запуск Minecraft бота...');
 
     // Обработка вывода
     mcBotProcess.stdout.on('data', (data) => {
         const lines = data.toString().split('\n');
         lines.forEach(line => {
-            if (line.trim()) addLog(line);
+            if (line.trim()) {
+                addLog(line);
+                console.log('MC:', line.trim());
+            }
         });
     });
 
     mcBotProcess.stderr.on('data', (data) => {
         const lines = data.toString().split('\n');
         lines.forEach(line => {
-            if (line.trim()) addLog('❌ ' + line);
+            if (line.trim()) {
+                addLog('❌ ' + line);
+                console.error('MC Error:', line.trim());
+            }
         });
     });
 
@@ -227,6 +234,11 @@ function startMCBot(chatId) {
         const msg = `⚠️ Minecraft бот остановлен (код: ${code})`;
         addLog(msg);
         bot.sendMessage(chatId, msg);
+        
+        // Удаляем lock файл MC бота
+        if (fs.existsSync(mcLockFile)) {
+            fs.unlinkSync(mcLockFile);
+        }
     });
 
     bot.sendMessage(chatId, 
@@ -248,14 +260,19 @@ function stopMCBot(chatId) {
     mcBotProcess.kill();
     mcBotProcess = null;
     botStatus = 'offline';
-    addLog('🔴 Бот остановлен вручную');
+    addLog('🔴 MC бот остановлен вручную');
     bot.sendMessage(chatId, '🔴 Minecraft бот остановлен', mainKeyboard);
+    
+    // Удаляем lock файл MC бота
+    if (fs.existsSync(mcLockFile)) {
+        fs.unlinkSync(mcLockFile);
+    }
 }
 
 function sendCommandToMCBot(command) {
     if (!mcBotProcess) return false;
     
-    // Записываем команду в файл, который читает MC бот
+    // Записываем команду в файл
     fs.writeFileSync('mc_command.txt', command);
     addLog(`📤 Команда: ${command}`);
     return true;
@@ -274,8 +291,7 @@ bot.onText(/\/start/, (msg) => {
     if (!isAllowed(msg.from.id)) {
         bot.sendMessage(chatId, 
             '❌ *Доступ запрещён!*\n\n' +
-            `Ваш ID: \`${msg.from.id}\`\n` +
-            'Этот бот приватный.',
+            `Ваш ID: \`${msg.from.id}\``,
             { parse_mode: 'Markdown' }
         );
         return;
@@ -284,12 +300,7 @@ bot.onText(/\/start/, (msg) => {
     bot.sendMessage(chatId, 
         '🤖 *Minecraft Bot Controller*\n\n' +
         '✅ Система управления активна!\n\n' +
-        '*Возможности:*\n' +
-        '• Запуск и остановка бота\n' +
-        '• Отправка команд в игру\n' +
-        '• Мониторинг состояния\n' +
-        '• Просмотр логов\n\n' +
-        'Используйте кнопки ниже для управления:', 
+        'Используйте кнопки для управления:', 
         { ...mainKeyboard, parse_mode: 'Markdown' }
     );
 });
@@ -307,7 +318,7 @@ bot.onText(/\/server (.+) (\d+)/, (msg, match) => {
         `✅ *Сервер изменён!*\n\n` +
         `IP: \`${currentServer.host}\`\n` +
         `Порт: \`${currentServer.port}\`\n\n` +
-        `⚠️ Перезапустите бота для применения`,
+        `⚠️ Перезапустите MC бота`,
         { parse_mode: 'Markdown' }
     );
 });
@@ -321,23 +332,24 @@ bot.on('message', (msg) => {
     if (!text || text.startsWith('/')) return;
 
     switch(text) {
-        case '🟢 Запустить бота':
+        case '🟢 Запустить MC бота':
             startMCBot(chatId);
             break;
             
-        case '🔴 Остановить бота':
+        case '🔴 Остановить MC бота':
             stopMCBot(chatId);
             break;
             
         case '📊 Статус':
             const statusEmoji = botStatus === 'online' ? '🟢' : '🔴';
             const processInfo = mcBotProcess ? 
-                `PID: ${mcBotProcess.pid}\nUptime: ${Math.floor(process.uptime())}с` : 
+                `PID: ${mcBotProcess.pid}` : 
                 'Процесс не запущен';
                 
             bot.sendMessage(chatId, 
                 `*📊 Статус системы*\n\n` +
-                `Бот: ${statusEmoji} ${botStatus}\n` +
+                `MC Бот: ${statusEmoji} ${botStatus}\n` +
+                `Telegram Бот: 🟢 online\n` +
                 `Сервер: \`${currentServer.host}:${currentServer.port}\`\n` +
                 `${processInfo}`,
                 { parse_mode: 'Markdown' }
@@ -348,22 +360,15 @@ bot.on('message', (msg) => {
             if (botLogs.length === 0) {
                 bot.sendMessage(chatId, '📜 Логи пусты');
             } else {
-                const logs = botLogs.slice(-20).join('\n');
-                // Разбиваем на части если слишком длинный
-                if (logs.length > 4000) {
-                    const part1 = logs.substring(0, 4000);
-                    const part2 = logs.substring(4000);
-                    bot.sendMessage(chatId, `📜 *Логи (часть 1):*\n\`\`\`\n${part1}\n\`\`\``, 
-                        { parse_mode: 'Markdown' });
-                    if (part2) {
-                        bot.sendMessage(chatId, `📜 *Логи (часть 2):*\n\`\`\`\n${part2}\n\`\`\``, 
-                            { parse_mode: 'Markdown' });
-                    }
-                } else {
-                    bot.sendMessage(chatId, `📜 *Последние логи:*\n\`\`\`\n${logs}\n\`\`\``, 
-                        { parse_mode: 'Markdown' });
-                }
+                const logs = botLogs.slice(-15).join('\n');
+                bot.sendMessage(chatId, `📜 *Последние логи:*\n\`\`\`\n${logs}\n\`\`\``, 
+                    { parse_mode: 'Markdown' });
             }
+            break;
+            
+        case '🧹 Очистить логи':
+            botLogs = [];
+            bot.sendMessage(chatId, '✅ Логи очищены');
             break;
             
         case '⚙️ Настройки сервера':
@@ -371,47 +376,35 @@ bot.on('message', (msg) => {
                 `*⚙️ Настройки сервера*\n\n` +
                 `IP: \`${currentServer.host}\`\n` +
                 `Порт: \`${currentServer.port}\`\n\n` +
-                `*Для изменения используйте:*\n` +
-                `/server [IP] [порт]\n\n` +
-                `*Примеры:*\n` +
-                `/server localhost 25565\n` +
-                `/server mc.hypixel.net 25565\n` +
-                `/server 192.168.1.100 25565`,
+                `Изменить: /server [IP] [порт]`,
                 { parse_mode: 'Markdown' }
             );
             break;
             
         case '📝 Команды':
             if (!mcBotProcess) {
-                bot.sendMessage(chatId, '⚠️ Сначала запустите бота!');
+                bot.sendMessage(chatId, '⚠️ Сначала запустите MC бота!');
             } else {
                 bot.sendMessage(chatId, 
-                    '*📝 Выберите команду для отправки:*',
+                    '*📝 Выберите команду:*',
                     { ...commandsKeyboard, parse_mode: 'Markdown' }
                 );
             }
             break;
             
-        case '🔄 Перезапуск бота':
+        case '🔄 Перезапуск MC бота':
             if (mcBotProcess) {
-                bot.sendMessage(chatId, '🔄 Перезапускаю бота...');
+                bot.sendMessage(chatId, '🔄 Перезапускаю MC бота...');
                 stopMCBot(chatId);
                 setTimeout(() => startMCBot(chatId), 2000);
             } else {
-                bot.sendMessage(chatId, '⚠️ Бот не запущен');
+                bot.sendMessage(chatId, '⚠️ MC бот не запущен');
             }
-            break;
-            
-        case '❌ Выключить всё':
-            bot.sendMessage(chatId, '👋 Выключаю систему...').then(() => {
-                cleanup();
-                process.exit(0);
-            });
             break;
     }
 });
 
-// Обработка inline кнопок (команд)
+// Обработка inline кнопок
 bot.on('callback_query', async (query) => {
     const chatId = query.message.chat.id;
     const data = query.data;
@@ -422,7 +415,7 @@ bot.on('callback_query', async (query) => {
     }
     
     if (!mcBotProcess) {
-        bot.answerCallbackQuery(query.id, { text: '⚠️ Бот не запущен!' });
+        bot.answerCallbackQuery(query.id, { text: '⚠️ MC бот не запущен!' });
         return;
     }
     
@@ -430,15 +423,12 @@ bot.on('callback_query', async (query) => {
         case 'cmd_mine':
             bot.answerCallbackQuery(query.id);
             await bot.sendMessage(chatId, 
-                '⛏ *Что добыть?*\n\n' +
-                'Напишите название блока на русском:\n' +
-                'Например: железная руда, алмаз, дерево, камень',
-                { parse_mode: 'Markdown' }
+                '⛏ Что добыть? (железная руда, алмаз, дерево, камень)'
             );
             bot.once('message', (msg) => {
                 if (msg.from.id === query.from.id) {
                     sendCommandToMCBot(`добудь ${msg.text}`);
-                    bot.sendMessage(chatId, `✅ Команда отправлена: добудь ${msg.text}`);
+                    bot.sendMessage(chatId, `✅ Отправлено: добудь ${msg.text}`);
                 }
             });
             break;
@@ -446,75 +436,57 @@ bot.on('callback_query', async (query) => {
         case 'cmd_attack':
             bot.answerCallbackQuery(query.id);
             await bot.sendMessage(chatId, 
-                '⚔️ *Кого атаковать?*\n\n' +
-                'Напишите название моба:\n' +
-                'Например: зомби, скелет, крипер, паук',
-                { parse_mode: 'Markdown' }
+                '⚔️ Кого атаковать? (зомби, скелет, крипер, паук)'
             );
             bot.once('message', (msg) => {
                 if (msg.from.id === query.from.id) {
                     sendCommandToMCBot(`убей ${msg.text}`);
-                    bot.sendMessage(chatId, `✅ Команда отправлена: убей ${msg.text}`);
+                    bot.sendMessage(chatId, `✅ Отправлено: убей ${msg.text}`);
                 }
             });
             break;
             
         case 'cmd_shelter':
             sendCommandToMCBot('построй убежище');
-            bot.answerCallbackQuery(query.id, { text: '🏠 Строю убежище...' });
-            bot.sendMessage(chatId, '✅ Команда отправлена: построй убежище');
+            bot.answerCallbackQuery(query.id, { text: '🏠 Строю...' });
             break;
             
         case 'cmd_guard':
             sendCommandToMCBot('будь на стороже');
-            bot.answerCallbackQuery(query.id, { text: '🛡 Режим охраны!' });
-            bot.sendMessage(chatId, '✅ Режим охраны активирован');
+            bot.answerCallbackQuery(query.id, { text: '🛡 Охраняю!' });
             break;
             
         case 'cmd_find':
             bot.answerCallbackQuery(query.id);
             await bot.sendMessage(chatId, 
-                '📍 *Что найти?*\n\n' +
-                'Напишите что искать:\n' +
-                'Например: деревня, шахта, портал, храм',
-                { parse_mode: 'Markdown' }
+                '📍 Что найти? (деревня, шахта, портал)'
             );
             bot.once('message', (msg) => {
                 if (msg.from.id === query.from.id) {
                     sendCommandToMCBot(`найди ${msg.text}`);
-                    bot.sendMessage(chatId, `✅ Команда отправлена: найди ${msg.text}`);
+                    bot.sendMessage(chatId, `✅ Отправлено: найди ${msg.text}`);
                 }
             });
             break;
             
         case 'cmd_come':
             sendCommandToMCBot('ко мне');
-            bot.answerCallbackQuery(query.id, { text: '🏃 Иду к вам!' });
-            bot.sendMessage(chatId, '✅ Бот идёт к вам');
+            bot.answerCallbackQuery(query.id, { text: '🏃 Иду!' });
             break;
             
         case 'cmd_stop':
             sendCommandToMCBot('стой');
-            bot.answerCallbackQuery(query.id, { text: '🛑 Остановлен!' });
-            bot.sendMessage(chatId, '✅ Бот остановлен');
+            bot.answerCallbackQuery(query.id, { text: '🛑 Стоп!' });
             break;
             
         case 'cmd_inventory':
             sendCommandToMCBot('инвентарь');
             bot.answerCallbackQuery(query.id, { text: '🎒 Проверяю...' });
-            bot.sendMessage(chatId, '✅ Запрос инвентаря отправлен');
             break;
             
         case 'cmd_health':
             sendCommandToMCBot('здоровье');
             bot.answerCallbackQuery(query.id, { text: '❤️ Проверяю...' });
-            bot.sendMessage(chatId, '✅ Запрос здоровья отправлен');
-            break;
-            
-        case 'cmd_coords':
-            sendCommandToMCBot('координаты');
-            bot.answerCallbackQuery(query.id, { text: '📍 Проверяю...' });
-            bot.sendMessage(chatId, '✅ Запрос координат отправлен');
             break;
             
         default:
@@ -522,29 +494,13 @@ bot.on('callback_query', async (query) => {
     }
 });
 
-// Прямая отправка команд через /cmd
-bot.onText(/\/cmd (.+)/, (msg, match) => {
-    const chatId = msg.chat.id;
-    
-    if (!isAllowed(msg.from.id)) return;
-    
-    if (!mcBotProcess) {
-        bot.sendMessage(chatId, '⚠️ Minecraft бот не запущен!');
-        return;
-    }
-    
-    const command = match[1];
-    sendCommandToMCBot(command);
-    bot.sendMessage(chatId, `✅ Команда отправлена: ${command}`);
-});
-
 // ============= ЗАПУСК =============
 console.log('========================================');
 console.log('✅ Telegram бот успешно запущен!');
 console.log('========================================');
-console.log('📱 Разрешённый ID:', ALLOWED_USERS[0]);
+console.log('📱 ID пользователя:', ALLOWED_USERS[0]);
 console.log('📁 MC бот файл:', MC_BOT_FILE);
-console.log('📡 Сервер по умолчанию:', currentServer.host + ':' + currentServer.port);
+console.log('📡 Сервер:', currentServer.host + ':' + currentServer.port);
 console.log('========================================');
 console.log('💬 Откройте Telegram и напишите /start');
 console.log('========================================');
