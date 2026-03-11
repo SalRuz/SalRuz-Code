@@ -135,18 +135,30 @@ bot.on('callback_query', async (query) => {
     if (!session.version) return bot.sendMessage(chatId, '❌ Укажите версию.');
 
     const name = `Bot_${Math.floor(Math.random() * 10000)}`;
-    await bot.sendMessage(chatId, `🔄 Подключаюсь как \`${name}\`...`, { parse_mode: 'Markdown' });
+    await bot.sendMessage(chatId, `🔍 Проверяю сервер \`${session.server.host}:${session.server.port}\`...`, { parse_mode: 'Markdown' });
 
-    try {
-      console.log(`[${chatId}] Попытка подключения к ${session.server.host}:${session.server.port} (версия: ${session.version})`);
-      
+    // Сначала пингуем сервер
+    mineflayer.ping({
+      host: session.server.host,
+      port: session.server.port,
+      version: session.version === 'auto' ? false : session.version
+    }, (err, res) => {
+      if (err) {
+        console.error(`[${chatId}] Ошибка пинга:`, err);
+        return bot.sendMessage(chatId, `❌ Сервер недоступен или сбросил соединение при проверке: \`${err.message}\``, { parse_mode: 'Markdown' });
+      }
+
+      console.log(`[${chatId}] Сервер ответил: ${res.version} игроков: ${res.players.online}/${res.players.max}`);
+      bot.sendMessage(chatId, `🔄 Сервер ответил (\`${res.version}\`). Подключаюсь как \`${name}\`...`, { parse_mode: 'Markdown' });
+
       const mcBot = mineflayer.createBot({
         host: session.server.host,
         port: session.server.port,
         username: name,
         version: session.version === 'auto' ? false : session.version,
         auth: 'offline',
-        checkTimeoutInterval: 30000, // Увеличиваем таймаут
+        checkTimeoutInterval: 60000,
+        hideErrors: true
       });
 
       session.mcBot = mcBot;
@@ -202,11 +214,7 @@ bot.on('callback_query', async (query) => {
           bot.sendMessage(chatId, '🔌 Бот отключён.');
         }
       });
-
-    } catch (err) {
-      cleanupBot(session);
-      await bot.sendMessage(chatId, `❌ Ошибка: \`${err.message}\``, { parse_mode: 'Markdown' });
-    }
+    });
     return;
   }
 
