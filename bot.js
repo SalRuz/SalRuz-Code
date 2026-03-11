@@ -71,6 +71,8 @@ bot.on('callback_query', async (query) => {
   const chatId = query.message.chat.id;
   const session = getSession(chatId);
 
+  console.log(`[${chatId}] Callback: ${query.data}, сессия: ${JSON.stringify({ server: session.server, version: session.version })}`);
+
   if (query.data === 'set_server') {
     session._waiting = 'server';
     await bot.answerCallbackQuery(query.id);
@@ -130,8 +132,15 @@ bot.on('callback_query', async (query) => {
 
   if (query.data === 'start_bot') {
     await bot.answerCallbackQuery(query.id);
+    
+    // Отладка: проверяем сессию
+    console.log(`[${chatId}] Сессия перед стартом:`, JSON.stringify(session));
+    
     if (session.mcBot) return bot.sendMessage(chatId, '⚠️ Бот уже запущен.');
-    if (!session.server) return bot.sendMessage(chatId, '❌ Укажите сервер.');
+    if (!session.server || !session.server.host) {
+      console.log(`[${chatId}] Сервер не указан в сессии`);
+      return bot.sendMessage(chatId, '❌ Укажите сервер (нажмите 📡 Сервер).');
+    }
     if (!session.version) return bot.sendMessage(chatId, '❌ Укажите версию.');
 
     const name = `Bot_${Math.floor(Math.random() * 10000)}`;
@@ -236,6 +245,8 @@ bot.on('message', (msg) => {
   const chatId = msg.chat.id;
   const session = getSession(chatId);
 
+  console.log(`[${chatId}] Получено сообщение: ${msg.text}, _waiting=${session._waiting}`);
+
   if (session._waiting === 'server') {
     let rawInput = msg.text.trim().replace(/^https?:\/\//, '');
     const parts = rawInput.split(':');
@@ -246,6 +257,7 @@ bot.on('message', (msg) => {
     }
     session.server = { host, port };
     session._waiting = null;
+    console.log(`[${chatId}] Сервер сохранён: ${JSON.stringify(session.server)}`);
     const { text, keyboard } = getMainMenu(session);
     bot.sendMessage(chatId, text, { parse_mode: 'Markdown', reply_markup: keyboard });
     return;
