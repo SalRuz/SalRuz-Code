@@ -1,19 +1,14 @@
 {
-  "name": "minecraft-telegram-bot",
+  "name": "minecraft-tg-bot",
   "version": "1.0.0",
-  "description": "Minecraft bot controlled via Telegram",
-  "main": "telegram-bot.js",
+  "description": "Telegram bot to control a Minecraft bot",
+  "main": "bot.js",
   "scripts": {
-    "start": "node telegram-bot.js"
+    "start": "node bot.js"
   },
   "dependencies": {
-    "node-telegram-bot-api": "^0.64.0",
-    "mineflayer": "^4.14.0",
-    "mineflayer-pathfinder": "^2.4.5",
-    "mineflayer-pvp": "^1.3.2",
-    "minecraft-data": "^3.46.0"
-  },
-  "engines": {
-    "node": ">=14.0.0"
+    "dotenv": "^16.6.1",
+    "mineflayer": "^4.35.0",
+    "node-telegram-bot-api": "^0.66.0"
   }
 }
