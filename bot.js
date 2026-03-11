@@ -144,85 +144,72 @@ bot.on('callback_query', async (query) => {
     if (!session.version) return bot.sendMessage(chatId, '❌ Укажите версию.');
 
     const name = `Bot_${Math.floor(Math.random() * 10000)}`;
-    await bot.sendMessage(chatId, `🔍 Проверяю сервер \`${session.server.host}:${session.server.port}\`...`, { parse_mode: 'Markdown' });
+    
+    console.log(`[${chatId}] Подключение к ${session.server.host}:${session.server.port}, версия: ${session.version}`);
+    bot.sendMessage(chatId, `🔄 Подключаюсь к \`${session.server.host}:${session.server.port}\` как \`${name}\`...`, { parse_mode: 'Markdown' });
 
-    // Сначала пингуем сервер
-    mineflayer.ping({
+    const mcBot = mineflayer.createBot({
       host: session.server.host,
       port: session.server.port,
-      version: session.version === 'auto' ? false : session.version
-    }, (err, res) => {
-      if (err) {
-        console.error(`[${chatId}] Ошибка пинга:`, err);
-        return bot.sendMessage(chatId, `❌ Сервер недоступен или сбросил соединение при проверке: \`${err.message}\``, { parse_mode: 'Markdown' });
+      username: name,
+      version: session.version === 'auto' ? false : session.version,
+      auth: 'offline',
+      checkTimeoutInterval: 60000,
+      hideErrors: true
+    });
+
+    session.mcBot = mcBot;
+
+    // Таймер таймаута спавна
+    const spawnTimeout = setTimeout(() => {
+      if (session.mcBot && !session.mcBot.entity) {
+        console.log(`[${chatId}] Тайм-аут ожидания спавна`);
+        cleanupBot(session);
+        bot.sendMessage(chatId, '❌ Ошибка: Превышено время ожидания подключения (Timeout).');
+        try { mcBot.quit(); } catch {}
       }
+    }, 40000);
 
-      console.log(`[${chatId}] Сервер ответил: ${res.version} игроков: ${res.players.online}/${res.players.max}`);
-      bot.sendMessage(chatId, `🔄 Сервер ответил (\`${res.version}\`). Подключаюсь как \`${name}\`...`, { parse_mode: 'Markdown' });
+    mcBot.on('login', () => {
+      console.log(`[${chatId}] Бот вошел в сеть как ${name}`);
+    });
 
-      const mcBot = mineflayer.createBot({
-        host: session.server.host,
-        port: session.server.port,
-        username: name,
-        version: session.version === 'auto' ? false : session.version,
-        auth: 'offline',
-        checkTimeoutInterval: 60000,
-        hideErrors: true
-      });
+    mcBot.once('spawn', async () => {
+      clearTimeout(spawnTimeout);
+      console.log(`[${chatId}] Бот заспавнился на сервере`);
+      session.jumpInterval = setInterval(() => {
+        try {
+          mcBot.setControlState('jump', true);
+          setTimeout(() => mcBot.setControlState('jump', false), 300);
+        } catch {}
+      }, 1500);
 
-      session.mcBot = mcBot;
+      const { text, keyboard } = getMainMenu(session);
+      await bot.sendMessage(chatId, '✅ Бот подключён и прыгает!');
+      await bot.sendMessage(chatId, text, { parse_mode: 'Markdown', reply_markup: keyboard });
+    });
 
-      // Таймер таймаута спавна
-      const spawnTimeout = setTimeout(() => {
-        if (session.mcBot && !session.mcBot.entity) {
-          console.log(`[${chatId}] Тайм-аут ожидания спавна`);
-          cleanupBot(session);
-          bot.sendMessage(chatId, '❌ Ошибка: Превышено время ожидания подключения (Timeout).');
-          try { mcBot.quit(); } catch {}
-        }
-      }, 40000);
+    mcBot.on('kicked', (reason) => {
+      clearTimeout(spawnTimeout);
+      console.log(`[${chatId}] Бот кикнут: ${reason}`);
+      cleanupBot(session);
+      bot.sendMessage(chatId, '🚫 Бот кикнут с сервера.');
+    });
 
-      mcBot.on('login', () => {
-        console.log(`[${chatId}] Бот вошел в сеть как ${name}`);
-      });
+    mcBot.on('error', (err) => {
+      clearTimeout(spawnTimeout);
+      console.error(`[${chatId}] Ошибка Mineflayer:`, err);
+      cleanupBot(session);
+      bot.sendMessage(chatId, `❌ Ошибка: \`${err.message}\``, { parse_mode: 'Markdown' });
+    });
 
-      mcBot.once('spawn', async () => {
-        clearTimeout(spawnTimeout);
-        console.log(`[${chatId}] Бот заспавнился на сервере`);
-        session.jumpInterval = setInterval(() => {
-          try {
-            mcBot.setControlState('jump', true);
-            setTimeout(() => mcBot.setControlState('jump', false), 300);
-          } catch {}
-        }, 1500);
-
-        const { text, keyboard } = getMainMenu(session);
-        await bot.sendMessage(chatId, '✅ Бот подключён и прыгает!');
-        await bot.sendMessage(chatId, text, { parse_mode: 'Markdown', reply_markup: keyboard });
-      });
-
-      mcBot.on('kicked', (reason) => {
-        clearTimeout(spawnTimeout);
-        console.log(`[${chatId}] Бот кикнут: ${reason}`);
+    mcBot.on('end', (reason) => {
+      clearTimeout(spawnTimeout);
+      console.log(`[${chatId}] Соединение разорвано: ${reason}`);
+      if (session.mcBot) {
         cleanupBot(session);
-        bot.sendMessage(chatId, '🚫 Бот кикнут с сервера.');
-      });
-
-      mcBot.on('error', (err) => {
-        clearTimeout(spawnTimeout);
-        console.error(`[${chatId}] Ошибка Mineflayer:`, err);
-        cleanupBot(session);
-        bot.sendMessage(chatId, `❌ Ошибка: \`${err.message}\``, { parse_mode: 'Markdown' });
-      });
-
-      mcBot.on('end', (reason) => {
-        clearTimeout(spawnTimeout);
-        console.log(`[${chatId}] Соединение разорвано: ${reason}`);
-        if (session.mcBot) {
-          cleanupBot(session);
-          bot.sendMessage(chatId, '🔌 Бот отключён.');
-        }
-      });
+        bot.sendMessage(chatId, '🔌 Бот отключён.');
+      }
     });
     return;
   }
