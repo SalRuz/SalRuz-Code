@@ -186,11 +186,12 @@ async function connectToServer(chatId, session) {
         if (session.mcBot && !session.mcBot.entity) {
             console.log(`[${chatId}] Тайм-аут ожидания спавна`);
             cleanupBot(session);
-            bot.sendMessage(chatId, '❌ Ошибка: Превышено время ожидания подключения (Timeout).');
+            bot.sendMessage(chatId, '❌ Подключиться не удалось, так как серв отключен.');
             try { mcBot.quit(); } catch {}
             // Если включено авто-переподключение, пробуем снова
             if (session.autoReconnect) {
-                setTimeout(() => connectToServer(chatId, session), 10000);
+                bot.sendMessage(chatId, '🔄 Мгновенная попытка переподключения с новым ником...');
+                setTimeout(() => connectToServer(chatId, session), 1000);
             }
         }
     }, 40000);
@@ -219,10 +220,10 @@ async function connectToServer(chatId, session) {
         console.log(`[${chatId}] Бот кикнут: ${reason}`);
         cleanupBot(session);
         bot.sendMessage(chatId, '🚫 Бот кикнут с сервера.');
-        // Авто-переподключение при кике
+        // Мгновенное переподключение с новым ником (даже если забанен)
         if (session.autoReconnect) {
-            bot.sendMessage(chatId, '🔄 Попытка переподключения через 10 секунд...');
-            setTimeout(() => connectToServer(chatId, session), 10000);
+            bot.sendMessage(chatId, '🔄 Мгновенная попытка переподключения с новым ником...');
+            setTimeout(() => connectToServer(chatId, session), 1000);
         }
     });
 
@@ -230,11 +231,23 @@ async function connectToServer(chatId, session) {
         clearTimeout(spawnTimeout);
         console.error(`[${chatId}] Ошибка Mineflayer:`, err);
         cleanupBot(session);
-        bot.sendMessage(chatId, `❌ Ошибка: \`${err.message}\``);
-        // Авто-переподключение при ошибке
-        if (session.autoReconnect) {
-            bot.sendMessage(chatId, '🔄 Попытка переподключения через 10 секунд...');
-            setTimeout(() => connectToServer(chatId, session), 10000);
+        
+        // Проверяем, является ли ошибкой недоступность сервера
+        const serverOffline = err.message?.includes('ECONNREFUSED') || 
+                              err.message?.includes('ENOTFOUND') ||
+                              err.message?.includes('ETIMEDOUT') ||
+                              err.message?.includes('connect ECONNREFUSED');
+        
+        if (serverOffline) {
+            bot.sendMessage(chatId, '❌ Подключиться не удалось, так как серв отключен.');
+        } else {
+            bot.sendMessage(chatId, `❌ Ошибка: \`${err.message}\``);
+        }
+        
+        // Мгновенное переподключение при ошибке (если не сервер отключен)
+        if (session.autoReconnect && !serverOffline) {
+            bot.sendMessage(chatId, '🔄 Мгновенная попытка переподключения с новым ником...');
+            setTimeout(() => connectToServer(chatId, session), 1000);
         }
     });
 
@@ -243,11 +256,22 @@ async function connectToServer(chatId, session) {
         console.log(`[${chatId}] Соединение разорвано: ${reason}`);
         if (session.mcBot) {
             cleanupBot(session);
-            bot.sendMessage(chatId, '🔌 Бот отключён.');
-            // Авто-переподключение при разрыве
-            if (session.autoReconnect) {
-                bot.sendMessage(chatId, '🔄 Попытка переподключения через 10 секунд...');
-                setTimeout(() => connectToServer(chatId, session), 10000);
+            
+            // Проверяем причину отключения
+            const serverOffline = reason?.includes('Connection closed') || 
+                                  reason?.includes('ECONNREFUSED') ||
+                                  reason?.includes('ENOTFOUND');
+            
+            if (serverOffline) {
+                bot.sendMessage(chatId, '❌ Подключиться не удалось, так как серв отключен.');
+            } else {
+                bot.sendMessage(chatId, '🔌 Бот отключён.');
+            }
+            
+            // Мгновенное переподключение (если не сервер отключен)
+            if (session.autoReconnect && !serverOffline) {
+                bot.sendMessage(chatId, '🔄 Мгновенная попытка переподключения с новым ником...');
+                setTimeout(() => connectToServer(chatId, session), 1000);
             }
         }
     });
