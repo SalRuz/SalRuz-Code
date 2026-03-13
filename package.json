@@ -1,0 +1,21 @@
+{
+  "name": "minecraft-tg-bot",
+  "version": "1.0.0",
+  "description": "Telegram bot to control a Minecraft bot with chat",
+  "main": "bot.js",
+  "scripts": {
+    "start": "node bot.js"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "canvas": "^2.11.2",
+    "dotenv": "^16.6.1",
+    "mineflayer": "^4.35.0",
+    "node-canvas-webgl": "github:PrismarineJS/node-canvas-webgl",
+    "node-telegram-bot-api": "^0.66.0",
+    "prismarine-viewer": "^1.33.0",
+    "sqlite3": "^5.1.7"
+  }
+}
