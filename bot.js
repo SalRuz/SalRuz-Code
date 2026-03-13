@@ -5,21 +5,8 @@ const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
 const fs = require('fs');
 
-// Попытка загрузить prismarine-viewer для скриншотов
-let headless = null;
-let viewerModule = null;
-let viewerEnabled = false;
-try {
-    const pvPath = __dirname + '\\node_modules\\prismarine-viewer';
-    const prismarineViewer = require(pvPath);
-    headless = prismarineViewer.headless;
-    viewerModule = prismarineViewer.viewer;
-    viewerEnabled = true;
-    console.log('✅ prismarine-viewer загружен (скриншоты доступны)');
-} catch (err) {
-    console.log('⚠️ prismarine-viewer не найден (скриншоты недоступны)');
-    console.log('Ошибка:', err.message);
-}
+// Скриншоты недоступны в этой версии
+const viewerEnabled = false;
 
 // Путь к папке data
 const dataDir = process.env.DATA_DIR || path.join(__dirname, 'data');
@@ -358,59 +345,6 @@ async function sendToChatUsersExcept(host, port, message, parseMode = null, excl
     }
 }
 
-// Функция создания скриншота через viewer API
-async function takeScreenshot(mcBot) {
-    const { createCanvas } = require('node-canvas-webgl/lib');
-    const { WorldView, Viewer, getBufferFromStream } = viewerModule;
-    const THREE = require('three');
-    const os = require('os');
-
-    const width = 1280;
-    const height = 720;
-    const viewDistance = 6;
-
-    const tempDir = os.tmpdir();
-    const viewerTempPath = path.join(tempDir, 'prismarine-viewer-textures');
-
-    if (!fs.existsSync(viewerTempPath)) {
-        fs.mkdirSync(viewerTempPath, { recursive: true });
-        const texturesDir = path.join(viewerTempPath, 'textures');
-        fs.mkdirSync(texturesDir, { recursive: true });
-
-        const sourceTextures = path.join(__dirname, 'node_modules', 'prismarine-viewer', 'public', 'textures');
-        const textureFiles = fs.readdirSync(sourceTextures);
-        for (const file of textureFiles) {
-            if (file.endsWith('.png')) {
-                fs.copyFileSync(path.join(sourceTextures, file), path.join(texturesDir, file));
-            }
-        }
-    }
-
-    const canvas = createCanvas(width, height);
-    const renderer = new THREE.WebGLRenderer({ canvas });
-    const viewer = new Viewer(renderer);
-
-    if (!viewer.setVersion(mcBot.version)) {
-        throw new Error('Не удалось установить версию Minecraft');
-    }
-
-    viewer.setFirstPersonCamera(mcBot.entity.position, mcBot.entity.yaw, mcBot.entity.pitch);
-
-    const worldView = new WorldView(mcBot.world, viewDistance, mcBot.entity.position);
-    viewer.listen(worldView);
-    worldView.init(mcBot.entity.position);
-
-    await new Promise(resolve => setTimeout(resolve, 2000));
-
-    viewer.update();
-    renderer.render(viewer.scene, viewer.camera);
-
-    const imageStream = canvas.createPNGStream();
-    const buffer = await getBufferFromStream(imageStream);
-
-    return buffer;
-}
-
 // Функция подключения к серверу
 async function connectToServer(chatId, session) {
     if (session.mcBot) { console.log(`[${chatId}] Бот уже подключен`); return; }
@@ -638,50 +572,7 @@ bot.onText(/\/chat/, async (msg) => {
 // /screen
 bot.onText(/\/скрин|\/screen|\/screenshot/i, async (msg) => {
     const chatId = msg.chat.id;
-    const session = await getSession(chatId);
-
-    let hasAccess = false;
-    let targetSession = session;
-
-    if (session.server) {
-        const ownerChatId = await getServerOwnerAsync(session.server.host, session.server.port);
-        if (!ownerChatId || ownerChatId === chatId) {
-            hasAccess = true;
-        } else if (session.chatEnabled) {
-            hasAccess = true;
-        }
-    }
-
-    if (!hasAccess) {
-        for (const [key, conn] of Object.entries(serverConnections)) {
-            if (conn.chatUsers.has(chatId.toString())) {
-                const ownerSession = await getSession(conn.ownerChatId);
-                if (ownerSession && ownerSession.mcBot) {
-                    targetSession = ownerSession;
-                    hasAccess = true;
-                    break;
-                }
-            }
-        }
-    }
-
-    if (!hasAccess || !targetSession.mcBot) {
-        return bot.sendMessage(chatId, '❌ Бот не подключён к серверу.');
-    }
-
-    if (!viewerEnabled || !viewerModule) {
-        return bot.sendMessage(chatId, '📸 Скриншоты недоступны.\n\nУстановите пакет:\n`npm install prismarine-viewer node-canvas-webgl canvas`');
-    }
-
-    bot.sendMessage(chatId, '📸 Делаю скриншот...');
-
-    try {
-        const screenshotBuffer = await takeScreenshot(targetSession.mcBot);
-        await bot.sendPhoto(chatId, screenshotBuffer, { caption: '📸 Скриншот с сервера' });
-    } catch (err) {
-        console.error('Ошибка скриншота:', err);
-        bot.sendMessage(chatId, '❌ Не удалось сделать скриншот.\n\nВозможно:\n• Бот ещё не загрузил чанки (подождите 5-10 сек)\n• Нет видеокарты или драйверов\n• Недостаточно памяти');
-    }
+    return bot.sendMessage(chatId, '📸 Скриншоты недоступны в этой версии.\n\nДля включения скриншотов требуется хостинг с поддержкой компиляции native-модулей (git, python, make, g++).');
 });
 
 // Кнопки
