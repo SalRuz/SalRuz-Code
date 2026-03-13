@@ -6,9 +6,6 @@
   "scripts": {
     "start": "node bot.js"
   },
-  "engines": {
-    "node": ">=18.0.0"
-  },
   "dependencies": {
     "dotenv": "^16.6.1",
     "mineflayer": "^4.35.0",
