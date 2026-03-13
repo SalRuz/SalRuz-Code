@@ -5,11 +5,8 @@ const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
 const fs = require('fs');
 
-// Скриншоты недоступны в этой версии
-const viewerEnabled = false;
-
 // Путь к папке data
-const dataDir = process.env.DATA_DIR || path.join(__dirname, 'data');
+const dataDir = path.join(__dirname, 'data');
 if (!fs.existsSync(dataDir)) {
     fs.mkdirSync(dataDir, { recursive: true });
 }
@@ -116,7 +113,7 @@ function saveSessionToDb(chatId, session) {
     );
 }
 
-// Проверка: занят ли сервер (синхронная)
+// Проверка: занят ли сервер
 function isServerOccupied(host, port, excludeChatId = null) {
     const key = `${host}:${port}`;
     if (serverConnections[key] && serverConnections[key].ownerChatId !== excludeChatId) {
@@ -128,9 +125,11 @@ function isServerOccupied(host, port, excludeChatId = null) {
 // Проверка: занят ли сервер (асинхронная, с проверкой БД)
 async function isServerOccupiedAsync(host, port, excludeChatId = null) {
     const key = `${host}:${port}`;
+    // Сначала проверяем в памяти
     if (serverConnections[key] && serverConnections[key].ownerChatId !== excludeChatId) {
         return serverConnections[key].ownerChatId;
     }
+    // Если в памяти нет, проверяем БД
     const ownerChatId = await getServerOwnerFromDb(host, port);
     if (ownerChatId && ownerChatId !== excludeChatId) {
         return ownerChatId;
@@ -188,17 +187,6 @@ function addChatUser(chatId, host, port, tgUsername) {
     );
 }
 
-// Удаление пользователя из чата
-function removeChatUser(chatId, host, port) {
-    const key = `${host}:${port}`;
-    if (serverConnections[key]) {
-        serverConnections[key].chatUsers.delete(chatId);
-    }
-    db.run('DELETE FROM chat_users WHERE chat_id = ?', [chatId], (err) => {
-        if (err) console.error('Ошибка удаления пользователя:', err);
-    });
-}
-
 // Получение всех пользователей чата
 function getChatUsers(host, port) {
     const key = `${host}:${port}`;
@@ -206,7 +194,7 @@ function getChatUsers(host, port) {
     return [];
 }
 
-// Получение владельца сервера (синхронная)
+// Получение владельца сервера (синхронная, из памяти)
 function getServerOwner(host, port) {
     const key = `${host}:${port}`;
     if (serverConnections[key]) return serverConnections[key].ownerChatId;
@@ -224,7 +212,7 @@ function getServerOwnerFromDb(host, port) {
     });
 }
 
-// Получение владельца сервера (асинхронная)
+// Получение владельца сервера (асинхронная, с проверкой БД)
 async function getServerOwnerAsync(host, port) {
     const key = `${host}:${port}`;
     if (serverConnections[key]) return serverConnections[key].ownerChatId;
@@ -260,21 +248,23 @@ async function getMainMenu(session, isOwner = false) {
     const serverText = session.server ? `${session.server.host}:${session.server.port}` : '❌ Не указан';
     const versionText = session.version || '❌ Не указана';
     const chatText = session.chatEnabled ? '🟢 ВКЛ' : '🔴 ВЫКЛ';
-
+    
     // Определяем статус
     let status = session.mcBot ? '🟢 Онлайн' : '🔴 Оффлайн';
-
+    
     // Получаем информацию о владельце сервера
     let ownerText = '';
     if (session.server) {
         const ownerChatId = await getServerOwnerAsync(session.server.host, session.server.port);
         if (ownerChatId) {
             const ownerInfo = getServerOwnerInfo(session.server.host, session.server.port);
+            // Проверяем, онлайн ли бот владельца
             const ownerSession = await getSession(ownerChatId);
             if (ownerSession && ownerSession.mcBot) {
                 status = '🟢 Онлайн';
             }
             if (ownerInfo && ownerInfo.botUsername) {
+                // Убираем "_bot" из username для отображения
                 const ownerUsername = ownerInfo.botUsername.replace(/_bot$/, '');
                 ownerText = `\n👤 Бот владельца: @\`${ownerUsername}\``;
             }
@@ -301,6 +291,7 @@ async function getMainMenu(session, isOwner = false) {
             }
         };
     } else {
+        // Не-владелец: показываем все кнопки, но старт работает только если сервер свободен
         const canStart = session.version && session.server;
         return {
             text,
@@ -355,9 +346,13 @@ async function connectToServer(chatId, session) {
     const occupiedBy = await isServerOccupiedAsync(host, port, chatId);
 
     if (occupiedBy) {
+        // Сервер занят - подключаемся как пользователь чата (без подключения к Minecraft)
         console.log(`[${chatId}] Сервер занят владельцем ${occupiedBy}, подключаемся как чат-клиент`);
+        
+        // Добавляем пользователя в чат
         addChatUser(chatId, host, port, session.username || 'User');
 
+        // Получаем сессию владельца для правильного меню
         const ownerSession = await getSession(occupiedBy);
         const { text, keyboard } = await getMainMenu(session, false);
 
@@ -366,6 +361,7 @@ async function connectToServer(chatId, session) {
         return;
     }
 
+    // Сервер свободен - запускаем как основной бот
     const tgUser = session.username || 'User';
     const name = `${tgUser}_bot`;
     console.log(`[${chatId}] Подключение к ${host}:${port}, версия: ${session.version}, ник: ${name}`);
@@ -411,6 +407,7 @@ async function connectToServer(chatId, session) {
 
     mcBot.on('chat', async (username, message) => {
         if (username === name) return;
+        // Проверяем, не было ли это сообщение отправлено из TG недавно
         const msgHash = `${username}:${message}`;
         if (recentTgMessages.has(msgHash)) {
             recentTgMessages.delete(msgHash);
@@ -427,41 +424,6 @@ async function connectToServer(chatId, session) {
     mcBot.on('playerLeft', async (player) => {
         if (!session.chatEnabled) return;
         await sendToChatUsers(host, port, `<b>➖ ${player.username} покинул игру</b>`, 'HTML');
-    });
-
-    mcBot.on('death', async () => {
-        if (!session.chatEnabled) return;
-        await sendToChatUsers(host, port, '<b>💀 Бот умер!</b>', 'HTML');
-    });
-
-    mcBot.on('messagestr', async (message, jsonMsg, type) => {
-        if (!session.chatEnabled) return;
-        if (type === 'chat' || type === 'system') {
-            const deathPatterns = [
-                /(.+) died$/,
-                /(.+) was slain by (.+)/,
-                /(.+) was killed by (.+)/,
-                /(.+) went up in flames$/,
-                /(.+) fell off a place$/,
-                /(.+) fell from a high place$/,
-                /(.+) hit the ground too hard$/,
-                /(.+) drowned$/,
-                /(.+) suffocated$/,
-                /(.+) starved$/,
-                /(.+) tried to swim in lava$/,
-                /(.+) was shot by (.+)/,
-                /(.+) was blown up by (.+)/,
-            ];
-
-            for (const pattern of deathPatterns) {
-                const match = message.match(pattern);
-                if (match) {
-                    const deathMessage = `<b>💀 ${match[1]} умер${match[2] ? ` от ${match[2]}` : ''}</b>`;
-                    await sendToChatUsers(host, port, deathMessage, 'HTML');
-                    break;
-                }
-            }
-        }
     });
 
     mcBot.on('kicked', async (reason) => {
@@ -524,55 +486,17 @@ async function connectToServer(chatId, session) {
 // /start
 bot.onText(/\/start/, async (msg) => {
     const session = await getSession(msg.chat.id);
+    // Сохраняем username пользователя
     session.username = msg.from.username || msg.from.first_name || 'User';
     let isOwner = false;
     if (session.server) {
         const ownerChatId = await getServerOwnerAsync(session.server.host, session.server.port);
         isOwner = !ownerChatId || ownerChatId === msg.chat.id;
     } else {
-        isOwner = true;
+        isOwner = true; // Нет сервера = владелец
     }
     const { text, keyboard } = await getMainMenu(session, isOwner);
     bot.sendMessage(msg.chat.id, text, { parse_mode: 'Markdown', reply_markup: keyboard });
-});
-
-// /chat
-bot.onText(/\/chat/, async (msg) => {
-    const chatId = msg.chat.id;
-    const session = await getSession(chatId);
-
-    let isOwner = false;
-    if (session.server) {
-        const ownerChatId = await getServerOwnerAsync(session.server.host, session.server.port);
-        isOwner = !ownerChatId || ownerChatId === chatId;
-    }
-
-    if (!isOwner && (!session.server || !session.mcBot)) {
-        for (const [key, conn] of Object.entries(serverConnections)) {
-            if (conn.chatUsers.has(chatId.toString())) {
-                const [host, port] = key.split(':');
-                session.server = { host, port: parseInt(port) };
-                session.mcBot = serverConnections[key].mcBot;
-                break;
-            }
-        }
-    }
-
-    if (!session.server) {
-        return bot.sendMessage(chatId, '❌ Сначала подключитесь к серверу.');
-    }
-
-    session.chatEnabled = !session.chatEnabled;
-    saveSessionToDb(chatId, session);
-
-    const status = session.chatEnabled ? '✅ включен' : '❌ выключен';
-    bot.sendMessage(chatId, `Чат ${status}`);
-});
-
-// /screen
-bot.onText(/\/скрин|\/screen|\/screenshot/i, async (msg) => {
-    const chatId = msg.chat.id;
-    return bot.sendMessage(chatId, '📸 Скриншоты недоступны в этой версии.\n\nДля включения скриншотов требуется хостинг с поддержкой компиляции native-модулей (git, python, make, g++).');
 });
 
 // Кнопки
@@ -585,11 +509,12 @@ bot.on('callback_query', async (query) => {
         const ownerChatId = await getServerOwnerAsync(session.server.host, session.server.port);
         isOwner = !ownerChatId || ownerChatId === chatId;
     } else {
-        isOwner = true;
+        isOwner = true; // Нет сервера = владелец
     }
 
     console.log(`[${chatId}] Callback: ${query.data}, владелец: ${isOwner}`);
 
+    // Блокируем не-владельцев (кроме чата, игроков, версии, сервера и старта)
     if (!isOwner && query.data !== 'toggle_chat' && query.data !== 'list_players' && query.data !== 'set_version' && query.data !== 'set_server' && query.data !== 'start_bot' && query.data !== 'wait_version' && query.data !== 'wait_server') {
         await bot.answerCallbackQuery(query.id, { text: '⚠️ Только владелец может управлять.', show_alert: true });
         return;
@@ -615,48 +540,7 @@ bot.on('callback_query', async (query) => {
     if (query.data === 'set_version') {
         session._waiting = 'version';
         await bot.answerCallbackQuery(query.id);
-        await bot.sendMessage(chatId, '🎮 Выберите версию:', {
-            reply_markup: {
-                inline_keyboard: [
-                    [
-                        { text: '1.8.9', callback_data: 'ver_1.8.9' },
-                        { text: '1.12.2', callback_data: 'ver_1.12.2' },
-                        { text: '1.16.5', callback_data: 'ver_1.16.5' },
-                    ],
-                    [
-                        { text: '1.17.1', callback_data: 'ver_1.17.1' },
-                        { text: '1.18.2', callback_data: 'ver_1.18.2' },
-                        { text: '1.19.4', callback_data: 'ver_1.19.4' },
-                    ],
-                    [
-                        { text: '1.20.1', callback_data: 'ver_1.20.1' },
-                        { text: '1.20.4', callback_data: 'ver_1.20.4' },
-                        { text: '1.21', callback_data: 'ver_1.21' },
-                    ],
-                    [
-                        { text: '🔄 Авто', callback_data: 'ver_auto' },
-                        { text: '✏️ Ввести вручную', callback_data: 'ver_custom' }
-                    ],
-                ],
-            },
-        });
-        return;
-    }
-
-    if (query.data.startsWith('ver_')) {
-        const ver = query.data.replace('ver_', '');
-        if (ver === 'custom') {
-            session._waiting = 'version';
-            await bot.answerCallbackQuery(query.id);
-            await bot.sendMessage(chatId, '✏️ Введите версию (например `1.19.2`):', { parse_mode: 'Markdown' });
-            return;
-        }
-        session.version = ver;
-        session._waiting = null;
-        await bot.answerCallbackQuery(query.id);
-        saveSessionToDb(chatId, session);
-        const { text, keyboard } = await getMainMenu(session, isOwner);
-        await bot.sendMessage(chatId, text, { parse_mode: 'Markdown', reply_markup: keyboard });
+        await bot.sendMessage(chatId, '✏️ Введите версию вручную (например `1.19.2`):', { parse_mode: 'Markdown' });
         return;
     }
 
@@ -682,6 +566,7 @@ bot.on('callback_query', async (query) => {
             } else if (session.mcBot) {
                 hasAccess = true;
             } else if (ownerChatId) {
+                // Ищем сессию владельца
                 const ownerSession = await getSession(ownerChatId);
                 if (ownerSession && ownerSession.mcBot) {
                     targetSession = ownerSession;
@@ -780,16 +665,20 @@ bot.on('message', async (msg) => {
 
         const ownerChatId = await getServerOwnerAsync(session.server.host, session.server.port);
         if (!ownerChatId || ownerChatId === chatId) {
+            // Мы владелец
             hasAccess = true;
         } else if (session.mcBot) {
+            // У нас есть бот
             hasAccess = true;
         } else if (ownerChatId) {
+            // Мы не владелец, ищем сессию владельца
             const ownerSession = await getSession(ownerChatId);
             if (ownerSession && ownerSession.mcBot) {
                 targetSession = ownerSession;
                 targetHost = session.server.host;
                 targetPort = session.server.port;
                 hasAccess = true;
+                // Добавляем пользователя в чат владельца
                 addChatUser(chatId, targetHost, targetPort, msg.from.username || msg.from.first_name || 'Пользователь');
             }
         }
@@ -797,12 +686,14 @@ bot.on('message', async (msg) => {
         if (hasAccess && targetSession.mcBot) {
             const tgUser = msg.from.username || msg.from.first_name || 'Пользователь';
             const minecraftMessage = `[${tgUser}] ${msg.text}`;
+            // Добавляем хэш сообщения, чтобы не дублировать его из Minecraft
             const msgHash = `${tgUser}:${msg.text}`;
             recentTgMessages.add(msgHash);
             setTimeout(() => recentTgMessages.delete(msgHash), 5000);
 
             targetSession.mcBot.chat(minecraftMessage);
             console.log(`[${chatId}] В Minecraft: ${minecraftMessage}`);
+            // Отправляем сообщение всем КРОМЕ отправителя
             const formattedMessage = `📨 <b>${tgUser}</b>: ${msg.text}`;
             await sendToChatUsersExcept(targetHost, targetPort, formattedMessage, 'HTML', chatId);
         } else {
@@ -815,7 +706,7 @@ bot.on('message', async (msg) => {
 // Восстановление сессий
 async function restoreSessions() {
     await initDatabase();
-
+    
     return new Promise((resolve) => {
         db.all('SELECT * FROM sessions', [], async (err, rows) => {
             if (err) {
