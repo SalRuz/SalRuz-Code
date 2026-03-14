@@ -50,8 +50,8 @@ async function askGemini(prompt) {
             path: `/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`,
             method: 'POST',
             headers: {
-                'Content-Type': 'application/json',
-                'Content-Length': data.length
+                'Content-Type': 'application/json; charset=utf-8',
+                'Content-Length': Buffer.byteLength(data)
             }
         };
 
