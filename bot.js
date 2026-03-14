@@ -47,7 +47,7 @@ async function askGemini(prompt) {
         const options = {
             hostname: 'generativelanguage.googleapis.com',
             port: 443,
-            path: `/v1/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`,
+            path: `/v1/models/gemini-pro:generateContent?key=${GEMINI_API_KEY}`,
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json; charset=utf-8',
