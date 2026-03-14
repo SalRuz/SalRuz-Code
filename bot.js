@@ -26,20 +26,19 @@ async function askGemini(prompt) {
     }
 
     return new Promise((resolve, reject) => {
-        // Экранируем специальные символы
-        const escapedPrompt = prompt.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\n').replace(/\r/g, '\\r').replace(/\t/g, '\\t');
-        
-        const data = JSON.stringify({
+        const requestBody = {
             contents: [{
                 parts: [{
-                    text: `Ты дружелюбный помощник в игре Minecraft. Отвечай кратко и по делу на русском языке. Вопрос игрока: ${escapedPrompt}`
+                    text: `Ты дружелюбный помощник в игре Minecraft. Отвечай кратко и по делу на русском языке. Вопрос игрока: ${prompt}`
                 }]
             }],
             generationConfig: {
                 maxOutputTokens: 500,
                 temperature: 0.7
             }
-        });
+        };
+        
+        const data = JSON.stringify(requestBody);
 
         const options = {
             hostname: 'generativelanguage.googleapis.com',
