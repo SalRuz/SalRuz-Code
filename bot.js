@@ -4,10 +4,7 @@ const mineflayer = require('mineflayer');
 const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
 const fs = require('fs');
-const axios = require('axios');
-const FormData = require('form-data');
-const { Viewer, WorldView, getBufferFromStream } = require('prismarine-viewer');
-const Vec3 = require('vec3').Vec3;
+const https = require('https');
 
 // Путь к папке data
 const dataDir = path.join(__dirname, 'data');
@@ -17,6 +14,80 @@ if (!fs.existsSync(dataDir)) {
 
 // Путь к базе данных
 const dbPath = path.join(dataDir, 'bot.db');
+
+// Google Gemini API ключ
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
+
+// Функция для запроса к Gemini API
+async function askGemini(prompt) {
+    if (!GEMINI_API_KEY) {
+        console.log('⚠️ GEMINI_API_KEY не указан');
+        return null;
+    }
+
+    return new Promise((resolve, reject) => {
+        // Экранируем специальные символы
+        const escapedPrompt = prompt.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\n').replace(/\r/g, '\\r').replace(/\t/g, '\\t');
+        
+        const data = JSON.stringify({
+            contents: [{
+                parts: [{
+                    text: `Ты дружелюбный помощник в игре Minecraft. Отвечай кратко и по делу на русском языке. Вопрос игрока: ${escapedPrompt}`
+                }]
+            }],
+            generationConfig: {
+                maxOutputTokens: 500,
+                temperature: 0.7
+            }
+        });
+
+        const options = {
+            hostname: 'generativelanguage.googleapis.com',
+            port: 443,
+            path: `/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`,
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Content-Length': data.length
+            }
+        };
+
+        const req = https.request(options, (res) => {
+            let responseData = '';
+            res.on('data', (chunk) => { responseData += chunk; });
+            res.on('end', () => {
+                try {
+                    const result = JSON.parse(responseData);
+                    console.log('📦 Ответ Gemini:', JSON.stringify(result, null, 2));
+                    
+                    // Проверяем на ошибку
+                    if (result.error) {
+                        console.error(`❌ Ошибка API: ${result.error.message}`);
+                        resolve(null);
+                        return;
+                    }
+                    
+                    // Gemini возвращает: candidates[0].content.parts[0].text
+                    const answer = result.candidates?.[0]?.content?.parts?.[0]?.text;
+                    console.log(`🤖 Gemini ответ: ${answer}`);
+                    resolve(answer || null);
+                } catch (e) {
+                    console.error('Ошибка парсинга ответа Gemini:', e.message);
+                    console.log('Raw ответ:', responseData);
+                    resolve(null);
+                }
+            });
+        });
+
+        req.on('error', (e) => {
+            console.error('Ошибка запроса к Gemini:', e.message);
+            resolve(null);
+        });
+
+        req.write(data);
+        req.end();
+    });
+}
 
 // Глобальные переменные
 let db = null;
@@ -310,71 +381,7 @@ async function getMainMenu(session, isOwner = false) {
     }
 }
 
-// Функция создания скриншота через prismarine-viewer
-async function takeScreenshot(mcBot, version = '1.19.2') {
-    return new Promise(async (resolve, reject) => {
-        try {
-            const viewer = new Viewer(mcBot);
-            
-            // Устанавливаем версию
-            await viewer.setVersion(version);
-            
-            // Создаем мир для рендера
-            const worldView = new WorldView(mcBot.world, 1, mcBot.entity.position);
-            viewer.listenToWorld(worldView);
-            
-            // Позиция и направление взгляда бота
-            const position = mcBot.entity.position;
-            const yaw = mcBot.entity.yaw;
-            const pitch = mcBot.entity.pitch;
-            
-            // Устанавливаем камеру от первого лица
-            viewer.setFirstPersonCamera(position, yaw, pitch);
-            
-            // Рендерим кадр
-            const stream = await viewer.renderFrame(null, null, {
-                width: 1280,
-                height: 720
-            });
-            
-            // Получаем буфер из потока
-            const chunks = [];
-            stream.on('data', (chunk) => chunks.push(chunk));
-            stream.on('end', () => {
-                const buffer = Buffer.concat(chunks);
-                resolve(buffer);
-            });
-            stream.on('error', (err) => reject(err));
-            
-        } catch (err) {
-            reject(err);
-        }
-    });
-}
-
-// Отправка скриншота в Telegram
-async function sendScreenshot(chatId, screenshotBuffer) {
-    try {
-        const formData = new FormData();
-        formData.append('chat_id', chatId);
-        formData.append('photo', screenshotBuffer, { filename: 'screenshot.png' });
-        formData.append('caption', '📸 Скриншот из Minecraft');
-        
-        const token = process.env.TELEGRAM_BOT_TOKEN;
-        const url = `https://api.telegram.org/bot${token}/sendPhoto`;
-        
-        await axios.post(url, formData, {
-            headers: formData.getHeaders()
-        });
-        
-        return true;
-    } catch (err) {
-        console.error('Ошибка отправки скриншота:', err.message);
-        return false;
-    }
-}
-
-function cleanupBot(session) {
+function cleanupBot(session, chatId) {
     if (session.jumpInterval) { clearInterval(session.jumpInterval); session.jumpInterval = null; }
     session.mcBot = null;
 }
@@ -447,7 +454,7 @@ async function connectToServer(chatId, session) {
     const spawnTimeout = setTimeout(async () => {
         if (session.mcBot && !session.mcBot.entity) {
             console.log(`[${chatId}] Тайм-аут спавна`);
-            cleanupBot(session);
+            cleanupBot(session, chatId);
             unregisterServer(host, port, chatId);
             try { await sendToChatUsers(host, port, '❌ Сервер отключен.'); } catch (e) {}
             try { mcBot.quit(); } catch {}
@@ -481,6 +488,29 @@ async function connectToServer(chatId, session) {
             recentTgMessages.delete(msgHash);
             return;
         }
+        
+        // Проверяем, обращается ли игрок к боту (бот, Bot, @bot)
+        const botMentionRegex = /^(бот|bot|@?\w*_bot)[,:]\s*(.+)/i;
+        const match = message.match(botMentionRegex);
+        
+        if (match) {
+            const question = match[2].trim();
+            console.log(`[${chatId}] 🤖 Игрок ${username} спрашивает: ${question}`);
+            
+            // Отправляем запрос к Gemini
+            const answer = await askGemini(question);
+            
+            if (answer) {
+                // Отправляем ответ в чат игры
+                mcBot.chat(answer);
+                // И в Telegram
+                await sendToChatUsers(host, port, `🤖 <b>Бот</b> → ${username}: ${answer}`, 'HTML');
+            } else {
+                mcBot.chat('Извините, я сейчас не могу ответить.');
+            }
+            return;
+        }
+        
         await sendToChatUsers(host, port, `🎮 <b>${username}</b>: ${message}`, 'HTML');
     });
 
@@ -497,7 +527,7 @@ async function connectToServer(chatId, session) {
     mcBot.on('kicked', async (reason) => {
         clearTimeout(spawnTimeout);
         console.log(`[${chatId}] Кикнут: ${reason}`);
-        cleanupBot(session);
+        cleanupBot(session, chatId);
         unregisterServer(host, port, chatId);
         await sendToChatUsers(host, port, '🚫 <b>Бот кикнут</b>.', 'HTML');
         await sendToChatUsers(host, port, '🔄 Переподключение...');
@@ -507,7 +537,7 @@ async function connectToServer(chatId, session) {
     mcBot.on('error', async (err) => {
         clearTimeout(spawnTimeout);
         console.error(`[${chatId}] Ошибка:`, err);
-        cleanupBot(session);
+        cleanupBot(session, chatId);
         unregisterServer(host, port, chatId);
         const serverOffline = err.message?.includes('ECONNREFUSED') || err.message?.includes('ENOTFOUND') || err.message?.includes('ETIMEDOUT');
         const socketClosed = err.message?.includes('Socket closed') || err.message?.includes('connection reset');
@@ -530,7 +560,7 @@ async function connectToServer(chatId, session) {
         clearTimeout(spawnTimeout);
         console.log(`[${chatId}] Разрыв: ${reason}`);
         if (session.mcBot) {
-            cleanupBot(session);
+            cleanupBot(session, chatId);
             unregisterServer(host, port, chatId);
             const serverOffline = reason?.includes('Connection closed') || reason?.includes('ECONNREFUSED');
             const socketClosed = reason?.includes('Socket closed');
@@ -565,44 +595,6 @@ bot.onText(/\/start/, async (msg) => {
     }
     const { text, keyboard } = await getMainMenu(session, isOwner);
     bot.sendMessage(msg.chat.id, text, { parse_mode: 'Markdown', reply_markup: keyboard });
-});
-
-// /скрин - сделать скриншот из Minecraft
-bot.onText(/\/скрин|\/screenshot/i, async (msg) => {
-    const chatId = msg.chat.id;
-    const session = await getSession(chatId);
-
-    // Проверяем, есть ли сессия и подключен ли бот
-    if (!session.server || !session.server.host) {
-        return bot.sendMessage(chatId, '❌ Сервер не указан. Укажите сервер через меню.');
-    }
-
-    if (!session.mcBot) {
-        return bot.sendMessage(chatId, '❌ Бот не подключён к серверу. Запустите бота сначала.');
-    }
-
-    // Проверяем, заспавнился ли бот
-    if (!session.mcBot.entity) {
-        return bot.sendMessage(chatId, '⏳ Бот ещё не заспавнился. Подождите немного...');
-    }
-
-    try {
-        bot.sendMessage(chatId, '📸 Делаю скриншот...');
-
-        // Делаем скриншот
-        const screenshotBuffer = await takeScreenshot(session.mcBot, session.version);
-
-        // Отправляем скриншот в Telegram
-        const sent = await sendScreenshot(chatId, screenshotBuffer);
-
-        if (!sent) {
-            bot.sendMessage(chatId, '❌ Не удалось отправить скриншот.');
-        }
-
-    } catch (err) {
-        console.error(`[${chatId}] Ошибка скриншота:`, err.message);
-        bot.sendMessage(chatId, `❌ Ошибка создания скриншота: ${err.message}`);
-    }
 });
 
 // Кнопки
@@ -712,7 +704,7 @@ bot.on('callback_query', async (query) => {
         if (!session.mcBot) return bot.sendMessage(chatId, '⚠️ Бот не запущен.');
         const { host, port } = session.server;
         try { session.mcBot.quit(); } catch {}
-        cleanupBot(session);
+        cleanupBot(session, chatId);
         unregisterServer(host, port, chatId);
         const { text, keyboard } = await getMainMenu(session, true);
         await bot.sendMessage(chatId, '✅ Бот остановлен.');
