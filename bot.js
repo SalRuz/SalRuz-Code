@@ -26,10 +26,13 @@ async function askGemini(prompt) {
     }
 
     return new Promise((resolve, reject) => {
+        const systemPrompt = 'Ты дружелюбный помощник в игре Minecraft. Отвечай кратко и по делу на русском языке.';
+        const userPrompt = 'Вопрос игрока: ' + prompt;
+        
         const requestBody = {
             contents: [{
                 parts: [{
-                    text: `Ты дружелюбный помощник в игре Minecraft. Отвечай кратко и по делу на русском языке. Вопрос игрока: ${prompt}`
+                    text: systemPrompt + ' ' + userPrompt
                 }]
             }],
             generationConfig: {
@@ -39,6 +42,7 @@ async function askGemini(prompt) {
         };
         
         const data = JSON.stringify(requestBody);
+        console.log('📤 Запрос:', data.substring(0, 200) + '...');
 
         const options = {
             hostname: 'generativelanguage.googleapis.com',
@@ -61,14 +65,14 @@ async function askGemini(prompt) {
                     
                     // Проверяем на ошибку
                     if (result.error) {
-                        console.error(`❌ Ошибка API: ${result.error.message}`);
+                        console.error('❌ Ошибка API:', result.error.message);
                         resolve(null);
                         return;
                     }
                     
                     // Gemini возвращает: candidates[0].content.parts[0].text
                     const answer = result.candidates?.[0]?.content?.parts?.[0]?.text;
-                    console.log(`🤖 Gemini ответ: ${answer}`);
+                    console.log('🤖 Gemini ответ:', answer);
                     resolve(answer || null);
                 } catch (e) {
                     console.error('Ошибка парсинга ответа Gemini:', e.message);
