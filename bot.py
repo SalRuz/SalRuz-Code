@@ -8,12 +8,13 @@ import sqlite3
 from pathlib import Path
 from telebot.async_telebot import AsyncTeleBot
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, InputMediaPhoto
-from PIL import Image, ImageDraw, ImageOps, ImageFont
+from PIL import Image, ImageDraw, ImageOps
 
 ADMIN_ID = 1170970828
 BOT_TOKEN = "8512207770:AAEKLtYEph7gleybGhF2lc7Gwq82Kj1yedM"
 bot = AsyncTeleBot(BOT_TOKEN)
 
+# --- ИНИЦИАЛИЗАЦИЯ БАЗЫ ДАННЫХ ---
 try:
     DATA_DIR = Path("/app/data")
     DATA_DIR.mkdir(parents=True, exist_ok=True)
@@ -28,6 +29,74 @@ if not DB_PATH.exists():
     conn.commit()
     conn.close()
 
+# --- КОНСТАНТЫ И НАСТРОЙКИ ---
+CAMERA_HEIGHT_OFFSET = 1.6
+MOVE_STEP = 1.0
+TURN_ANGLE = math.radians(15)
+TILT_STEP = 0.15
+MAX_TILT = 0.95
+MIN_TILT = -0.95
+SKY_COLOR = (135, 206, 235)
+NEAR_CLIP = 0.05
+RAY_STEP = 0.02
+RAY_MAX_DIST = 24
+PLAYER_BODY_SIZE = 0.6
+PLAYER_BODY_HEIGHT = 1.6
+PLAYER_HEAD_SIZE = 0.4
+PLAYER_HEAD_OFFSET = 0.2
+PLAYER_BODY_COLOR = (255, 255, 0)
+PLAYER_HEAD_COLOR = (255, 220, 100)
+
+RESOLUTIONS = {
+    1: {"w": 256, "h": 192, "scale": 140},
+    2: {"w": 426, "h": 320, "scale": 233},
+    3: {"w": 640, "h": 480, "scale": 350},
+    4: {"w": 800, "h": 600, "scale": 437}
+}
+
+LIGHT_DIR_RAW = (0.5, 0.8, 0.3)
+ll = math.sqrt(sum(c**2 for c in LIGHT_DIR_RAW))
+LIGHT_DIR = tuple(c/ll for c in LIGHT_DIR_RAW)
+FACE_UVS = [(0, 1), (1, 1), (1, 0), (0, 0)]
+BLOCK_FACES_DATA = [
+    ("top", [4, 5, 6, 7], (0, 0, 1)),
+    ("bottom", [0, 3, 2, 1], (0, 0, -1)),
+    ("front", [0, 1, 5, 4], (0, -1, 0)),
+    ("back", [2, 3, 7, 6], (0, 1, 0)),
+    ("right", [1, 2, 6, 5], (1, 0, 0)),
+    ("left", [0, 4, 7, 3], (-1, 0, 0)),
+]
+PLAYER_FACES = [
+    ("bottom", [0, 3, 2, 1], lambda c: c),
+    ("top", [4, 5, 6, 7], lambda c: c),
+    ("back", [0, 1, 5, 4], lambda c: c),
+    ("front", [2, 3, 7, 6], lambda c: c),
+    ("right", [1, 2, 6, 5], lambda c: c),
+    ("left", [0, 4, 7, 3], lambda c: c),
+]
+
+# --- МАТЕМАТИКА И ГЕОМЕТРИЯ (ДОЛЖНО БЫТЬ ВЫШЕ КЛАССОВ) ---
+def clamp(v, lo, hi): return max(lo, min(hi, v))
+def apply_light(c, lf): return tuple(min(255, max(0, int(ch*lf))) for ch in c)
+def normalize_vector(v):
+    l = math.sqrt(sum(c**2 for c in v))
+    return tuple(c/l for c in v) if l!=0 else (0,0,0)
+def vec_sub(a, b): return tuple(x-y for x, y in zip(a, b))
+def vec_dot(a, b): return sum(x*y for x, y in zip(a, b))
+def vec_cross(a, b): return (a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0])
+def vec_norm(v): return normalize_vector(v)
+def face_normal(verts, idx): return vec_norm(vec_cross(vec_sub(verts[idx[1]], verts[idx[0]]), vec_sub(verts[idx[2]], verts[idx[0]])))
+def calc_light(normal):
+    n = normalize_vector(normal)
+    d = sum(n[i] * LIGHT_DIR[i] for i in range(3))
+    return 0.6 + max(0.0, min(1.0, d)) * 0.4
+
+def normalize_angle(a):
+    while a < 0: a += 2*math.pi
+    while a >= 2*math.pi: a -= 2*math.pi
+    return a
+
+# --- ГЕНЕРАЦИЯ ТЕКСТУР ---
 TEX_DIR = Path("textures")
 TEX_DIR.mkdir(exist_ok=True)
 
@@ -74,7 +143,6 @@ TEX_CACHE = {
     "workbench": load_tex("workbench.png", (200, 100, 50))
 }
 
-# Генерация текстур трещин (5 стадий)
 CRACK_TEX = []
 for i in range(5):
     img = Image.new("RGBA", (128, 128), (0,0,0,0))
@@ -85,47 +153,6 @@ for i in range(5):
         x2, y2 = x1 + random.randint(-40, 40), y1 + random.randint(-40, 40)
         d.line((x1, y1, x2, y2), fill=(0,0,0, 150), width=2)
     CRACK_TEX.append(img)
-
-BLOCK_STATS = {"dirt": 3, "grass": 3, "wood": 6, "leaves": 2, "stone": 12, "planks": 4, "workbench": 6}
-
-CAMERA_HEIGHT_OFFSET = 1.6
-MOVE_STEP = 1.0
-TURN_ANGLE = math.radians(15)
-TILT_STEP = 0.15
-MAX_TILT = 0.95
-MIN_TILT = -0.95
-SKY_COLOR = (135, 206, 235)
-NEAR_CLIP = 0.05
-RAY_STEP = 0.02
-RAY_MAX_DIST = 24
-
-RESOLUTIONS = {
-    1: {"w": 256, "h": 192, "scale": 140},
-    2: {"w": 426, "h": 320, "scale": 233},
-    3: {"w": 640, "h": 480, "scale": 350},
-    4: {"w": 800, "h": 600, "scale": 437}
-}
-
-LIGHT_DIR_RAW = (0.5, 0.8, 0.3)
-ll = math.sqrt(sum(c**2 for c in LIGHT_DIR_RAW))
-LIGHT_DIR = tuple(c/ll for c in LIGHT_DIR_RAW)
-FACE_UVS = [(0, 1), (1, 1), (1, 0), (0, 0)]
-BLOCK_FACES_DATA = [
-    ("top", [4, 5, 6, 7], (0, 0, 1)),
-    ("bottom", [0, 3, 2, 1], (0, 0, -1)),
-    ("front", [0, 1, 5, 4], (0, -1, 0)),
-    ("back", [2, 3, 7, 6], (0, 1, 0)),
-    ("right", [1, 2, 6, 5], (1, 0, 0)),
-    ("left", [0, 4, 7, 3], (-1, 0, 0)),
-]
-PLAYER_FACES = [
-    ("bottom", [0, 3, 2, 1], lambda c: c),
-    ("top", [4, 5, 6, 7], lambda c: c),
-    ("back", [0, 1, 5, 4], lambda c: c),
-    ("front", [2, 3, 7, 6], lambda c: c),
-    ("right", [1, 2, 6, 5], lambda c: c),
-    ("left", [0, 4, 7, 3], lambda c: c),
-]
 
 def bake_face(tex):
     img = tex.copy().convert("RGBA")
@@ -140,7 +167,9 @@ def bake_face(tex):
     return img
 
 DEFAULT_FACE_TEX = bake_face(Image.new("RGB", (128, 128), (255, 220, 100)))
+BLOCK_STATS = {"dirt": 3, "grass": 3, "wood": 6, "leaves": 2, "stone": 12, "planks": 4, "workbench": 6}
 
+# --- КЛАСС СЕРВЕРА ---
 class Server:
     def __init__(self, s_id, s_type):
         self.id = s_id
@@ -231,6 +260,9 @@ class Server:
 
 SERVERS = {1: Server(1, "classic"), 2: Server(2, "survival")}
 user_server_map = {}
+player_skins = {}
+pending_skin_mode = {}
+last_target_block = {}
 
 def get_st(uid):
     s_id = user_server_map.get(uid)
@@ -253,22 +285,57 @@ def init_player(uid, s_id, name):
         }
     return srv.players[uid]
 
-def apply_light(c, lf): return tuple(min(255, max(0, int(ch*lf))) for ch in c)
-def normalize_vector(v):
-    l = math.sqrt(sum(c**2 for c in v))
-    return tuple(c/l for c in v) if l!=0 else (0,0,0)
-def vec_sub(a, b): return tuple(x-y for x, y in zip(a, b))
-def vec_dot(a, b): return sum(x*y for x, y in zip(a, b))
-def vec_cross(a, b): return (a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0])
-def vec_norm(v): return normalize_vector(v)
-def face_normal(verts, idx): return vec_norm(vec_cross(vec_sub(verts[idx[1]], verts[idx[0]]), vec_sub(verts[idx[2]], verts[idx[0]])))
+def make_keyboard(uid):
+    st = get_st(uid)
+    s_id = user_server_map.get(uid)
+    srv = SERVERS[s_id]
+    
+    jump_text = "🦘 Прыжок (Вкл)" if st.get("jump") else "🦘 Прыжок"
+    vr_text = f"👁 Дальность: {st.get('view_radius', 8)}"
+    res_text = f"🖥 {RESOLUTIONS[st.get('res_level', 2)]['w']}p"
+    
+    if srv.type == "classic":
+        paint_text = "📸 Жду фото..." if pending_skin_mode.get(uid) and pending_skin_mode[uid][0] == "block" else "🎨 Крась"
+    else:
+        paint_text = "🎒 Инвентарь"
+    
+    kb = InlineKeyboardMarkup(row_width=3)
+    kb.add(
+        InlineKeyboardButton("↖️", callback_data="move_fl"),
+        InlineKeyboardButton("⬆️", callback_data="move_f"),
+        InlineKeyboardButton("↗️", callback_data="move_fr")
+    )
+    kb.add(
+        InlineKeyboardButton("⬅️", callback_data="move_l"),
+        InlineKeyboardButton("🔄", callback_data="refresh"),
+        InlineKeyboardButton("➡️", callback_data="move_r")
+    )
+    kb.add(
+        InlineKeyboardButton("↙️", callback_data="move_bl"),
+        InlineKeyboardButton("⬇️", callback_data="move_b"),
+        InlineKeyboardButton("↘️", callback_data="move_br")
+    )
+    kb.add(
+        InlineKeyboardButton("🌀⬅️", callback_data="turn_left"),
+        InlineKeyboardButton("🌀➡️", callback_data="turn_right")
+    )
+    kb.add(
+        InlineKeyboardButton("👀⬆️", callback_data="look_up"),
+        InlineKeyboardButton("👀⬇️", callback_data="look_down")
+    )
+    kb.add(
+        InlineKeyboardButton("🔨 Строй", callback_data="build"),
+        InlineKeyboardButton(paint_text, callback_data="paint"),
+        InlineKeyboardButton("⛏️/🗡 Ломай", callback_data="break")
+    )
+    kb.add(
+        InlineKeyboardButton(jump_text, callback_data="toggle_jump"),
+        InlineKeyboardButton(vr_text, callback_data="cycle_view"),
+        InlineKeyboardButton(res_text, callback_data="cycle_res")
+    )
+    return kb
 
-def clamp(v, lo, hi): return max(lo, min(hi, v))
-def normalize_angle(a):
-    while a < 0: a += 2*math.pi
-    while a >= 2*math.pi: a -= 2*math.pi
-    return a
-
+# --- ОПТИМИЗИРОВАННЫЙ РЕНДЕР ---
 def world_to_view(wx, wy, wz, px, py, pz, angle, tilt):
     dx, dy = wx-px, wy-py
     s, c = math.sin(angle), math.cos(angle)
@@ -354,7 +421,6 @@ def draw_inv(d, w, h, st):
     d.rectangle((0,0, w, h), fill=(0,0,0, 200))
     slots = {}
     
-    # Сетка крафта 2x2 (индексы 20,21,22,23) и выход (24)
     cx, cy = w//2 - 60, h//2 - 120
     for i, (dx, dy) in enumerate([(0,0), (40,0), (0,40), (40,40)]):
         slots[20+i] = (cx+dx, cy+dy)
@@ -362,13 +428,11 @@ def draw_inv(d, w, h, st):
     d.text((cx, cy-15), "Crafting", fill=(255,255,255))
     d.line((cx+85, cy+30, cx+95, cy+30), fill=(255,255,255), width=2)
     
-    # Основной инвентарь 3x5 (индексы 5-19)
     mx, my = w//2 - 100, h//2
     for r in range(3):
         for c in range(5):
             slots[5 + r*5 + c] = (mx+c*40, my+r*40)
             
-    # Хотбар (индексы 0-4)
     hx, hy = w//2 - 100, h - 50
     for c in range(5): slots[c] = (hx+c*40, hy)
 
@@ -490,7 +554,7 @@ def ray_pick(px, py, pz, pa, pt, s_id, ignore_uid=None):
         wx, wy, wz = px+dx*t, py+dy*t, pz+dz*t
         for pid, ps in srv.players.items():
             if pid == ignore_uid: continue
-            if abs(wx-ps["x"])<0.3 and abs(wy-ps["y"])<0.3 and ps["z"]<=wz<=ps["z മാസ"]+2.0:
+            if abs(wx-ps["x"])<0.3 and abs(wy-ps["y"])<0.3 and ps["z"]<=wz<=ps["z"]+2.0:
                 return ("player", pid, t)
         cb = (int(math.floor(wx)), int(math.floor(wy)), int(math.floor(wz)))
         if cb in srv.blocks: return ("block", cb, None)
@@ -514,7 +578,7 @@ async def send_view(cid, uid):
     if st["inv_open"]:
         kb = InlineKeyboardMarkup(row_width=3)
         kb.add(InlineKeyboardButton("Вверх ⬆️", callback_data="inv_u"))
-        kb.add(InlineKeyboardButton("Влево ⬅️", callback_data="inv_l"), InlineKeyboardButton("Взять/Классть ✋", callback_data="inv_click"), InlineKeyboardButton("Вправо ➡️", callback_data="inv_r"))
+        kb.add(InlineKeyboardButton("Влево ⬅️", callback_data="inv_l"), InlineKeyboardButton("Взять/Класть ✋", callback_data="inv_click"), InlineKeyboardButton("Вправо ➡️", callback_data="inv_r"))
         kb.add(InlineKeyboardButton("Вниз ⬇️", callback_data="inv_d"))
         kb.add(InlineKeyboardButton("❌ Закрыть", callback_data="inv_close"))
 
@@ -566,11 +630,18 @@ async def h_reset(m):
         SERVERS[s_id].generate()
         for p in SERVERS[s_id].players.values():
             p["x"], p["y"] = SERVERS[s_id].size/2, SERVERS[s_id].size/2
-            p["z"] = get_ground_z(p["x"], p["y"])
+            p["z"] = get_ground_z(p["x"], p["y"], SERVERS[s_id])
             p["hp"] = 10
             p["inv"].clear()
         await bot.send_message(m.chat.id, f"Сервер {s_id} сброшен!")
         for uid in SERVERS[s_id].players: await send_view(uid, uid)
+
+def get_ground_z(x, y, srv):
+    tz = 0
+    for bz in range(20, -65, -1):
+        if (int(x), int(y), bz) in srv.blocks:
+            tz = bz + 1; break
+    return tz
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("join_"))
 async def cb_join(c):
@@ -635,9 +706,7 @@ async def h_cb(c):
         a = st["angle"]
         nx = clamp(st["x"] + (math.sin(a)*f + math.cos(a)*s)*MOVE_STEP, 0.5, srv.size-0.5)
         ny = clamp(st["y"] + (math.cos(a)*f - math.sin(a)*s)*MOVE_STEP, 0.5, srv.size-0.5)
-        tz = 0
-        for bz in range(20, -65, -1):
-            if (int(nx), int(ny), bz) in srv.blocks: tz = bz+1; break
+        tz = get_ground_z(nx, ny, srv)
             
         diff = tz - st["z"]
         if diff <= 0 or (diff == 1 and st["jump"]):
@@ -696,7 +765,6 @@ async def h_cb(c):
                     if srv.block_damage[pb[1]] >= mhp:
                         del srv.blocks[pb[1]]
                         del srv.block_damage[pb[1]]
-                        # Выдача в инвентарь
                         for i in range(20):
                             if i in st["inv"] and st["inv"][i]["type"] == btype and st["inv"][i]["count"]<64:
                                 st["inv"][i]["count"] += 1
@@ -717,7 +785,7 @@ async def h_cb(c):
                 tgt["flash_time"] = time.time()
                 if tgt["hp"] <= 0:
                     await broadcast_chat(s_id, f"💀 {tgt['name']} был убит игроком {st['name']}!")
-                    tgt["hp"], tgt["x"], tgt["y"], tgt["z"] = 10, srv.size/2, srv.size/2, get_ground_z(srv.size/2, srv.size/2)
+                    tgt["hp"], tgt["x"], tgt["y"], tgt["z"] = 10, srv.size/2, srv.size/2, get_ground_z(srv.size/2, srv.size/2, srv)
                 ev = True
                 await send_view(c.message.chat.id, pb[1])
 
