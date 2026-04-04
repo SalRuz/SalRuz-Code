@@ -5,6 +5,7 @@ import random
 import asyncio
 import os
 import sqlite3
+import pickle
 from pathlib import Path
 from telebot.async_telebot import AsyncTeleBot
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, InputMediaPhoto
@@ -14,7 +15,7 @@ ADMIN_ID = 1170970828
 BOT_TOKEN = "8512207770:AAEKLtYEph7gleybGhF2lc7Gwq82Kj1yedM"
 bot = AsyncTeleBot(BOT_TOKEN)
 
-# --- ИНИЦИАЛИЗАЦИЯ БАЗЫ ДАННЫХ ---
+# --- ИНИЦИАЛИЗАЦИЯ ДАННЫХ И БД ---
 try:
     DATA_DIR = Path("/app/data")
     DATA_DIR.mkdir(parents=True, exist_ok=True)
@@ -28,6 +29,9 @@ if not DB_PATH.exists():
     conn.execute('CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, username TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)')
     conn.commit()
     conn.close()
+
+TEX_DIR = Path("textures")
+TEX_DIR.mkdir(exist_ok=True)
 
 # --- КОНСТАНТЫ И НАСТРОЙКИ ---
 CAMERA_HEIGHT_OFFSET = 1.6
@@ -75,7 +79,7 @@ PLAYER_FACES = [
     ("left", [0, 4, 7, 3], lambda c: c),
 ]
 
-# --- МАТЕМАТИКА И ГЕОМЕТРИЯ (ДОЛЖНО БЫТЬ ВЫШЕ КЛАССОВ) ---
+# --- МАТЕМАТИКА ---
 def clamp(v, lo, hi): return max(lo, min(hi, v))
 def apply_light(c, lf): return tuple(min(255, max(0, int(ch*lf))) for ch in c)
 def normalize_vector(v):
@@ -90,16 +94,12 @@ def calc_light(normal):
     n = normalize_vector(normal)
     d = sum(n[i] * LIGHT_DIR[i] for i in range(3))
     return 0.6 + max(0.0, min(1.0, d)) * 0.4
-
 def normalize_angle(a):
     while a < 0: a += 2*math.pi
     while a >= 2*math.pi: a -= 2*math.pi
     return a
 
-# --- ГЕНЕРАЦИЯ ТЕКСТУР ---
-TEX_DIR = Path("textures")
-TEX_DIR.mkdir(exist_ok=True)
-
+# --- ТЕКСТУРЫ ---
 def create_fallback_tex(name, color, draw_func=None):
     p = TEX_DIR / name
     if not p.exists():
@@ -108,24 +108,24 @@ def create_fallback_tex(name, color, draw_func=None):
         img.save(p)
 
 def draw_grass_top(d):
-    for _ in range(200):
-        x, y = random.randint(0, 127), random.randint(0, 127)
-        d.point((x, y), fill=(80, 200, 80))
+    for _ in range(300): d.point((random.randint(0,127), random.randint(0,127)), fill=(80, 200, 80))
 
+# Исправлено: трава рисуется внизу картинки, чтобы не быть перевернутой
 def draw_grass_side(d):
-    d.rectangle((0, 0, 128, 32), fill=(100, 220, 100))
-    for i in range(10):
+    d.rectangle((0, 0, 128, 128), fill=(139, 94, 52)) # Земля
+    d.rectangle((0, 96, 128, 128), fill=(100, 220, 100)) # Трава
+    for i in range(15):
         x = random.randint(0, 120)
-        d.polygon([(x, 32), (x+4, 48), (x+8, 32)], fill=(100, 220, 100))
+        d.polygon([(x, 96), (x+4, 80), (x+8, 96)], fill=(100, 220, 100))
 
 def draw_dirt(d):
-    for _ in range(300):
-        x, y = random.randint(0, 127), random.randint(0, 127)
-        d.point((x, y), fill=(100, 70, 40))
+    for _ in range(400): d.point((random.randint(0,127), random.randint(0,127)), fill=(100, 70, 40))
 
 create_fallback_tex("trava.png", (100, 220, 100), draw_grass_top)
 create_fallback_tex("trava_bok.png", (139, 94, 52), draw_grass_side)
 create_fallback_tex("zemlya.png", (139, 94, 52), draw_dirt)
+create_fallback_tex("drevesina.png", (110, 70, 30))
+create_fallback_tex("drevesina_vn.png", (150, 100, 50))
 
 def load_tex(name, fallback_color=(255,0,255)):
     p = TEX_DIR / name
@@ -137,37 +137,34 @@ TEX_CACHE = {
     "trava_side": load_tex("trava_bok.png", (120, 180, 80)),
     "zemlya": load_tex("zemlya.png", (139, 94, 52)),
     "stone": load_tex("stone.png", (120, 120, 120)),
-    "wood": load_tex("wood.png", (110, 70, 30)),
+    "wood_side": load_tex("drevesina.png", (110, 70, 30)),
+    "wood_top": load_tex("drevesina_vn.png", (150, 100, 50)),
     "leaves": load_tex("leaves.png", (50, 150, 50)),
     "planks": load_tex("planks.png", (180, 140, 80)),
-    "workbench": load_tex("workbench.png", (200, 100, 50))
+    "workbench": load_tex("workbench.png", (200, 100, 50)),
+    "bedrock": load_tex("bedrock.png", (40, 40, 40))
 }
 
 CRACK_TEX = []
 for i in range(5):
     img = Image.new("RGBA", (128, 128), (0,0,0,0))
     d = ImageDraw.Draw(img)
-    lines = (i + 1) * 3
-    for _ in range(lines):
-        x1, y1 = random.randint(32, 96), random.randint(32, 96)
-        x2, y2 = x1 + random.randint(-40, 40), y1 + random.randint(-40, 40)
-        d.line((x1, y1, x2, y2), fill=(0,0,0, 150), width=2)
+    for _ in range((i + 1) * 4):
+        x1, y1 = random.randint(20, 108), random.randint(20, 108)
+        d.line((x1, y1, x1+random.randint(-40,40), y1+random.randint(-40,40)), fill=(0,0,0, 180), width=3)
     CRACK_TEX.append(img)
 
 def bake_face(tex):
     img = tex.copy().convert("RGBA")
     d = ImageDraw.Draw(img)
-    w, h = img.size
-    sx, sy = w/128.0, h/128.0
-    d.rectangle((24*sx, 40*sy, 48*sx, 64*sy), fill=(255,255,255,255))
-    d.rectangle((32*sx, 48*sy, 40*sx, 56*sy), fill=(0,0,0,255))
-    d.rectangle((80*sx, 40*sy, 104*sx, 64*sy), fill=(255,255,255,255))
-    d.rectangle((80*sx, 48*sy, 88*sx, 56*sy), fill=(0,0,0,255))
+    w, h = img.size; sx, sy = w/128.0, h/128.0
+    d.rectangle((24*sx, 40*sy, 48*sx, 64*sy), fill=(255,255,255,255)); d.rectangle((32*sx, 48*sy, 40*sx, 56*sy), fill=(0,0,0,255))
+    d.rectangle((80*sx, 40*sy, 104*sx, 64*sy), fill=(255,255,255,255)); d.rectangle((80*sx, 48*sy, 88*sx, 56*sy), fill=(0,0,0,255))
     d.rectangle((48*sx, 88*sy, 80*sx, 96*sy), fill=(0,0,0,255))
     return img
 
 DEFAULT_FACE_TEX = bake_face(Image.new("RGB", (128, 128), (255, 220, 100)))
-BLOCK_STATS = {"dirt": 3, "grass": 3, "wood": 6, "leaves": 2, "stone": 12, "planks": 4, "workbench": 6}
+BLOCK_STATS = {"dirt": 3, "grass": 3, "wood": 6, "leaves": 2, "stone": 12, "planks": 4, "workbench": 6, "bedrock": 9999}
 
 # --- КЛАСС СЕРВЕРА ---
 class Server:
@@ -193,21 +190,23 @@ class Server:
                 for x in range(self.size):
                     self.blocks[(x, y, 0)] = {"color": colors[(x + y + random.randint(0, 1)) % 3]}
         else:
+            # Генерация до бедрока (-64)
             for y in range(self.size):
                 for x in range(self.size):
                     h = int(math.sin(x/5.0)*2 + math.cos(y/4.0)*2)
                     self.blocks[(x, y, h)] = {"type": "grass"}
                     self.blocks[(x, y, h-1)] = {"type": "dirt"}
                     self.blocks[(x, y, h-2)] = {"type": "dirt"}
-                    for z in range(h-3, max(-65, h-10)): 
+                    for z in range(h-3, -64, -1): 
                         self.blocks[(x, y, z)] = {"type": "stone"}
+                    self.blocks[(x, y, -64)] = {"type": "bedrock"}
                     
                     if random.random() < 0.02 and 2 < x < self.size-2 and 2 < y < self.size-2:
-                        for tz in range(1, 4): self.blocks[(x, y, h+tz)] = {"type": "wood"}
+                        for tz in range(1, 5): self.blocks[(x, y, h+tz)] = {"type": "wood"}
                         for dx in [-1,0,1]:
                             for dy in [-1,0,1]:
-                                for dz in [3,4]:
-                                    if dx==0 and dy==0 and dz==3: continue
+                                for dz in [4,5]:
+                                    if dx==0 and dy==0 and dz==4: continue
                                     if (x+dx, y+dy, h+dz) not in self.blocks:
                                         self.blocks[(x+dx, y+dy, h+dz)] = {"type": "leaves"}
 
@@ -237,14 +236,14 @@ class Server:
                     btype = bdata["type"]
                     tex = None
                     if btype == "grass": tex = TEX_CACHE["trava_top"] if fn=="top" else TEX_CACHE["trava_side"] if fn not in ["top","bottom"] else TEX_CACHE["zemlya"]
-                    elif btype in ["dirt", "stone", "wood", "leaves", "planks", "workbench"]:
+                    elif btype == "wood": tex = TEX_CACHE["wood_top"] if fn in ["top","bottom"] else TEX_CACHE["wood_side"]
+                    elif btype in ["dirt", "stone", "leaves", "planks", "workbench", "bedrock"]:
                         tex = TEX_CACHE.get(btype, TEX_CACHE["zemlya"])
                     face_info["tex"] = tex
                 
                 dmg = self.block_damage.get((gx,gy,gz), 0)
-                if dmg > 0 and self.type == "survival":
-                    btype = bdata["type"]
-                    mhp = BLOCK_STATS.get(btype, 3)
+                if dmg > 0 and self.type == "survival" and bdata["type"] != "bedrock":
+                    mhp = BLOCK_STATS.get(bdata["type"], 3)
                     stage = min(4, int((dmg / mhp) * 5))
                     if face_info.get("tex"):
                         combined = face_info["tex"].copy()
@@ -258,27 +257,78 @@ class Server:
         self.chat.append(txt)
         if len(self.chat) > 4: self.chat.pop(0)
 
+# --- ГЛОБАЛЬНЫЕ ДАННЫЕ И СОХРАНЕНИЕ ---
 SERVERS = {1: Server(1, "classic"), 2: Server(2, "survival")}
 user_server_map = {}
 player_skins = {}
 pending_skin_mode = {}
 last_target_block = {}
 
+def save_all_data():
+    try:
+        # Сохранение Классики
+        s1_data = {"players": SERVERS[1].players, "blocks": {}}
+        for pos, bd in SERVERS[1].blocks.items():
+            s1_data["blocks"][pos] = {"color": bd.get("color")}
+            if bd.get("tex"):
+                bio = io.BytesIO()
+                bd["tex"].save(bio, "PNG")
+                s1_data["blocks"][pos]["tex_bytes"] = bio.getvalue()
+        with open(DATA_DIR / "srv1.pkl", "wb") as f: pickle.dump(s1_data, f)
+        
+        # Сохранение Выживания
+        s2_data = {"players": SERVERS[2].players, "blocks": SERVERS[2].blocks, "damage": SERVERS[2].block_damage}
+        with open(DATA_DIR / "srv2.pkl", "wb") as f: pickle.dump(s2_data, f)
+    except Exception as e:
+        print("Ошибка сохранения:", e)
+
+def load_all_data():
+    try:
+        if (DATA_DIR / "srv1.pkl").exists():
+            with open(DATA_DIR / "srv1.pkl", "rb") as f:
+                data = pickle.load(f)
+                SERVERS[1].players = data.get("players", {})
+                for p_uid in list(SERVERS[1].players.keys()): user_server_map[p_uid] = 1
+                for pos, bd in data.get("blocks", {}).items():
+                    SERVERS[1].blocks[pos] = {"color": bd["color"]}
+                    if "tex_bytes" in bd:
+                        SERVERS[1].blocks[pos]["tex"] = Image.open(io.BytesIO(bd["tex_bytes"])).convert("RGBA")
+            SERVERS[1].rebuild_mesh()
+            
+        if (DATA_DIR / "srv2.pkl").exists():
+            with open(DATA_DIR / "srv2.pkl", "rb") as f:
+                data = pickle.load(f)
+                SERVERS[2].players = data.get("players", {})
+                for p_uid in list(SERVERS[2].players.keys()): user_server_map[p_uid] = 2
+                SERVERS[2].blocks = data.get("blocks", {})
+                SERVERS[2].block_damage = data.get("damage", {})
+            SERVERS[2].rebuild_mesh()
+    except Exception as e:
+        print("Ошибка загрузки, генерируем заново:", e)
+
+async def auto_saver():
+    while True:
+        await asyncio.sleep(30)
+        save_all_data()
+
 def get_st(uid):
     s_id = user_server_map.get(uid)
-    if not s_id: return None
-    return SERVERS[s_id].players.get(uid)
+    return SERVERS[s_id].players.get(uid) if s_id else None
+
+def get_ground_z(x, y, srv):
+    tz = -64
+    for bz in range(20, -65, -1):
+        if (int(x), int(y), bz) in srv.blocks:
+            tz = bz + 1; break
+    return tz
 
 def init_player(uid, s_id, name):
     srv = SERVERS[s_id]
     user_server_map[uid] = s_id
     if uid not in srv.players:
-        z = 1.0
-        for bz in range(20, -65, -1):
-            if (int(srv.size/2), int(srv.size/2), bz) in srv.blocks:
-                z = bz + 1; break
         srv.players[uid] = {
-            "x": srv.size/2, "y": srv.size/2, "z": z, "angle": 0.0, "tilt": 0.0, "jump": False,
+            "x": srv.size/2, "y": srv.size/2, "z": get_ground_z(srv.size/2, srv.size/2, srv), 
+            "angle": 0.0, "tilt": 0.0, "jump": False,
             "name": name, "msg_id": None, "view_radius": 8, "res_level": 2, "hp": 10, "flash_time": 0,
             "inv": {0: {"type": "wood", "count": 10}}, "inv_open": False, "inv_cursor": 0, "drag_item": None,
             "cache_hash": None, "cache_img": None
@@ -296,8 +346,7 @@ def make_keyboard(uid):
     
     if srv.type == "classic":
         paint_text = "📸 Жду фото..." if pending_skin_mode.get(uid) and pending_skin_mode[uid][0] == "block" else "🎨 Крась"
-    else:
-        paint_text = "🎒 Инвентарь"
+    else: paint_text = "🎒 Инвентарь"
     
     kb = InlineKeyboardMarkup(row_width=3)
     kb.add(
@@ -336,19 +385,6 @@ def make_keyboard(uid):
     return kb
 
 # --- ОПТИМИЗИРОВАННЫЙ РЕНДЕР ---
-def world_to_view(wx, wy, wz, px, py, pz, angle, tilt):
-    dx, dy = wx-px, wy-py
-    s, c = math.sin(angle), math.cos(angle)
-    vx, vy_b, vz_b = dx*c - dy*s, dx*s + dy*c, wz-pz
-    st, ct = math.sin(tilt), math.cos(tilt)
-    return vx, vy_b*ct - vz_b*st, vy_b*st + vz_b*ct
-
-def build_box(cx, cy, cz, s, h, a):
-    hs = s/2.0
-    loc = [(-hs,-hs,0), (hs,-hs,0), (hs,hs,0), (-hs,hs,0), (-hs,-hs,h), (hs,-hs,h), (hs,hs,h), (-hs,hs,h)]
-    si, co = math.sin(a), math.cos(a)
-    return [(cx+lx*co-ly*si, cy+lx*si+ly*co, cz+lz) for lx,ly,lz in loc]
-
 def clip_near(vp):
     r = []; p = vp[-1]; p_in = p[1] >= NEAR_CLIP
     for c in vp:
@@ -420,18 +456,15 @@ def draw_poly_tex(pix, zb, v2d, tex, lf):
 def draw_inv(d, w, h, st):
     d.rectangle((0,0, w, h), fill=(0,0,0, 200))
     slots = {}
-    
     cx, cy = w//2 - 60, h//2 - 120
-    for i, (dx, dy) in enumerate([(0,0), (40,0), (0,40), (40,40)]):
-        slots[20+i] = (cx+dx, cy+dy)
+    for i, (dx, dy) in enumerate([(0,0), (40,0), (0,40), (40,40)]): slots[20+i] = (cx+dx, cy+dy)
     slots[24] = (cx+100, cy+20)
     d.text((cx, cy-15), "Crafting", fill=(255,255,255))
     d.line((cx+85, cy+30, cx+95, cy+30), fill=(255,255,255), width=2)
     
     mx, my = w//2 - 100, h//2
     for r in range(3):
-        for c in range(5):
-            slots[5 + r*5 + c] = (mx+c*40, my+r*40)
+        for c in range(5): slots[5 + r*5 + c] = (mx+c*40, my+r*40)
             
     hx, hy = w//2 - 100, h - 50
     for c in range(5): slots[c] = (hx+c*40, hy)
@@ -618,6 +651,8 @@ async def h_start(m):
     old_s = user_server_map.get(uid)
     if old_s and old_s in SERVERS:
         if uid in SERVERS[old_s].players: del SERVERS[old_s].players[uid]
+        user_server_map.pop(uid, None)
+        save_all_data() # Сохраняем при выходе
         
     await bot.send_message(m.chat.id, "Выбери сервер:", reply_markup=server_menu())
 
@@ -636,13 +671,6 @@ async def h_reset(m):
         await bot.send_message(m.chat.id, f"Сервер {s_id} сброшен!")
         for uid in SERVERS[s_id].players: await send_view(uid, uid)
 
-def get_ground_z(x, y, srv):
-    tz = 0
-    for bz in range(20, -65, -1):
-        if (int(x), int(y), bz) in srv.blocks:
-            tz = bz + 1; break
-    return tz
-
 @bot.callback_query_handler(func=lambda c: c.data.startswith("join_"))
 async def cb_join(c):
     s_id = int(c.data.split("_")[1])
@@ -653,6 +681,70 @@ async def cb_join(c):
     st = init_player(uid, s_id, c.from_user.first_name)
     await broadcast_chat(s_id, f"🎉 {st['name']} присоединился!")
     await send_view(c.message.chat.id, uid)
+
+@bot.message_handler(commands=["block"])
+async def h_block(m):
+    uid = m.from_user.id
+    try: await bot.delete_message(m.chat.id, m.message_id)
+    except: pass
+    
+    s_id = user_server_map.get(uid)
+    if not s_id or s_id != 1: return # Покраска только на классике!
+    
+    pb_data = last_target_block.get(uid)
+    if not pb_data or pb_data[0] != "block": return
+        
+    t = pb_data[1]
+    pending_skin_mode[uid] = ("block", t)
+    st = get_st(uid)
+    st["cache_hash"] = None
+    if st.get("msg_id"):
+        try: await bot.edit_message_reply_markup(m.chat.id, st["msg_id"], reply_markup=make_keyboard(uid))
+        except: pass
+
+@bot.message_handler(content_types=["photo"])
+async def h_photo(m):
+    uid = m.from_user.id
+    st = get_st(uid)
+    if not st: return
+    s_id = user_server_map.get(uid)
+    un = st["name"]
+    try: await bot.delete_message(m.chat.id, m.message_id)
+    except: pass
+    
+    try:
+        fi = await bot.get_file(m.photo[-1].file_id)
+        down_file = await bot.download_file(fi.file_path)
+        im = Image.open(io.BytesIO(down_file)).convert("RGB")
+        tex = ImageOps.fit(im, (128, 128), Image.Resampling.LANCZOS)
+        
+        mode = pending_skin_mode.get(uid)
+        tasks = []
+        
+        if mode and mode[0] == "block" and s_id == 1:
+            SERVERS[1].blocks[mode[1]]["tex"] = tex
+            del pending_skin_mode[uid]
+            SERVERS[1].rebuild_mesh()
+            
+            bx, by = mode[1][0], mode[1][1]
+            for p_uid, ps in SERVERS[1].players.items():
+                vr = ps.get("view_radius", 8)
+                if p_uid == uid or (ps["x"] - bx)**2 + (ps["y"] - by)**2 <= vr**2:
+                    tasks.append(send_view(p_uid, p_uid))
+            
+        elif m.caption and "/skin" in m.caption.lower():
+            baked_tex = bake_face(tex)
+            player_skins[uid] = baked_tex
+            await broadcast_chat(s_id, f"👕 {un} установил новый скин!")
+            
+            for p_uid, ps in SERVERS[s_id].players.items():
+                vr = ps.get("view_radius", 8)
+                if p_uid == uid or (ps["x"] - st["x"])**2 + (ps["y"] - st["y"])**2 <= vr**2:
+                    tasks.append(send_view(p_uid, p_uid))
+
+        if tasks: await asyncio.gather(*tasks)
+            
+    except Exception as e: pass
 
 @bot.callback_query_handler(func=lambda c: True)
 async def h_cb(c):
@@ -665,10 +757,18 @@ async def h_cb(c):
     ev = False
     
     if st["inv_open"]:
-        if d == "inv_u": st["inv_cursor"] = max(0, st["inv_cursor"]-5)
-        elif d == "inv_d": st["inv_cursor"] = min(24, st["inv_cursor"]+5)
-        elif d == "inv_l": st["inv_cursor"] = max(0, st["inv_cursor"]-1)
-        elif d == "inv_r": st["inv_cursor"] = min(24, st["inv_cursor"]+1)
+        c = st["inv_cursor"]
+        if d == "inv_u":
+            if 0<=c<=4: st["inv_cursor"]+=15
+            elif 5<=c<=19: st["inv_cursor"] = 20 if c-5 < 5 else c-5
+        elif d == "inv_d":
+            if 20<=c<=24: st["inv_cursor"]=5
+            elif 5<=c<=14: st["inv_cursor"]+=5
+            elif 15<=c<=19: st["inv_cursor"]-=15
+        elif d == "inv_l":
+            if c not in [0,5,10,15,20]: st["inv_cursor"]-=1
+        elif d == "inv_r":
+            if c not in [4,9,14,19,23,24]: st["inv_cursor"]+=1
         elif d == "inv_click":
             c_id = st["inv_cursor"]
             if c_id == 24 and st.get("drag_item") is None and 24 in st["inv"]:
@@ -717,7 +817,7 @@ async def h_cb(c):
                 st["flash_time"] = time.time()
                 if st["hp"]<=0:
                     await broadcast_chat(s_id, f"💀 {st['name']} разбился!")
-                    st["x"], st["y"], st["z"], st["hp"] = srv.size/2, srv.size/2, 1.0, 10
+                    st["x"], st["y"], st["z"], st["hp"] = srv.size/2, srv.size/2, get_ground_z(srv.size/2, srv.size/2, srv), 10
         st["jump"] = False
         
     elif d == "turn_left": st["angle"] = normalize_angle(st["angle"] - TURN_ANGLE); ev = True
@@ -731,8 +831,9 @@ async def h_cb(c):
         if srv.type == "classic":
             pb = ray_pick(st["x"], st["y"], st["z"]+1.6, st["angle"], st["tilt"], s_id, uid)
             if pb and pb[0]=="block": pending_skin_mode[uid] = ("block", pb[1])
-        else:
-            st["inv_open"] = True
+            try: await bot.edit_message_reply_markup(c.message.chat.id, c.message.message_id, reply_markup=make_keyboard(uid))
+            except: pass
+        else: st["inv_open"] = True
 
     elif d == "build":
         pb = ray_pick(st["x"], st["y"], st["z"]+1.6, st["angle"], st["tilt"], s_id, uid)
@@ -759,35 +860,35 @@ async def h_cb(c):
             if pb[0] == "block":
                 bx, by, bz = pb[1]
                 if srv.type == "survival":
-                    btype = srv.blocks[pb[1]]["type"]
-                    mhp = BLOCK_STATS.get(btype, 3)
-                    srv.block_damage[pb[1]] = srv.block_damage.get(pb[1], 0) + 1
-                    if srv.block_damage[pb[1]] >= mhp:
-                        del srv.blocks[pb[1]]
-                        del srv.block_damage[pb[1]]
-                        for i in range(20):
-                            if i in st["inv"] and st["inv"][i]["type"] == btype and st["inv"][i]["count"]<64:
-                                st["inv"][i]["count"] += 1
-                                break
-                        else:
+                    if srv.blocks[pb[1]]["type"] != "bedrock":
+                        btype = srv.blocks[pb[1]]["type"]
+                        mhp = BLOCK_STATS.get(btype, 3)
+                        srv.block_damage[pb[1]] = srv.block_damage.get(pb[1], 0) + 1
+                        if srv.block_damage[pb[1]] >= mhp:
+                            del srv.blocks[pb[1]]
+                            del srv.block_damage[pb[1]]
                             for i in range(20):
-                                if i not in st["inv"]:
-                                    st["inv"][i] = {"type": btype, "count": 1}
-                                    break
-                    srv.rebuild_mesh()
+                                if i in st["inv"] and st["inv"][i]["type"] == btype and st["inv"][i]["count"]<64:
+                                    st["inv"][i]["count"] += 1; break
+                            else:
+                                for i in range(20):
+                                    if i not in st["inv"]:
+                                        st["inv"][i] = {"type": btype, "count": 1}; break
+                        srv.rebuild_mesh()
                 else:
                     del srv.blocks[pb[1]]
                     srv.rebuild_mesh()
                 ev = True
             elif pb[0] == "player":
                 tgt = srv.players[pb[1]]
-                tgt["hp"] -= 1
-                tgt["flash_time"] = time.time()
-                if tgt["hp"] <= 0:
-                    await broadcast_chat(s_id, f"💀 {tgt['name']} был убит игроком {st['name']}!")
-                    tgt["hp"], tgt["x"], tgt["y"], tgt["z"] = 10, srv.size/2, srv.size/2, get_ground_z(srv.size/2, srv.size/2, srv)
-                ev = True
-                await send_view(c.message.chat.id, pb[1])
+                if pb[2] <= 4.0:
+                    tgt["hp"] -= 1
+                    tgt["flash_time"] = time.time()
+                    if tgt["hp"] <= 0:
+                        await broadcast_chat(s_id, f"💀 {tgt['name']} был убит игроком {st['name']}!")
+                        tgt["hp"], tgt["x"], tgt["y"], tgt["z"] = 10, srv.size/2, srv.size/2, get_ground_z(srv.size/2, srv.size/2, srv)
+                    ev = True
+                    await send_view(c.message.chat.id, pb[1])
 
     try: await bot.answer_callback_query(c.id)
     except: pass
@@ -799,6 +900,12 @@ async def h_cb(c):
                 tasks.append(send_view(p_uid, p_uid))
     await asyncio.gather(*tasks)
 
-if __name__ == "__main__":
+async def main():
+    print("Bot is starting! Loading data...")
+    load_all_data()
+    asyncio.create_task(auto_saver())
     print("Bot running!")
-    asyncio.run(bot.polling(non_stop=True))
+    await bot.polling(non_stop=True)
+
+if __name__ == "__main__":
+    asyncio.run(main())
