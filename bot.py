@@ -15,6 +15,9 @@ ADMIN_ID = 1170970828
 BOT_TOKEN = "8512207770:AAEKLtYEph7gleybGhF2lc7Gwq82Kj1yedM"
 bot = AsyncTeleBot(BOT_TOKEN)
 
+# Лимит одновременных рендеров (спасает процессор от зависания)
+RENDER_SEMAPHORE = asyncio.Semaphore(2)
+
 # --- ИНИЦИАЛИЗАЦИЯ ДАННЫХ И БД ---
 try:
     DATA_DIR = Path("/app/data")
@@ -110,13 +113,12 @@ def create_fallback_tex(name, color, draw_func=None):
 def draw_grass_top(d):
     for _ in range(300): d.point((random.randint(0,127), random.randint(0,127)), fill=(80, 200, 80))
 
-# Исправлено: трава рисуется внизу картинки, чтобы не быть перевернутой
 def draw_grass_side(d):
-    d.rectangle((0, 0, 128, 128), fill=(139, 94, 52)) # Земля
-    d.rectangle((0, 96, 128, 128), fill=(100, 220, 100)) # Трава
+    d.rectangle((0, 0, 128, 128), fill=(139, 94, 52))
+    d.rectangle((0, 0, 128, 32), fill=(100, 220, 100)) # Трава сверху (Y от 0 до 32)
     for i in range(15):
         x = random.randint(0, 120)
-        d.polygon([(x, 96), (x+4, 80), (x+8, 96)], fill=(100, 220, 100))
+        d.polygon([(x, 32), (x+4, 48), (x+8, 32)], fill=(100, 220, 100))
 
 def draw_dirt(d):
     for _ in range(400): d.point((random.randint(0,127), random.randint(0,127)), fill=(100, 70, 40))
@@ -190,7 +192,6 @@ class Server:
                 for x in range(self.size):
                     self.blocks[(x, y, 0)] = {"color": colors[(x + y + random.randint(0, 1)) % 3]}
         else:
-            # Генерация до бедрока (-64)
             for y in range(self.size):
                 for x in range(self.size):
                     h = int(math.sin(x/5.0)*2 + math.cos(y/4.0)*2)
@@ -266,7 +267,6 @@ last_target_block = {}
 
 def save_all_data():
     try:
-        # Сохранение Классики
         s1_data = {"players": SERVERS[1].players, "blocks": {}}
         for pos, bd in SERVERS[1].blocks.items():
             s1_data["blocks"][pos] = {"color": bd.get("color")}
@@ -276,7 +276,6 @@ def save_all_data():
                 s1_data["blocks"][pos]["tex_bytes"] = bio.getvalue()
         with open(DATA_DIR / "srv1.pkl", "wb") as f: pickle.dump(s1_data, f)
         
-        # Сохранение Выживания
         s2_data = {"players": SERVERS[2].players, "blocks": SERVERS[2].blocks, "damage": SERVERS[2].block_damage}
         with open(DATA_DIR / "srv2.pkl", "wb") as f: pickle.dump(s2_data, f)
     except Exception as e:
@@ -331,7 +330,7 @@ def init_player(uid, s_id, name):
             "angle": 0.0, "tilt": 0.0, "jump": False,
             "name": name, "msg_id": None, "view_radius": 8, "res_level": 2, "hp": 10, "flash_time": 0,
             "inv": {0: {"type": "wood", "count": 10}}, "inv_open": False, "inv_cursor": 0, "drag_item": None,
-            "cache_hash": None, "cache_img": None
+            "cache_hash": None, "cache_img": None, "is_busy": False
         }
     return srv.players[uid]
 
@@ -607,27 +606,38 @@ async def send_view(cid, uid):
     if not s_id: return
     st = get_st(uid)
     
-    kb = make_keyboard(uid)
-    if st["inv_open"]:
-        kb = InlineKeyboardMarkup(row_width=3)
-        kb.add(InlineKeyboardButton("Вверх ⬆️", callback_data="inv_u"))
-        kb.add(InlineKeyboardButton("Влево ⬅️", callback_data="inv_l"), InlineKeyboardButton("Взять/Класть ✋", callback_data="inv_click"), InlineKeyboardButton("Вправо ➡️", callback_data="inv_r"))
-        kb.add(InlineKeyboardButton("Вниз ⬇️", callback_data="inv_d"))
-        kb.add(InlineKeyboardButton("❌ Закрыть", callback_data="inv_close"))
-
-    img_bytes = await asyncio.to_thread(render_scene, st["x"], st["y"], st["z"]+1.6, st["angle"], st["tilt"], uid, s_id)
-    bio = io.BytesIO(img_bytes)
-    bio.name = "s.png"
-    cap = "\n".join(SERVERS[s_id].chat) if SERVERS[s_id].chat else "🎮 Приятной игры!"
+    # Анти-спам система (Семафор и блокировка кликов)
+    if st.get("is_busy"): return
+    st["is_busy"] = True
     
-    if st.get("msg_id"):
-        try:
-            await bot.edit_message_media(chat_id=cid, message_id=st["msg_id"], media=InputMediaPhoto(bio, caption=cap), reply_markup=kb)
-            return
-        except: pass
+    try:
+        kb = make_keyboard(uid)
+        if st["inv_open"]:
+            kb = InlineKeyboardMarkup(row_width=3)
+            kb.add(InlineKeyboardButton("Вверх ⬆️", callback_data="inv_u"))
+            kb.add(InlineKeyboardButton("Влево ⬅️", callback_data="inv_l"), InlineKeyboardButton("Взять/Класть ✋", callback_data="inv_click"), InlineKeyboardButton("Вправо ➡️", callback_data="inv_r"))
+            kb.add(InlineKeyboardButton("Вниз ⬇️", callback_data="inv_d"))
+            kb.add(InlineKeyboardButton("❌ Закрыть", callback_data="inv_close"))
 
-    msg = await bot.send_photo(cid, bio, caption=cap, reply_markup=kb)
-    st["msg_id"] = msg.message_id
+        async with RENDER_SEMAPHORE:
+            img_bytes = await asyncio.to_thread(render_scene, st["x"], st["y"], st["z"]+1.6, st["angle"], st["tilt"], uid, s_id)
+            
+        bio = io.BytesIO(img_bytes)
+        bio.name = "s.png"
+        cap = "\n".join(SERVERS[s_id].chat) if SERVERS[s_id].chat else "🎮 Приятной игры!"
+        
+        if st.get("msg_id"):
+            try:
+                await bot.edit_message_media(chat_id=cid, message_id=st["msg_id"], media=InputMediaPhoto(bio, caption=cap), reply_markup=kb)
+                st["is_busy"] = False
+                return
+            except: pass
+
+        bio.seek(0)
+        msg = await bot.send_photo(cid, bio, caption=cap, reply_markup=kb)
+        st["msg_id"] = msg.message_id
+    finally:
+        st["is_busy"] = False
 
 def server_menu():
     kb = InlineKeyboardMarkup()
@@ -652,7 +662,7 @@ async def h_start(m):
     if old_s and old_s in SERVERS:
         if uid in SERVERS[old_s].players: del SERVERS[old_s].players[uid]
         user_server_map.pop(uid, None)
-        save_all_data() # Сохраняем при выходе
+        save_all_data()
         
     await bot.send_message(m.chat.id, "Выбери сервер:", reply_markup=server_menu())
 
@@ -689,7 +699,7 @@ async def h_block(m):
     except: pass
     
     s_id = user_server_map.get(uid)
-    if not s_id or s_id != 1: return # Покраска только на классике!
+    if not s_id or s_id != 1: return
     
     pb_data = last_target_block.get(uid)
     if not pb_data or pb_data[0] != "block": return
@@ -752,23 +762,28 @@ async def h_cb(c):
     s_id = user_server_map.get(uid)
     if not s_id: return
     st = get_st(uid)
+    if st.get("is_busy"): 
+        try: await bot.answer_callback_query(c.id, "⏳ Рендер...")
+        except: pass
+        return
+        
     srv = SERVERS[s_id]
     d = c.data
     ev = False
     
     if st["inv_open"]:
-        c = st["inv_cursor"]
+        c_idx = st["inv_cursor"]
         if d == "inv_u":
-            if 0<=c<=4: st["inv_cursor"]+=15
-            elif 5<=c<=19: st["inv_cursor"] = 20 if c-5 < 5 else c-5
+            if 0<=c_idx<=4: st["inv_cursor"]+=15
+            elif 5<=c_idx<=19: st["inv_cursor"] = 20 if c_idx-5 < 5 else c_idx-5
         elif d == "inv_d":
-            if 20<=c<=24: st["inv_cursor"]=5
-            elif 5<=c<=14: st["inv_cursor"]+=5
-            elif 15<=c<=19: st["inv_cursor"]-=15
+            if 20<=c_idx<=24: st["inv_cursor"]=5
+            elif 5<=c_idx<=14: st["inv_cursor"]+=5
+            elif 15<=c_idx<=19: st["inv_cursor"]-=15
         elif d == "inv_l":
-            if c not in [0,5,10,15,20]: st["inv_cursor"]-=1
+            if c_idx not in [0,5,10,15,20]: st["inv_cursor"]-=1
         elif d == "inv_r":
-            if c not in [4,9,14,19,23,24]: st["inv_cursor"]+=1
+            if c_idx not in [4,9,14,19,23,24]: st["inv_cursor"]+=1
         elif d == "inv_click":
             c_id = st["inv_cursor"]
             if c_id == 24 and st.get("drag_item") is None and 24 in st["inv"]:
