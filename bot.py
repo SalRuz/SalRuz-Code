@@ -384,6 +384,19 @@ def make_keyboard(uid):
     return kb
 
 # --- ОПТИМИЗИРОВАННЫЙ РЕНДЕР ---
+def world_to_view(wx, wy, wz, px, py, pz, angle, tilt):
+    dx, dy = wx-px, wy-py
+    s, c = math.sin(angle), math.cos(angle)
+    vx, vy_b, vz_b = dx*c - dy*s, dx*s + dy*c, wz-pz
+    st, ct = math.sin(tilt), math.cos(tilt)
+    return vx, vy_b*ct - vz_b*st, vy_b*st + vz_b*ct
+
+def build_box(cx, cy, cz, s, h, a):
+    hs = s/2.0
+    loc = [(-hs,-hs,0), (hs,-hs,0), (hs,hs,0), (-hs,hs,0), (-hs,-hs,h), (hs,-hs,h), (hs,hs,h), (-hs,hs,h)]
+    si, co = math.sin(a), math.cos(a)
+    return [(cx+lx*co-ly*si, cy+lx*si+ly*co, cz+lz) for lx,ly,lz in loc]
+
 def clip_near(vp):
     r = []; p = vp[-1]; p_in = p[1] >= NEAR_CLIP
     for c in vp:
@@ -606,7 +619,6 @@ async def send_view(cid, uid):
     if not s_id: return
     st = get_st(uid)
     
-    # Анти-спам система (Семафор и блокировка кликов)
     if st.get("is_busy"): return
     st["is_busy"] = True
     
