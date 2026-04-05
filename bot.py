@@ -168,6 +168,14 @@ def draw_iron_ore(d):
         d.rectangle((x, y, x+12, y+12), fill=(210,180,140))
 def draw_coal(d): d.ellipse((32,32, 96,96), fill=(20,20,20))
 def draw_iron(d): d.ellipse((32,32, 96,96), fill=(210,180,140))
+def draw_torch_top(d):
+    d.rectangle((0,0,128,128), fill=(255,255,255,0))
+    d.rectangle((32,32,96,96), fill=(255, 200, 0, 255))
+def draw_torch_side(d):
+    d.rectangle((0,0,128,128), fill=(255,255,255,0))
+    d.rectangle((56, 32, 72, 128), fill=(139, 69, 19, 255))
+    d.rectangle((48, 0, 80, 48), fill=(255, 200, 0, 255))
+    d.rectangle((56, 16, 72, 32), fill=(255, 255, 200, 255))
 
 create_fallback_tex("trava.png", (100, 220, 100), draw_grass_top)
 create_fallback_tex("trava_bok.png", (139, 94, 52), draw_grass_side)
@@ -188,6 +196,8 @@ create_fallback_tex("ruda_ugol.png", (100, 100, 100), draw_coal_ore)
 create_fallback_tex("ruda_zhel.png", (100, 100, 100), draw_iron_ore)
 create_fallback_tex("ugol.png", (0, 0, 0, 0), draw_coal, rgba=True)
 create_fallback_tex("zhel.png", (0, 0, 0, 0), draw_iron, rgba=True)
+create_fallback_tex("fakel.png", (0, 0, 0, 0), draw_torch_top, rgba=True)
+create_fallback_tex("fakel_bok.png", (0, 0, 0, 0), draw_torch_side, rgba=True)
 
 def load_tex(name, fallback_color=(255,0,255)):
     p = TEX_DIR / name
@@ -213,7 +223,9 @@ TEX_CACHE = {
     "coal_ore": load_tex("ruda_ugol.png", (100, 100, 100)),
     "iron_ore": load_tex("ruda_zhel.png", (100, 100, 100)),
     "coal": load_tex("ugol.png", (0,0,0,0)),
-    "iron": load_tex("zhel.png", (0,0,0,0))
+    "iron": load_tex("zhel.png", (0,0,0,0)),
+    "torch_top": load_tex("fakel.png", (255,200,0)),
+    "torch_side": load_tex("fakel_bok.png", (255,200,0))
 }
 
 INV_ICONS = {}
@@ -224,6 +236,7 @@ def get_inv_icon(itype):
         elif itype == "wood": tex_name = "wood_side"
         elif itype == "workbench": tex_name = "workbench_top"
         elif itype == "dirt": tex_name = "zemlya"
+        elif itype == "torch": tex_name = "torch_side"
         
         tex = TEX_CACHE.get(tex_name, TEX_CACHE.get(itype, TEX_CACHE["zemlya"]))
         INV_ICONS[itype] = tex.resize((28, 28), Image.Resampling.NEAREST)
@@ -250,21 +263,21 @@ def bake_face(tex):
 DEFAULT_BASE_TEX = Image.new("RGBA", (128, 128), (255, 220, 100, 255))
 DEFAULT_FACE_TEX = bake_face(DEFAULT_BASE_TEX)
 
-BLOCK_STATS = {"dirt": 3, "grass": 3, "wood": 6, "leaves": 2, "stone": 12, "planks": 4, "workbench": 6, "bedrock": 9999, "cobblestone": 12, "coal_ore": 12, "iron_ore": 15}
+# ИСПРАВЛЕНИЕ: Изменен баланс блоков (доски и верстак ломаются быстрее)
+BLOCK_STATS = {"dirt": 3, "grass": 3, "wood": 6, "leaves": 2, "stone": 12, "planks": 5, "workbench": 5, "bedrock": 9999, "cobblestone": 12, "coal_ore": 12, "iron_ore": 15, "torch": 1}
 
 def get_environment_light(s_id):
-    """Смена дня и ночи (15 минут цикл: 10м день, 5м ночь)"""
     srv = SERVERS.get(s_id)
     if not srv or srv.type == "classic": return (135, 206, 235), 1.0
     
     t = (time.time() - srv.start_time) % 900
-    if t < 500: return (135, 206, 235), 1.0  # Яркий день
-    elif t < 600:  # Закат
+    if t < 500: return (135, 206, 235), 1.0 
+    elif t < 600:
         p = (t - 500) / 100.0
         r, g, b = int(135 + (10 - 135)*p), int(206 + (10 - 206)*p), int(235 + (30 - 235)*p)
         return (r, g, b), 1.0 - 0.6 * p
-    elif t < 800: return (10, 10, 30), 0.4   # Ночь
-    else:          # Рассвет
+    elif t < 800: return (10, 10, 30), 0.4
+    else: 
         p = (t - 800) / 100.0
         r, g, b = int(10 + (135 - 10)*p), int(10 + (206 - 10)*p), int(30 + (235 - 30)*p)
         return (r, g, b), 0.4 + 0.6 * p
@@ -273,7 +286,7 @@ class Server:
     def __init__(self, s_id, s_type):
         self.id = s_id
         self.type = s_type
-        self.size = 60 if s_type == "classic" else None # Classic bounded, Survival infinite
+        self.size = 60 if s_type == "classic" else None
         self.blocks = {}
         self.faces = []
         self.block_damage = {}
@@ -282,6 +295,7 @@ class Server:
         self.start_time = time.time()
         self.seed = random.randint(0, 999999)
         self.chunks_loaded = set()
+        self.torches = []
         self.generate()
 
     def generate(self):
@@ -301,7 +315,6 @@ class Server:
             for dx in [0, 1]:
                 for dy in [0, 1]: self.blocks[(cx+dx, cy+dy, 0)] = {"type": "bedrock", "tex": TEX_CACHE["bedrock"]}
         else:
-            # Генерация первых чанков для точки спавна (0,0)
             self.load_chunks_around(0, 0, radius=2)
 
         self.rebuild_mesh()
@@ -320,23 +333,18 @@ class Server:
         if changed: self.rebuild_mesh()
 
     def generate_chunk(self, cx, cy):
-        # Процедурная генерация уникального чанка 16x16
         for x in range(cx * 16, cx * 16 + 16):
             for y in range(cy * 16, cy * 16 + 16):
-                # Рельеф
                 h = int(math.sin(x/10.0 + self.seed)*4 + math.cos(y/10.0 - self.seed)*4 + math.sin((x+y)/5.0)*2)
                 self.blocks[(x, y, h)] = {"type": "grass"}
                 self.blocks[(x, y, h-1)] = {"type": "dirt"}
                 self.blocks[(x, y, h-2)] = {"type": "dirt"}
                 
-                # Подземелье до -32
                 for z in range(h-3, -32, -1):
-                    # Пещеры (Плавный 3D шум на базе синусов)
                     if z < -5:
                         cave_val = math.sin((x+self.seed)/4.0) + math.sin((y-self.seed)/4.0) + math.sin((z+self.seed)/3.0)
-                        if cave_val > 1.2: continue # Воздух (пещера)
+                        if cave_val > 1.2: continue
                         
-                    # Руды
                     rand_val = abs(math.sin(x*12.98 + y*78.23 + z*37.71 + self.seed))
                     if rand_val < 0.02 and z < -5: btype = "coal_ore"
                     elif 0.02 <= rand_val < 0.035 and z < -12: btype = "iron_ore"
@@ -346,7 +354,6 @@ class Server:
                     
                 self.blocks[(x, y, -32)] = {"type": "bedrock"}
                 
-                # Деревья
                 if 2 < (x%16) < 14 and 2 < (y%16) < 14 and random.random() < 0.02:
                     for tz in range(1, 5): self.blocks[(x, y, h+tz)] = {"type": "wood"}
                     for dx in [-1,0,1]:
@@ -357,21 +364,57 @@ class Server:
 
     def rebuild_mesh(self):
         new_faces = []
+        self.torches = [pos for pos, b in self.blocks.items() if b.get("type") == "torch"]
+        
         try:
-            for (gx, gy, gz), bdata in self.blocks.items():
+            for pos, bdata in self.blocks.items():
+                gx, gy, gz = pos
+                
+                # ИСПРАВЛЕНИЕ: Кастомная геометрия для торчащего диагонального факела
+                if bdata.get("type") == "torch":
+                    dx, dy, dz = bdata.get("attach", (0,0,1))
+                    w, h = 0.08, 0.5
+                    
+                    if dx == 1:   cx, cy, cz = gx+0.1, gy+0.5, gz+0.25; a_x, a_y = 0, 0.4
+                    elif dx == -1: cx, cy, cz = gx+0.9, gy+0.5, gz+0.25; a_x, a_y = 0, -0.4
+                    elif dy == 1:  cx, cy, cz = gx+0.5, gy+0.1, gz+0.25; a_x, a_y = -0.4, 0
+                    elif dy == -1: cx, cy, cz = gx+0.5, gy+0.9, gz+0.25; a_x, a_y = 0.4, 0
+                    else:          cx, cy, cz = gx+0.5, gy+0.5, gz;     a_x, a_y = 0, 0
+
+                    vw = []
+                    for vx, vy, vz in [(-w,-w,0), (w,-w,0), (w,w,0), (-w,w,0), (-w,-w,h), (w,-w,h), (w,w,h), (-w,w,h)]:
+                        rx = vx + vz * a_y
+                        ry = vy - vz * a_x
+                        vw.append((cx + rx, cy + ry, cz + vz))
+
+                    for fn, idx, offset in BLOCK_FACES_DATA:
+                        n = face_normal(vw, idx)
+                        lf = calc_light(n)
+                        tex = TEX_CACHE["torch_top"] if fn == "top" else TEX_CACHE["wood_top"] if fn == "bottom" else TEX_CACHE["torch_side"]
+                        face_info = {"cx": cx, "cy": cy, "cz": cz+h/2, "verts": [vw[i] for i in idx], "n": n, "lf": lf, "tl": 1.0, "tex": tex, "pos": pos}
+                        new_faces.append(face_info)
+                    continue
+
                 vw = [
                     (gx, gy, gz), (gx+1, gy, gz), (gx+1, gy+1, gz), (gx, gy+1, gz),
                     (gx, gy, gz+1), (gx+1, gy, gz+1), (gx+1, gy+1, gz+1), (gx, gy+1, gz+1)
                 ]
                 for fn, idx, offset in BLOCK_FACES_DATA:
                     nb = (gx + offset[0], gy + offset[1], gz + offset[2])
-                    if nb in self.blocks: continue
+                    if nb in self.blocks and self.blocks[nb].get("type") != "torch": continue
                     
                     n = face_normal(vw, idx)
                     lf = calc_light(n)
                     br = 1.0 if fn == "top" else 0.85
                     
-                    face_info = {"cx": gx+0.5, "cy": gy+0.5, "cz": gz+0.5, "verts": [vw[i] for i in idx], "n": n, "lf": lf*br, "pos": (gx,gy,gz)}
+                    # Свет факелов на блоки 7х7
+                    tl = 0.0
+                    if self.type == "survival":
+                        for tx, ty, tz in self.torches:
+                            dist = math.sqrt((gx-tx)**2 + (gy-ty)**2 + (gz-tz)**2)
+                            if dist < 4.0: tl = max(tl, 1.0 - (dist / 4.0))
+
+                    face_info = {"cx": gx+0.5, "cy": gy+0.5, "cz": gz+0.5, "verts": [vw[i] for i in idx], "n": n, "lf": lf*br, "tl": tl, "pos": (gx,gy,gz)}
                     
                     if self.type == "classic":
                         c_val = bdata.get("color")
@@ -390,7 +433,7 @@ class Server:
                     
                     dmg = self.block_damage.get((gx,gy,gz), 0)
                     if dmg > 0 and self.type == "survival" and bdata.get("type") != "bedrock":
-                        mhp = 12 if bdata.get("type") in ("stone", "cobblestone", "coal_ore") else 15 if bdata.get("type") == "iron_ore" else BLOCK_STATS.get(bdata.get("type", "dirt"), 3)
+                        mhp = 5 if bdata.get("type") in ("planks", "workbench") else 12 if bdata.get("type") in ("stone", "cobblestone", "coal_ore") else 15 if bdata.get("type") == "iron_ore" else BLOCK_STATS.get(bdata.get("type", "dirt"), 3)
                         stage = min(4, int((dmg / mhp) * 5))
                         if face_info.get("tex"):
                             combined = face_info["tex"].copy()
@@ -655,11 +698,13 @@ def draw_poly_tex(pix, zb, v2d, tex, lf):
                 t2 = (x-x1)/dx if dx>1e-9 else 0
                 iz = z1 + (z2-z1)*t2
                 if iz>0 and (1.0/iz)<zb[y][x]:
-                    zb[y][x] = 1.0/iz
                     tu, tv = (u1+(u2-u1)*t2)/iz, (v1+(v2-v1)*t2)/iz
                     tx, ty = int(clamp(tu,0,0.999)*tw), int(clamp(tv,0,0.999)*th)
                     c = t_dat[ty*tw + tx]
-                    if len(c) < 4 or c[3] > 100: pix[x,y] = apply_light(c[:3], lf)
+                    # ИСПРАВЛЕНИЕ: Пишем в z-буфер только если пиксель не прозрачный
+                    if len(c) < 4 or c[3] > 100:
+                        zb[y][x] = 1.0/iz
+                        pix[x,y] = apply_light(c[:3], lf)
 
 def draw_inv(img, d, w, h, st):
     d.rectangle((0,0, w, h), fill=(0,0,0, 200))
@@ -717,6 +762,7 @@ def update_crafting(st):
     planks = [i["count"] for i in c_slots if i and i["type"] == "planks"]
     sticks = [i["count"] for i in c_slots if i and i["type"] == "stick"]
     cobbles = [i["count"] for i in c_slots if i and i["type"] == "cobblestone"]
+    coals = [i["count"] for i in c_slots if i and i["type"] == "coal"]
     total = sum(1 for i in c_slots if i)
     
     if len(woods) == 1 and total == 1: 
@@ -732,6 +778,10 @@ def update_crafting(st):
         res = {"type": "wood_pickaxe", "count": 1, "ops": 1, "durability": 30}
     elif len(cobbles) == 3 and len(sticks) == 2 and total == 5:
         res = {"type": "stone_pickaxe", "count": 1, "ops": 1, "durability": 66}
+    # ИСПРАВЛЕНИЕ: Крафт факела
+    elif len(sticks) == 1 and len(coals) == 1 and total == 2:
+        op = min(sticks[0], coals[0])
+        res = {"type": "torch", "count": op * 4, "ops": op}
     
     if res: st["inv"][out_idx] = res
     elif out_idx in st["inv"]: del st["inv"][out_idx]
@@ -753,16 +803,13 @@ def render_scene(px, py, pz, pa, pt, uid, s_id):
     rl = st["res_level"]
     img_w, img_h, scale = RESOLUTIONS[rl]["w"], RESOLUTIONS[rl]["h"], RESOLUTIONS[rl]["scale"]
     
-    # Смена дня и ночи
     sky_col, global_light = get_environment_light(s_id)
     img = Image.new("RGBA", (img_w, img_h), sky_col)
     d = ImageDraw.Draw(img)
 
     if st.get("inv_open"):
         draw_inv(img, d, img_w, img_h, st)
-        bio = io.BytesIO()
-        img.convert("RGB").save(bio, "PNG")
-        return bio.getvalue()
+        return img.convert("RGB").tobytes("jpeg", "RGB") # ИСПРАВЛЕНИЕ: Оптимизация
 
     horiz_y = img_h // 2
     pix = img.load()
@@ -787,8 +834,8 @@ def render_scene(px, py, pz, pa, pt, uid, s_id):
             px_p = img_w/2 + (v[0]/v[1])*scale
             proj.append((px_p, py_p, v[1]) + (v[3:] if len(v)>3 else ()))
         
-        # Применяем глобальное освещение с минимальным порогом (чтобы в пещерах ночью было хоть что-то видно)
-        final_lf = max(0.2, face["lf"] * global_light)
+        # ИСПРАВЛЕНИЕ: Сложение света солнца и света факела
+        final_lf = clamp(face["lf"] * global_light + face.get("tl", 0.0), 0.15, 1.0)
         
         if face.get("tex"): draw_poly_tex(pix, zbuf, proj, face["tex"], final_lf)
         else: draw_poly_color(pix, zbuf, proj, apply_light(face.get("sc", (255,255,255)), final_lf))
@@ -804,12 +851,19 @@ def render_scene(px, py, pz, pa, pt, uid, s_id):
         hv = build_box(ox, oy, oz+PLAYER_BODY_HEIGHT+PLAYER_HEAD_OFFSET, PLAYER_HEAD_SIZE, PLAYER_HEAD_SIZE, -oa)
         flash = time.time() - ps.get("flash_time", 0) < 0.25
         
+        ptl = 0.0
+        if srv.type == "survival":
+            for tx, ty, tz in getattr(srv, 'torches', []):
+                dist = math.sqrt((ox-tx)**2 + (oy-ty)**2 + (oz-tz)**2)
+                if dist < 4.0: ptl = max(ptl, 1.0 - (dist / 4.0))
+
         for b_verts, col, tex_mode in [(bv, (255,50,50) if flash else PLAYER_BODY_COLOR, False), (hv, (255,50,50) if flash else PLAYER_HEAD_COLOR, True)]:
             for fn, idx, _ in PLAYER_FACES:
                 n = face_normal(b_verts, idx)
                 if vec_dot(n, (px-ox, py-oy, pz-(oz+1))) <= 0: continue
                 lf = calc_light(n)
-                final_lf = max(0.2, lf * global_light)
+                
+                final_lf = clamp(lf * global_light + ptl, 0.15, 1.0)
                 
                 vc = clip_near([world_to_view(wx,wy,wz, px,py,pz, pa,pt) + ((FACE_UVS[k%4][0], FACE_UVS[k%4][1]) if tex_mode else ()) for k, (wx,wy,wz) in enumerate([b_verts[i] for i in idx])])
                 if len(vc)<3: continue
@@ -916,12 +970,14 @@ async def send_view(cid, uid):
             img_bytes = await asyncio.to_thread(render_scene, st["x"], st["y"], st["z"]+1.6, st["angle"], st["tilt"], uid, s_id)
             
         cap = "\n".join(SERVERS[s_id].chat) if SERVERS[s_id].chat else "🎮 Приятной игры!"
-        bio = io.BytesIO(img_bytes)
-        bio.name = "s.png"
-
+        
+        # ИСПРАВЛЕНИЕ: Мы создаем НОВЫЙ io.BytesIO для каждого запроса API.
+        # Это навсегда убирает ошибку "I/O operation on closed file."
         if st.get("msg_id"):
             try:
-                await bot.edit_message_media(chat_id=cid, message_id=st["msg_id"], media=InputMediaPhoto(bio, caption=cap), reply_markup=kb)
+                bio_edit = io.BytesIO(img_bytes)
+                bio_edit.name = "s.png"
+                await bot.edit_message_media(chat_id=cid, message_id=st["msg_id"], media=InputMediaPhoto(bio_edit, caption=cap), reply_markup=kb)
                 st["is_busy"] = False
                 return
             except ApiTelegramException as e:
@@ -931,8 +987,9 @@ async def send_view(cid, uid):
                     return
             except Exception: pass
 
-        bio.seek(0)
-        msg = await bot.send_photo(cid, bio, caption=cap, reply_markup=kb)
+        bio_send = io.BytesIO(img_bytes)
+        bio_send.name = "s.png"
+        msg = await bot.send_photo(cid, bio_send, caption=cap, reply_markup=kb)
         st["msg_id"] = msg.message_id
     finally:
         st["is_busy"] = False
@@ -1252,14 +1309,23 @@ async def h_cb(c):
             if srv.type == "survival" and srv.blocks.get(pb[1], {}).get("type") == "workbench":
                 st["inv_open"] = True; st["inv_mode"] = "workbench"; st["inv_cursor"] = 34; ev = True
             elif pb[2] is not None:
-                nb = pb[2]
+                nb = pb[2] # Воздух, куда мы ставим
+                target_b = pb[1] # Блок, на который мы ставим
+                
                 c_slot = st["inv_cursor"] if st["inv_cursor"] < 5 else 0
                 item = st["inv"].get(c_slot)
                 if item and item["type"] in ["wood_pickaxe", "stone_pickaxe", "stick"]: pass
                 elif item or srv.type == "classic":
                     btype = item["type"] if item else "planks"
                     if nb not in srv.blocks:
-                        srv.blocks[nb] = {"type": btype} if srv.type=="survival" else {"color":(255,255,255)}
+                        
+                        # ИСПРАВЛЕНИЕ: Логика прикрепления факела к стене
+                        if btype == "torch":
+                            dx, dy, dz = nb[0]-target_b[0], nb[1]-target_b[1], nb[2]-target_b[2]
+                            srv.blocks[nb] = {"type": "torch", "attach": (dx, dy, dz)}
+                        else:
+                            srv.blocks[nb] = {"type": btype} if srv.type=="survival" else {"color":(255,255,255)}
+                            
                         if item:
                             item["count"] -= 1
                             if item["count"] <= 0: del st["inv"][c_slot]
@@ -1280,8 +1346,11 @@ async def h_cb(c):
                 elif srv.type == "survival":
                     btype = srv.blocks[pb[1]].get("type", "stone")
                     
-                    if btype in ("stone", "cobblestone"):
+                    # ИСПРАВЛЕНИЕ: Баланс блоков. Руды ломаются как камень, доски как верстак
+                    if btype in ("stone", "cobblestone", "coal_ore", "iron_ore"):
                         mhp = 6 if is_stone_pick else 9 if is_wood_pick else 12
+                    elif btype in ("planks", "workbench"):
+                        mhp = 5
                     else:
                         mhp = BLOCK_STATS.get(btype, 3)
 
