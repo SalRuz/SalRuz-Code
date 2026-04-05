@@ -47,8 +47,7 @@ CYRILLIC_TO_LATIN = {
     'Ч': 'Ch', 'Ш': 'Sh', 'Щ': 'Shch', 'Ъ': 'Sch', 'Ы': 'Y', 'Ь': '', 'Э': 'E', 'Ю': 'Yu', 'Я': 'Ya'
 }
 
-def transliterate(text):
-    return "".join(CYRILLIC_TO_LATIN.get(c, c) for c in text)
+def transliterate(text): return "".join(CYRILLIC_TO_LATIN.get(c, c) for c in text)
 
 def load_font():
     paths = [
@@ -70,12 +69,10 @@ FONT = load_font()
 CAMERA_HEIGHT_OFFSET = 1.6
 MOVE_STEP = 1.0
 TURN_ANGLE = math.radians(15)
-
 TILT_STEP = 0.15
 MAX_TILT = 1.5   
 MIN_TILT = -1.5  
 
-SKY_COLOR = (135, 206, 235)
 NEAR_CLIP = 0.05
 RAY_STEP = 0.02
 RAY_MAX_DIST = 24
@@ -84,7 +81,6 @@ PLAYER_BODY_SIZE = 0.6
 PLAYER_BODY_HEIGHT = 1.3 
 PLAYER_HEAD_SIZE = 0.4
 PLAYER_HEAD_OFFSET = 0.1
-
 PLAYER_BODY_COLOR = (255, 255, 0)
 PLAYER_HEAD_COLOR = (255, 220, 100)
 
@@ -100,20 +96,14 @@ ll = math.sqrt(sum(c**2 for c in LIGHT_DIR_RAW))
 LIGHT_DIR = tuple(c/ll for c in LIGHT_DIR_RAW)
 FACE_UVS = [(0, 1), (1, 1), (1, 0), (0, 0)]
 BLOCK_FACES_DATA = [
-    ("top", [4, 5, 6, 7], (0, 0, 1)),
-    ("bottom", [0, 3, 2, 1], (0, 0, -1)),
-    ("front", [0, 1, 5, 4], (0, -1, 0)),
-    ("back", [2, 3, 7, 6], (0, 1, 0)),
-    ("right", [1, 2, 6, 5], (1, 0, 0)),
-    ("left", [3, 0, 4, 7], (-1, 0, 0)),
+    ("top", [4, 5, 6, 7], (0, 0, 1)), ("bottom", [0, 3, 2, 1], (0, 0, -1)),
+    ("front", [0, 1, 5, 4], (0, -1, 0)), ("back", [2, 3, 7, 6], (0, 1, 0)),
+    ("right", [1, 2, 6, 5], (1, 0, 0)), ("left", [3, 0, 4, 7], (-1, 0, 0)),
 ]
 PLAYER_FACES = [
-    ("bottom", [0, 3, 2, 1], lambda c: c),
-    ("top", [4, 5, 6, 7], lambda c: c),
-    ("back", [0, 1, 5, 4], lambda c: c),
-    ("front", [2, 3, 7, 6], lambda c: c),
-    ("right", [1, 2, 6, 5], lambda c: c),
-    ("left", [0, 4, 7, 3], lambda c: c),
+    ("bottom", [0, 3, 2, 1], lambda c: c), ("top", [4, 5, 6, 7], lambda c: c),
+    ("back", [0, 1, 5, 4], lambda c: c), ("front", [2, 3, 7, 6], lambda c: c),
+    ("right", [1, 2, 6, 5], lambda c: c), ("left", [0, 4, 7, 3], lambda c: c),
 ]
 
 def clamp(v, lo, hi): return max(lo, min(hi, v))
@@ -154,8 +144,7 @@ def draw_grass_side(d):
         d.polygon([(x, 32), (x+4, 48), (x+8, 32)], fill=(100, 220, 100))
 def draw_dirt(d):
     for _ in range(400): d.point((random.randint(0,127), random.randint(0,127)), fill=(100, 70, 40))
-def draw_stick(d):
-    d.line((32, 96, 96, 32), fill=(139, 69, 19, 255), width=10)
+def draw_stick(d): d.line((32, 96, 96, 32), fill=(139, 69, 19, 255), width=10)
 def draw_wood_pickaxe(d):
     d.line((32, 96, 96, 32), fill=(139, 69, 19, 255), width=8) 
     d.polygon([(64, 16), (112, 32), (96, 64)], fill=(180, 140, 80, 255)) 
@@ -167,6 +156,18 @@ def draw_cobble(d):
     for _ in range(50):
         x, y = random.randint(0,120), random.randint(0,120)
         d.rectangle((x, y, x+10, y+10), fill=(70,70,70))
+def draw_coal_ore(d):
+    d.rectangle((0,0,128,128), fill=(100,100,100))
+    for _ in range(25):
+        x, y = random.randint(0,116), random.randint(0,116)
+        d.rectangle((x, y, x+12, y+12), fill=(20,20,20))
+def draw_iron_ore(d):
+    d.rectangle((0,0,128,128), fill=(100,100,100))
+    for _ in range(25):
+        x, y = random.randint(0,116), random.randint(0,116)
+        d.rectangle((x, y, x+12, y+12), fill=(210,180,140))
+def draw_coal(d): d.ellipse((32,32, 96,96), fill=(20,20,20))
+def draw_iron(d): d.ellipse((32,32, 96,96), fill=(210,180,140))
 
 create_fallback_tex("trava.png", (100, 220, 100), draw_grass_top)
 create_fallback_tex("trava_bok.png", (139, 94, 52), draw_grass_side)
@@ -183,6 +184,10 @@ create_fallback_tex("buliga.png", (100, 100, 100), draw_cobble)
 create_fallback_tex("palka.png", (0, 0, 0, 0), draw_stick, rgba=True)
 create_fallback_tex("der_kirka.png", (0, 0, 0, 0), draw_wood_pickaxe, rgba=True)
 create_fallback_tex("kam_kirka.png", (0, 0, 0, 0), draw_stone_pickaxe, rgba=True)
+create_fallback_tex("ruda_ugol.png", (100, 100, 100), draw_coal_ore)
+create_fallback_tex("ruda_zhel.png", (100, 100, 100), draw_iron_ore)
+create_fallback_tex("ugol.png", (0, 0, 0, 0), draw_coal, rgba=True)
+create_fallback_tex("zhel.png", (0, 0, 0, 0), draw_iron, rgba=True)
 
 def load_tex(name, fallback_color=(255,0,255)):
     p = TEX_DIR / name
@@ -204,7 +209,11 @@ TEX_CACHE = {
     "stick": load_tex("palka.png", (139, 69, 19)),
     "wood_pickaxe": load_tex("der_kirka.png", (180, 140, 80)),
     "stone_pickaxe": load_tex("kam_kirka.png", (100, 100, 100)),
-    "cobblestone": load_tex("buliga.png", (100, 100, 100))
+    "cobblestone": load_tex("buliga.png", (100, 100, 100)),
+    "coal_ore": load_tex("ruda_ugol.png", (100, 100, 100)),
+    "iron_ore": load_tex("ruda_zhel.png", (100, 100, 100)),
+    "coal": load_tex("ugol.png", (0,0,0,0)),
+    "iron": load_tex("zhel.png", (0,0,0,0))
 }
 
 INV_ICONS = {}
@@ -238,60 +247,113 @@ def bake_face(tex):
     d.rectangle((48*sx, 88*sy, 80*sx, 96*sy), fill=(0,0,0,255))
     return img
 
-# ИСПРАВЛЕНИЕ: Базовая текстура тоже должна быть RGBA, чтобы не вызывало ошибку "tuple index out of range"
 DEFAULT_BASE_TEX = Image.new("RGBA", (128, 128), (255, 220, 100, 255))
 DEFAULT_FACE_TEX = bake_face(DEFAULT_BASE_TEX)
 
-BLOCK_STATS = {"dirt": 3, "grass": 3, "wood": 6, "leaves": 2, "stone": 12, "planks": 4, "workbench": 6, "bedrock": 9999, "cobblestone": 12}
+BLOCK_STATS = {"dirt": 3, "grass": 3, "wood": 6, "leaves": 2, "stone": 12, "planks": 4, "workbench": 6, "bedrock": 9999, "cobblestone": 12, "coal_ore": 12, "iron_ore": 15}
+
+def get_environment_light(s_id):
+    """Смена дня и ночи (15 минут цикл: 10м день, 5м ночь)"""
+    srv = SERVERS.get(s_id)
+    if not srv or srv.type == "classic": return (135, 206, 235), 1.0
+    
+    t = (time.time() - srv.start_time) % 900
+    if t < 500: return (135, 206, 235), 1.0  # Яркий день
+    elif t < 600:  # Закат
+        p = (t - 500) / 100.0
+        r, g, b = int(135 + (10 - 135)*p), int(206 + (10 - 206)*p), int(235 + (30 - 235)*p)
+        return (r, g, b), 1.0 - 0.6 * p
+    elif t < 800: return (10, 10, 30), 0.4   # Ночь
+    else:          # Рассвет
+        p = (t - 800) / 100.0
+        r, g, b = int(10 + (135 - 10)*p), int(10 + (206 - 10)*p), int(30 + (235 - 30)*p)
+        return (r, g, b), 0.4 + 0.6 * p
 
 class Server:
     def __init__(self, s_id, s_type):
         self.id = s_id
         self.type = s_type
-        self.size = 60 if s_type == "classic" else 64
+        self.size = 60 if s_type == "classic" else None # Classic bounded, Survival infinite
         self.blocks = {}
         self.faces = []
-        self.version = 0
         self.block_damage = {}
         self.players = {}
         self.chat = []
+        self.start_time = time.time()
+        self.seed = random.randint(0, 999999)
+        self.chunks_loaded = set()
         self.generate()
 
     def generate(self):
         self.blocks.clear()
         self.block_damage.clear()
-        random.seed(42 + self.id)
+        self.chunks_loaded.clear()
+        self.start_time = time.time()
+        self.seed = random.randint(0, 999999)
+        
         if self.type == "classic":
+            random.seed(42 + self.id)
             colors = [(230, 80, 80), (80, 230, 80), (80, 80, 230)]
             for y in range(self.size):
                 for x in range(self.size):
                     self.blocks[(x, y, 0)] = {"color": colors[(x + y + random.randint(0, 1)) % 3]}
-            
             cx, cy = int(self.size/2), int(self.size/2)
             for dx in [0, 1]:
-                for dy in [0, 1]:
-                    self.blocks[(cx+dx, cy+dy, 0)] = {"type": "bedrock", "tex": TEX_CACHE["bedrock"]}
+                for dy in [0, 1]: self.blocks[(cx+dx, cy+dy, 0)] = {"type": "bedrock", "tex": TEX_CACHE["bedrock"]}
         else:
-            for y in range(self.size):
-                for x in range(self.size):
-                    h = int(math.sin(x/5.0)*2 + math.cos(y/4.0)*2)
-                    self.blocks[(x, y, h)] = {"type": "grass"}
-                    self.blocks[(x, y, h-1)] = {"type": "dirt"}
-                    self.blocks[(x, y, h-2)] = {"type": "dirt"}
-                    for z in range(h-3, -64, -1): 
-                        self.blocks[(x, y, z)] = {"type": "stone"}
-                    self.blocks[(x, y, -64)] = {"type": "bedrock"}
-                    
-                    if random.random() < 0.02 and 2 < x < self.size-2 and 2 < y < self.size-2:
-                        for tz in range(1, 5): self.blocks[(x, y, h+tz)] = {"type": "wood"}
-                        for dx in [-1,0,1]:
-                            for dy in [-1,0,1]:
-                                for dz in [4,5]:
-                                    if dx==0 and dy==0 and dz==4: continue
-                                    if (x+dx, y+dy, h+dz) not in self.blocks:
-                                        self.blocks[(x+dx, y+dy, h+dz)] = {"type": "leaves"}
+            # Генерация первых чанков для точки спавна (0,0)
+            self.load_chunks_around(0, 0, radius=2)
 
         self.rebuild_mesh()
+
+    def load_chunks_around(self, px, py, radius=1):
+        if self.type == "classic": return
+        cx, cy = int(px // 16), int(py // 16)
+        changed = False
+        for dx in range(-radius, radius + 1):
+            for dy in range(-radius, radius + 1):
+                chunk = (cx + dx, cy + dy)
+                if chunk not in self.chunks_loaded:
+                    self.generate_chunk(chunk[0], chunk[1])
+                    self.chunks_loaded.add(chunk)
+                    changed = True
+        if changed: self.rebuild_mesh()
+
+    def generate_chunk(self, cx, cy):
+        # Процедурная генерация уникального чанка 16x16
+        for x in range(cx * 16, cx * 16 + 16):
+            for y in range(cy * 16, cy * 16 + 16):
+                # Рельеф
+                h = int(math.sin(x/10.0 + self.seed)*4 + math.cos(y/10.0 - self.seed)*4 + math.sin((x+y)/5.0)*2)
+                self.blocks[(x, y, h)] = {"type": "grass"}
+                self.blocks[(x, y, h-1)] = {"type": "dirt"}
+                self.blocks[(x, y, h-2)] = {"type": "dirt"}
+                
+                # Подземелье до -32
+                for z in range(h-3, -32, -1):
+                    # Пещеры (Плавный 3D шум на базе синусов)
+                    if z < -5:
+                        cave_val = math.sin((x+self.seed)/4.0) + math.sin((y-self.seed)/4.0) + math.sin((z+self.seed)/3.0)
+                        if cave_val > 1.2: continue # Воздух (пещера)
+                        
+                    # Руды
+                    rand_val = abs(math.sin(x*12.98 + y*78.23 + z*37.71 + self.seed))
+                    if rand_val < 0.02 and z < -5: btype = "coal_ore"
+                    elif 0.02 <= rand_val < 0.035 and z < -12: btype = "iron_ore"
+                    else: btype = "stone"
+                        
+                    self.blocks[(x, y, z)] = {"type": btype}
+                    
+                self.blocks[(x, y, -32)] = {"type": "bedrock"}
+                
+                # Деревья
+                if 2 < (x%16) < 14 and 2 < (y%16) < 14 and random.random() < 0.02:
+                    for tz in range(1, 5): self.blocks[(x, y, h+tz)] = {"type": "wood"}
+                    for dx in [-1,0,1]:
+                        for dy in [-1,0,1]:
+                            for dz in [4,5]:
+                                if dx==0 and dy==0 and dz==4: continue
+                                self.blocks[(x+dx, y+dy, h+dz)] = {"type": "leaves"}
 
     def rebuild_mesh(self):
         new_faces = []
@@ -322,13 +384,13 @@ class Server:
                         if btype == "grass": tex = TEX_CACHE["trava_top"] if fn=="top" else TEX_CACHE["trava_side"] if fn not in ["top","bottom"] else TEX_CACHE["zemlya"]
                         elif btype == "wood": tex = TEX_CACHE["wood_top"] if fn in ["top","bottom"] else TEX_CACHE["wood_side"]
                         elif btype == "workbench": tex = TEX_CACHE["workbench_top"] if fn=="top" else TEX_CACHE["planks"] if fn=="bottom" else TEX_CACHE["workbench_side"]
-                        elif btype in ["dirt", "stone", "leaves", "planks", "bedrock", "cobblestone"]:
+                        elif btype in ["dirt", "stone", "leaves", "planks", "bedrock", "cobblestone", "coal_ore", "iron_ore"]:
                             tex = TEX_CACHE.get(btype, TEX_CACHE["zemlya"])
                         face_info["tex"] = tex
                     
                     dmg = self.block_damage.get((gx,gy,gz), 0)
                     if dmg > 0 and self.type == "survival" and bdata.get("type") != "bedrock":
-                        mhp = 12 if bdata.get("type") in ("stone", "cobblestone") else BLOCK_STATS.get(bdata.get("type", "dirt"), 3)
+                        mhp = 12 if bdata.get("type") in ("stone", "cobblestone", "coal_ore") else 15 if bdata.get("type") == "iron_ore" else BLOCK_STATS.get(bdata.get("type", "dirt"), 3)
                         stage = min(4, int((dmg / mhp) * 5))
                         if face_info.get("tex"):
                             combined = face_info["tex"].copy()
@@ -337,9 +399,7 @@ class Server:
                     
                     new_faces.append(face_info)
             self.faces = new_faces
-            self.version += 1
-        except Exception as e:
-            print(f"Mesh rebuild warning: {e}")
+        except Exception as e: pass
 
     def broadcast(self, txt):
         if not txt: return
@@ -363,7 +423,7 @@ def save_all_data():
                 s1_data["blocks"][pos]["tex_bytes"] = bio.getvalue()
         with open(DATA_DIR / "srv1.pkl", "wb") as f: pickle.dump(s1_data, f)
         
-        s2_data = {"players": SERVERS[2].players, "blocks": SERVERS[2].blocks, "damage": SERVERS[2].block_damage}
+        s2_data = {"players": SERVERS[2].players, "blocks": SERVERS[2].blocks, "damage": SERVERS[2].block_damage, "seed": SERVERS[2].seed, "chunks": SERVERS[2].chunks_loaded}
         with open(DATA_DIR / "srv2.pkl", "wb") as f: pickle.dump(s2_data, f)
     except Exception as e: pass
 
@@ -392,6 +452,8 @@ def load_all_data():
                     p_data["last_action"] = time.time()
                 SERVERS[2].blocks = data.get("blocks", {})
                 SERVERS[2].block_damage = data.get("damage", {})
+                SERVERS[2].seed = data.get("seed", random.randint(0, 999999))
+                SERVERS[2].chunks_loaded = data.get("chunks", set())
             SERVERS[2].rebuild_mesh()
     except Exception as e: pass
 
@@ -407,8 +469,7 @@ async def update_server_menus():
             to_remove.append(uid)
         except Exception:
             to_remove.append(uid)
-    for uid in to_remove:
-        ACTIVE_MENUS.pop(uid, None)
+    for uid in to_remove: ACTIVE_MENUS.pop(uid, None)
 
 async def auto_saver():
     while True:
@@ -426,27 +487,22 @@ async def afk_checker():
                     ps["online"] = False
                     user_server_map.pop(uid, None)
                     changed = True
-                    
                     try:
-                        msg = await bot.send_message(uid, "⏱ Вы были кикнуты с сервера за бездействие (более 5 минут).", reply_markup=server_menu())
+                        msg = await bot.send_message(uid, "⏱ Вы были кикнуты с сервера за бездействие.", reply_markup=server_menu())
                         ACTIVE_MENUS[uid] = {"chat_id": uid, "msg_id": msg.message_id}
                     except: pass
-                    
                     srv.broadcast(f"💤 {ps['name']} отключен (АФК)")
-                    
                     for p_uid, p_state in list(srv.players.items()):
-                        if p_state.get("online"):
-                            asyncio.create_task(send_view(p_uid, p_uid))
-        if changed:
-            await update_server_menus()
+                        if p_state.get("online"): asyncio.create_task(send_view(p_uid, p_uid))
+        if changed: await update_server_menus()
 
 def get_st(uid):
     s_id = user_server_map.get(uid)
     return SERVERS[s_id].players.get(uid) if s_id else None
 
 def get_ground_z(x, y, srv):
-    tz = -64
-    for bz in range(20, -65, -1):
+    tz = -32 if srv.type == "survival" else -64
+    for bz in range(20, tz-1, -1):
         if (int(x), int(y), bz) in srv.blocks:
             tz = bz + 1; break
     return tz
@@ -454,9 +510,12 @@ def get_ground_z(x, y, srv):
 def init_player(uid, s_id, name):
     srv = SERVERS[s_id]
     user_server_map[uid] = s_id
+    px, py = 0.5, 0.5
+    if srv.type == "classic": px, py = srv.size/2, srv.size/2
+    
     if uid not in srv.players:
         srv.players[uid] = {
-            "x": srv.size/2, "y": srv.size/2, "z": get_ground_z(srv.size/2, srv.size/2, srv), 
+            "x": px, "y": py, "z": get_ground_z(px, py, srv), 
             "angle": 0.0, "tilt": 0.0, "jump": False, "last_action": time.time(),
             "name": transliterate(name), "msg_id": None, "view_radius": 8, "res_level": 2, "hp": 10, "flash_time": 0,
             "inv": {0: {"type": "wood", "count": 10}}, "inv_open": False, "inv_mode": "normal", "inv_cursor": 0, "drag_item": None,
@@ -479,7 +538,6 @@ def make_keyboard(uid):
     vr_text = f"👁 {st.get('view_radius', 8)}"
     res_text = f"🖥 {RESOLUTIONS[st.get('res_level', 2)]['w']}p"
     
-    # ИСПРАВЛЕНИЕ: Временный текст при ударе
     is_hit = st.get("hit_time", 0) > 0 and (time.time() - st["hit_time"]) < 1.0
     break_text = "💥 Ударил!" if is_hit else "⛏️ Ломай"
     
@@ -601,9 +659,7 @@ def draw_poly_tex(pix, zb, v2d, tex, lf):
                     tu, tv = (u1+(u2-u1)*t2)/iz, (v1+(v2-v1)*t2)/iz
                     tx, ty = int(clamp(tu,0,0.999)*tw), int(clamp(tv,0,0.999)*th)
                     c = t_dat[ty*tw + tx]
-                    # ИСПРАВЛЕНИЕ: Защита от "tuple index out of range" если вдруг текстура RGB а не RGBA
-                    if len(c) < 4 or c[3] > 100:
-                        pix[x,y] = apply_light(c[:3], lf)
+                    if len(c) < 4 or c[3] > 100: pix[x,y] = apply_light(c[:3], lf)
 
 def draw_inv(img, d, w, h, st):
     d.rectangle((0,0, w, h), fill=(0,0,0, 200))
@@ -697,7 +753,9 @@ def render_scene(px, py, pz, pa, pt, uid, s_id):
     rl = st["res_level"]
     img_w, img_h, scale = RESOLUTIONS[rl]["w"], RESOLUTIONS[rl]["h"], RESOLUTIONS[rl]["scale"]
     
-    img = Image.new("RGBA", (img_w, img_h), SKY_COLOR)
+    # Смена дня и ночи
+    sky_col, global_light = get_environment_light(s_id)
+    img = Image.new("RGBA", (img_w, img_h), sky_col)
     d = ImageDraw.Draw(img)
 
     if st.get("inv_open"):
@@ -729,8 +787,11 @@ def render_scene(px, py, pz, pa, pt, uid, s_id):
             px_p = img_w/2 + (v[0]/v[1])*scale
             proj.append((px_p, py_p, v[1]) + (v[3:] if len(v)>3 else ()))
         
-        if face.get("tex"): draw_poly_tex(pix, zbuf, proj, face["tex"], face["lf"])
-        else: draw_poly_color(pix, zbuf, proj, face.get("sc", (255,255,255)))
+        # Применяем глобальное освещение с минимальным порогом (чтобы в пещерах ночью было хоть что-то видно)
+        final_lf = max(0.2, face["lf"] * global_light)
+        
+        if face.get("tex"): draw_poly_tex(pix, zbuf, proj, face["tex"], final_lf)
+        else: draw_poly_color(pix, zbuf, proj, apply_light(face.get("sc", (255,255,255)), final_lf))
 
     for pid, ps in srv.players.items():
         if pid == uid or not ps.get("online", True): continue
@@ -748,6 +809,8 @@ def render_scene(px, py, pz, pa, pt, uid, s_id):
                 n = face_normal(b_verts, idx)
                 if vec_dot(n, (px-ox, py-oy, pz-(oz+1))) <= 0: continue
                 lf = calc_light(n)
+                final_lf = max(0.2, lf * global_light)
+                
                 vc = clip_near([world_to_view(wx,wy,wz, px,py,pz, pa,pt) + ((FACE_UVS[k%4][0], FACE_UVS[k%4][1]) if tex_mode else ()) for k, (wx,wy,wz) in enumerate([b_verts[i] for i in idx])])
                 if len(vc)<3: continue
                 proj = [(img_w/2 + (v[0]/v[1])*scale, horiz_y - (v[2]/v[1])*scale, v[1]) + (v[3:] if len(v)>3 else ()) for v in vc]
@@ -758,9 +821,9 @@ def render_scene(px, py, pz, pa, pt, uid, s_id):
                         t = skin_data["face"] if fn == "front" else skin_data["base"]
                     else:
                         t = DEFAULT_FACE_TEX if fn == "front" else DEFAULT_BASE_TEX
-                    draw_poly_tex(pix, zbuf, proj, t, lf)
+                    draw_poly_tex(pix, zbuf, proj, t, final_lf)
                 else: 
-                    draw_poly_color(pix, zbuf, proj, apply_light(col, lf))
+                    draw_poly_color(pix, zbuf, proj, apply_light(col, final_lf))
 
         nv = world_to_view(ox, oy, oz + 2.4, px, py, pz, pa, pt)
         if nv[1] >= NEAR_CLIP:
@@ -825,13 +888,11 @@ def ray_pick(px, py, pz, pa, pt, s_id, ignore_uid=None):
     return None
 
 async def broadcast_chat(s_id, txt):
-    if txt:
-        SERVERS[s_id].broadcast(txt)
+    if txt: SERVERS[s_id].broadcast(txt)
     cap = "\n".join(SERVERS[s_id].chat) if SERVERS[s_id].chat else "🎮 Приятной игры!"
     for uid, st in list(SERVERS[s_id].players.items()):
         if st.get("msg_id") and st.get("online"):
             try: await bot.edit_message_caption(caption=cap, chat_id=uid, message_id=st["msg_id"], reply_markup=make_keyboard(uid))
-            except ApiTelegramException as e: pass
             except Exception: pass
 
 async def send_view(cid, uid):
@@ -855,7 +916,6 @@ async def send_view(cid, uid):
             img_bytes = await asyncio.to_thread(render_scene, st["x"], st["y"], st["z"]+1.6, st["angle"], st["tilt"], uid, s_id)
             
         cap = "\n".join(SERVERS[s_id].chat) if SERVERS[s_id].chat else "🎮 Приятной игры!"
-        
         bio = io.BytesIO(img_bytes)
         bio.name = "s.png"
 
@@ -869,14 +929,7 @@ async def send_view(cid, uid):
                 if "not modified" in err:
                     st["is_busy"] = False
                     return
-                elif "not found" in err or "can't be edited" in err:
-                    pass 
-                else:
-                    st["is_busy"] = False
-                    return
-            except Exception: 
-                st["is_busy"] = False
-                return
+            except Exception: pass
 
         bio.seek(0)
         msg = await bot.send_photo(cid, bio, caption=cap, reply_markup=kb)
@@ -913,24 +966,15 @@ async def h_start(m):
                 ps["online"] = False
                 changed = True
                 SERVERS[old_s].broadcast(f"💨 {ps['name']} вышел")
-                
-                tasks = []
-                for p_uid, p_st in SERVERS[old_s].players.items():
-                    if p_uid != uid and p_st.get("online"):
-                        tasks.append(send_view(p_uid, p_uid))
-                
-                # ИСПРАВЛЕНИЕ: Вызов gather напрямую
-                if tasks:
-                    await asyncio.gather(*tasks)
+                tasks = [send_view(p_uid, p_uid) for p_uid, p_st in SERVERS[old_s].players.items() if p_uid != uid and p_st.get("online")]
+                if tasks: await asyncio.gather(*tasks)
                     
         user_server_map.pop(uid, None)
         save_all_data()
         
     msg = await bot.send_message(m.chat.id, "Выбери сервер:", reply_markup=server_menu())
     ACTIVE_MENUS[uid] = {"chat_id": m.chat.id, "msg_id": msg.message_id}
-    
-    if changed:
-        await update_server_menus()
+    if changed: await update_server_menus()
 
 @bot.message_handler(commands=["reset"])
 async def h_reset(m):
@@ -940,17 +984,17 @@ async def h_reset(m):
         s_id = int(parts[2])
         SERVERS[s_id].generate()
         for p in SERVERS[s_id].players.values():
-            p["x"], p["y"] = SERVERS[s_id].size/2, SERVERS[s_id].size/2
+            if s_id == 1: p["x"], p["y"] = SERVERS[s_id].size/2, SERVERS[s_id].size/2
+            else: p["x"], p["y"] = 0.5, 0.5
             p["z"] = get_ground_z(p["x"], p["y"], SERVERS[s_id])
             p["hp"] = 10
             p["inv"].clear()
-        await bot.send_message(m.chat.id, f"Сервер {s_id} сброшен!")
+        await bot.send_message(m.chat.id, f"Сервер {s_id} сброшен (сгенерирован новый мир)!")
         for uid, p in SERVERS[s_id].players.items(): 
             if p.get("online"): await send_view(uid, uid)
 
 @bot.message_handler(commands=["block"])
 async def h_block(m):
-    uid = m.from_user.id
     try: await bot.delete_message(m.chat.id, m.message_id)
     except: pass
 
@@ -958,27 +1002,22 @@ async def h_block(m):
 async def h_text(m):
     uid = m.from_user.id
     if m.text.startswith("/"): return
-
     try: await bot.delete_message(m.chat.id, m.message_id)
     except: pass
 
     s_id = user_server_map.get(uid)
     if not s_id: return
-    
     st = get_st(uid)
     if not st or not st.get("online"): return
 
     st["last_action"] = time.time()
-    text = m.text[:100] 
-    await broadcast_chat(s_id, f"💬 {st['name']}: {text}")
+    await broadcast_chat(s_id, f"💬 {st['name']}: {m.text[:100]}")
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("join_"))
 async def cb_join(c):
     s_id = int(c.data.split("_")[1])
     uid = c.from_user.id
-    
     ACTIVE_MENUS.pop(uid, None)
-    
     try: await bot.delete_message(c.message.chat.id, c.message.message_id)
     except: pass
     
@@ -986,9 +1025,7 @@ async def cb_join(c):
     SERVERS[s_id].broadcast(f"🎉 {st['name']} присоединился!")
     
     tasks = [send_view(p_uid, p_uid) for p_uid, ps in SERVERS[s_id].players.items() if ps.get("online")]
-    if tasks:
-        await asyncio.gather(*tasks)
-        
+    if tasks: await asyncio.gather(*tasks)
     await update_server_menus()
 
 @bot.message_handler(content_types=["photo"])
@@ -996,7 +1033,6 @@ async def h_photo(m):
     uid = m.from_user.id
     st = get_st(uid)
     if not st: return
-    
     st["last_action"] = time.time()
     s_id = user_server_map.get(uid)
     un = st["name"]
@@ -1016,24 +1052,18 @@ async def h_photo(m):
             SERVERS[1].blocks[mode[1]]["tex"] = tex
             del pending_skin_mode[uid]
             SERVERS[1].rebuild_mesh()
-            
             bx, by = mode[1][0], mode[1][1]
             for p_uid, ps in SERVERS[1].players.items():
                 if not ps.get("online"): continue
-                vr = ps.get("view_radius", 8)
-                if p_uid == uid or (ps["x"] - bx)**2 + (ps["y"] - by)**2 <= vr**2:
+                if p_uid == uid or (ps["x"] - bx)**2 + (ps["y"] - by)**2 <= ps.get("view_radius", 8)**2:
                     tasks.append(send_view(p_uid, p_uid))
             
         elif m.caption and "/skin" in m.caption.lower():
-            base_tex = tex.copy()
-            baked_tex = bake_face(tex)
-            player_skins[uid] = {"base": base_tex, "face": baked_tex}
+            player_skins[uid] = {"base": tex.copy(), "face": bake_face(tex)}
             await broadcast_chat(s_id, f"👕 {un} установил новый скин!")
-            
             for p_uid, ps in SERVERS[s_id].players.items():
                 if not ps.get("online"): continue
-                vr = ps.get("view_radius", 8)
-                if p_uid == uid or (ps["x"] - st["x"])**2 + (ps["y"] - st["y"])**2 <= vr**2:
+                if p_uid == uid or (ps["x"] - st["x"])**2 + (ps["y"] - st["y"])**2 <= ps.get("view_radius", 8)**2:
                     tasks.append(send_view(p_uid, p_uid))
 
         if tasks: await asyncio.gather(*tasks)
@@ -1045,7 +1075,6 @@ async def h_cb(c):
     s_id = user_server_map.get(uid)
     if not s_id: return
     st = get_st(uid)
-    
     st["last_action"] = time.time()
 
     if st.get("is_busy"): 
@@ -1176,8 +1205,15 @@ async def h_cb(c):
         if "l" in d: s=-1
         if "r" in d: s=1
         a = st["angle"]
-        nx = clamp(st["x"] + (math.sin(a)*f + math.cos(a)*s)*MOVE_STEP, 0.5, srv.size-0.5)
-        ny = clamp(st["y"] + (math.cos(a)*f - math.sin(a)*s)*MOVE_STEP, 0.5, srv.size-0.5)
+        nx = st["x"] + (math.sin(a)*f + math.cos(a)*s)*MOVE_STEP
+        ny = st["y"] + (math.cos(a)*f - math.sin(a)*s)*MOVE_STEP
+        
+        if srv.type == "classic":
+            nx, ny = clamp(nx, 0.5, srv.size-0.5), clamp(ny, 0.5, srv.size-0.5)
+            
+        if srv.type == "survival":
+            srv.load_chunks_around(nx, ny, radius=2)
+            
         tz = get_ground_z(nx, ny, srv)
             
         diff = tz - st["z"]
@@ -1189,12 +1225,11 @@ async def h_cb(c):
                 st["flash_time"] = time.time()
                 if st["hp"]<=0:
                     await broadcast_chat(s_id, f"💀 {st['name']} разбился!")
-                    st["x"], st["y"], st["z"], st["hp"] = srv.size/2, srv.size/2, get_ground_z(srv.size/2, srv.size/2, srv), 10
+                    st["x"], st["y"], st["z"], st["hp"] = 0.5, 0.5, get_ground_z(0.5, 0.5, srv), 10
         st["jump"] = False
         
     elif d == "refresh": 
-        st["angle"] = normalize_angle(st["angle"] + math.pi)
-        ev = True
+        st["angle"] = normalize_angle(st["angle"] + math.pi); ev = True
     elif d == "turn_left": st["angle"] = normalize_angle(st["angle"] - TURN_ANGLE); ev = True
     elif d == "turn_right": st["angle"] = normalize_angle(st["angle"] + TURN_ANGLE); ev = True
     elif d == "look_up": st["tilt"] = max(st["tilt"] - TILT_STEP, MIN_TILT); ev = True
@@ -1209,23 +1244,18 @@ async def h_cb(c):
             try: await bot.edit_message_reply_markup(c.message.chat.id, c.message.message_id, reply_markup=make_keyboard(uid))
             except: pass
         else: 
-            st["inv_open"] = True
-            st["inv_mode"] = "normal"
+            st["inv_open"] = True; st["inv_mode"] = "normal"
 
     elif d == "build":
         pb = ray_pick(st["x"], st["y"], st["z"]+1.6, st["angle"], st["tilt"], s_id, uid)
         if pb and pb[0]=="block" and (srv.type == "classic" or pb[3] <= 5.0):
             if srv.type == "survival" and srv.blocks.get(pb[1], {}).get("type") == "workbench":
-                st["inv_open"] = True
-                st["inv_mode"] = "workbench"
-                st["inv_cursor"] = 34
-                ev = True
+                st["inv_open"] = True; st["inv_mode"] = "workbench"; st["inv_cursor"] = 34; ev = True
             elif pb[2] is not None:
                 nb = pb[2]
                 c_slot = st["inv_cursor"] if st["inv_cursor"] < 5 else 0
                 item = st["inv"].get(c_slot)
-                if item and item["type"] in ["wood_pickaxe", "stone_pickaxe", "stick"]:
-                    pass
+                if item and item["type"] in ["wood_pickaxe", "stone_pickaxe", "stick"]: pass
                 elif item or srv.type == "classic":
                     btype = item["type"] if item else "planks"
                     if nb not in srv.blocks:
@@ -1233,8 +1263,7 @@ async def h_cb(c):
                         if item:
                             item["count"] -= 1
                             if item["count"] <= 0: del st["inv"][c_slot]
-                        srv.rebuild_mesh()
-                        ev = True
+                        srv.rebuild_mesh(); ev = True
 
     elif d == "break":
         c_slot = st["inv_cursor"] if st["inv_cursor"] < 5 else 0
@@ -1247,15 +1276,12 @@ async def h_cb(c):
         if pb and (srv.type == "classic" or pb[3] <= 5.0):
             if pb[0] == "block":
                 bx, by, bz = pb[1]
-                if srv.blocks.get(pb[1], {}).get("type") == "bedrock":
-                    pass 
+                if srv.blocks.get(pb[1], {}).get("type") == "bedrock": pass 
                 elif srv.type == "survival":
                     btype = srv.blocks[pb[1]].get("type", "stone")
                     
                     if btype in ("stone", "cobblestone"):
-                        if is_stone_pick: mhp = 6
-                        elif is_wood_pick: mhp = 9
-                        else: mhp = 12
+                        mhp = 6 if is_stone_pick else 9 if is_wood_pick else 12
                     else:
                         mhp = BLOCK_STATS.get(btype, 3)
 
@@ -1269,6 +1295,8 @@ async def h_cb(c):
                         if btype == "grass": drop_t = "dirt"
                         elif btype == "leaves": drop_t = None
                         elif btype == "stone": drop_t = "cobblestone"
+                        elif btype == "coal_ore": drop_t = "coal"
+                        elif btype == "iron_ore": drop_t = "iron"
 
                         if drop_t:
                             for i in range(20):
@@ -1289,19 +1317,14 @@ async def h_cb(c):
                 ev = True
             elif pb[0] == "player":
                 tgt = srv.players[pb[1]]
-                damage = 1
-                if is_wood_pick: damage = 2
-                elif is_stone_pick: damage = 3
+                damage = 3 if is_stone_pick else 2 if is_wood_pick else 1
                 tgt["hp"] -= damage
                 tgt["flash_time"] = time.time()
                 if tgt["hp"] <= 0:
                     await broadcast_chat(s_id, f"💀 {tgt['name']} был убит игроком {st['name']}!")
-                    tgt["hp"], tgt["x"], tgt["y"], tgt["z"] = 10, srv.size/2, srv.size/2, get_ground_z(srv.size/2, srv.size/2, srv)
+                    tgt["hp"], tgt["x"], tgt["y"], tgt["z"] = 10, 0.5, 0.5, get_ground_z(0.5, 0.5, srv)
                 ev = True
-                
-                # ИСПРАВЛЕНИЕ: Меняем текст кнопки на "💥 Ударил!" на 1 секунду
                 st["hit_time"] = time.time()
-                
                 async def reset_hit_btn(cid, p_uid, m_id):
                     await asyncio.sleep(1.0)
                     p_st = get_st(p_uid)
@@ -1309,8 +1332,7 @@ async def h_cb(c):
                         try: await bot.edit_message_reply_markup(chat_id=cid, message_id=m_id, reply_markup=make_keyboard(p_uid))
                         except: pass
 
-                if st.get("msg_id"):
-                    asyncio.create_task(reset_hit_btn(c.message.chat.id, uid, st["msg_id"]))
+                if st.get("msg_id"): asyncio.create_task(reset_hit_btn(c.message.chat.id, uid, st["msg_id"]))
 
     try: await bot.answer_callback_query(c.id)
     except: pass
