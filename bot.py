@@ -134,10 +134,11 @@ def normalize_angle(a):
     return a
 
 # --- ТЕКСТУРЫ ---
-def create_fallback_tex(name, color, draw_func=None):
+def create_fallback_tex(name, color, draw_func=None, rgba=False):
     p = TEX_DIR / name
     if not p.exists():
-        img = Image.new("RGB", (128, 128), color)
+        mode = "RGBA" if rgba else "RGB"
+        img = Image.new(mode, (128, 128), color)
         if draw_func: draw_func(ImageDraw.Draw(img))
         img.save(p)
 
@@ -152,10 +153,10 @@ def draw_grass_side(d):
 def draw_dirt(d):
     for _ in range(400): d.point((random.randint(0,127), random.randint(0,127)), fill=(100, 70, 40))
 def draw_stick(d):
-    d.line((32, 96, 96, 32), fill=(139, 69, 19), width=10)
+    d.line((32, 96, 96, 32), fill=(139, 69, 19, 255), width=10)
 def draw_pickaxe(d):
-    d.line((32, 96, 96, 32), fill=(139, 69, 19), width=8) 
-    d.polygon([(64, 16), (112, 32), (96, 64)], fill=(180, 140, 80)) 
+    d.line((32, 96, 96, 32), fill=(139, 69, 19, 255), width=8) 
+    d.polygon([(64, 16), (112, 32), (96, 64)], fill=(180, 140, 80, 255)) 
 def draw_cobble(d):
     d.rectangle((0,0,128,128), fill=(100,100,100))
     for _ in range(50):
@@ -173,9 +174,9 @@ create_fallback_tex("bedrok.png", (40, 40, 40))
 create_fallback_tex("doska.png", (180, 140, 80))
 create_fallback_tex("verstak.png", (200, 100, 50))
 create_fallback_tex("verstak_bok.png", (180, 90, 40))
-create_fallback_tex("palka.png", (139, 69, 19), draw_stick)
-create_fallback_tex("der_kirka.png", (180, 140, 80), draw_pickaxe)
 create_fallback_tex("buliga.png", (100, 100, 100), draw_cobble)
+create_fallback_tex("palka.png", (0, 0, 0, 0), draw_stick, rgba=True)
+create_fallback_tex("der_kirka.png", (0, 0, 0, 0), draw_pickaxe, rgba=True)
 
 def load_tex(name, fallback_color=(255,0,255)):
     p = TEX_DIR / name
@@ -199,6 +200,20 @@ TEX_CACHE = {
     "cobblestone": load_tex("buliga.png", (100, 100, 100))
 }
 
+# --- ИКОНКИ ДЛЯ ИНВЕНТАРЯ (32x32) ---
+INV_ICONS = {}
+def get_inv_icon(itype):
+    if itype not in INV_ICONS:
+        tex_name = itype
+        if itype == "grass": tex_name = "trava_side"
+        elif itype == "wood": tex_name = "wood_side"
+        elif itype == "workbench": tex_name = "workbench_top"
+        elif itype == "dirt": tex_name = "zemlya"
+        
+        tex = TEX_CACHE.get(tex_name, TEX_CACHE.get(itype, TEX_CACHE["zemlya"]))
+        INV_ICONS[itype] = tex.resize((28, 28), Image.Resampling.NEAREST)
+    return INV_ICONS[itype]
+
 CRACK_TEX = []
 for i in range(5):
     img = Image.new("RGBA", (128, 128), (0,0,0,0))
@@ -218,6 +233,9 @@ def bake_face(tex):
     return img
 
 DEFAULT_FACE_TEX = bake_face(Image.new("RGB", (128, 128), (255, 220, 100)))
+
+# ИСПРАВЛЕНИЕ: Вернул массив BLOCK_STATS
+BLOCK_STATS = {"dirt": 3, "grass": 3, "wood": 6, "leaves": 2, "stone": 12, "planks": 4, "workbench": 6, "bedrock": 9999, "cobblestone": 12}
 
 class Server:
     def __init__(self, s_id, s_type):
@@ -313,7 +331,6 @@ SERVERS = {1: Server(1, "classic"), 2: Server(2, "survival")}
 user_server_map = {}
 player_skins = {}
 pending_skin_mode = {}
-last_target_block = {}
 
 def save_all_data():
     try:
@@ -515,7 +532,8 @@ def draw_poly_tex(pix, zb, v2d, tex, lf):
                     c = t_dat[ty*tw + tx]
                     if c[3]>100: pix[x,y] = apply_light(c[:3], lf)
 
-def draw_inv(d, w, h, st):
+# ИСПРАВЛЕНИЕ: Теперь картинки предметов рендерятся визуально в ячейках
+def draw_inv(img, d, w, h, st):
     d.rectangle((0,0, w, h), fill=(0,0,0, 200))
     slots = {}
     mode = st.get("inv_mode", "normal")
@@ -546,9 +564,9 @@ def draw_inv(d, w, h, st):
         d.rectangle((sx, sy, sx+36, sy+36), fill=color, outline=(255,255,255) if st["inv_cursor"]==sid else (50,50,50), width=2 if st["inv_cursor"]==sid else 1)
         item = st["inv"].get(sid)
         if item:
-            if item["type"] == "wood_pickaxe": d.text((sx+2, sy+2), "WPi", fill=(255,255,255))
-            else:
-                d.text((sx+2, sy+2), item["type"][:3], fill=(255,255,255))
+            icon = get_inv_icon(item["type"])
+            img.paste(icon, (sx+4, sy+4), icon)
+            if item.get("durability") is None:
                 d.text((sx+20, sy+20), str(item["count"]), fill=(255,255,0))
             if "durability" in item:
                 dur_pct = max(0, item["durability"] / 30.0)
@@ -607,7 +625,7 @@ def render_scene(px, py, pz, pa, pt, uid, s_id):
     d = ImageDraw.Draw(img)
 
     if st.get("inv_open"):
-        draw_inv(d, img_w, img_h, st)
+        draw_inv(img, d, img_w, img_h, st)
         bio = io.BytesIO()
         img.convert("RGB").save(bio, "PNG")
         return bio.getvalue()
@@ -694,9 +712,9 @@ def render_scene(px, py, pz, pa, pt, uid, s_id):
             d.rectangle((hx+i*40, img_h-45, hx+i*40+36, img_h-9), fill=(100,100,100,150), outline=(255,255,255) if i==st["inv_cursor"] and not st.get("inv_open") else None)
             item = st["inv"].get(i)
             if item:
-                if item["type"] == "wood_pickaxe": d.text((hx+i*40+2, img_h-43), "WPi", fill=(255,255,255))
-                else:
-                    d.text((hx+i*40+2, img_h-43), item["type"][:3], fill=(255,255,255))
+                icon = get_inv_icon(item["type"])
+                img.paste(icon, (hx+i*40+4, img_h-41), icon)
+                if item.get("durability") is None:
                     d.text((hx+i*40+20, img_h-25), str(item["count"]), fill=(255,255,0))
                 if "durability" in item:
                     dur_pct = max(0, item["durability"] / 30.0)
@@ -826,6 +844,26 @@ async def cb_join(c):
     st = init_player(uid, s_id, c.from_user.first_name)
     await broadcast_chat(s_id, f"🎉 {st['name']} присоединился!")
     await send_view(c.message.chat.id, uid)
+
+@bot.message_handler(commands=["block"])
+async def h_block(m):
+    uid = m.from_user.id
+    try: await bot.delete_message(m.chat.id, m.message_id)
+    except: pass
+    
+    s_id = user_server_map.get(uid)
+    if not s_id or s_id != 1: return
+    
+    pb_data = last_target_block.get(uid)
+    if not pb_data or pb_data[0] != "block": return
+        
+    t = pb_data[1]
+    pending_skin_mode[uid] = ("block", t)
+    st = get_st(uid)
+    st["cache_hash"] = None
+    if st.get("msg_id"):
+        try: await bot.edit_message_reply_markup(m.chat.id, st["msg_id"], reply_markup=make_keyboard(uid))
+        except: pass
 
 @bot.message_handler(content_types=["photo"])
 async def h_photo(m):
