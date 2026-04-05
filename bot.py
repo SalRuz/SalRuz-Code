@@ -6,6 +6,7 @@ import asyncio
 import os
 import sqlite3
 import pickle
+import hashlib
 from pathlib import Path
 from telebot.async_telebot import AsyncTeleBot
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, InputMediaPhoto
@@ -84,7 +85,6 @@ PLAYER_HEAD_OFFSET = 0.1
 PLAYER_BODY_COLOR = (255, 255, 0)
 PLAYER_HEAD_COLOR = (255, 220, 100)
 
-# ИСПРАВЛЕНИЕ: Новые разрешения для оптимизации рендера
 RESOLUTIONS = {
     1: {"w": 160, "h": 120, "scale": 90, "out_w": 512, "out_h": 384},
     2: {"w": 256, "h": 192, "scale": 140, "out_w": 512, "out_h": 384},
@@ -548,7 +548,6 @@ def get_ground_z(x, y, srv):
             tz = bz + 1; break
     return tz
 
-# ИСПРАВЛЕНИЕ: Функция для проверки коллизий (чтобы игрок не застревал)
 def is_blocked(srv, x, y, z):
     ix, iy = int(math.floor(x)), int(math.floor(y))
     for bz in [int(math.floor(z)), int(math.floor(z + 1.0))]:
@@ -569,7 +568,7 @@ def init_player(uid, s_id, name):
             "angle": 0.0, "tilt": 0.0, "jump": False, "last_action": time.time(),
             "name": transliterate(name), "msg_id": None, "view_radius": 8, "res_level": 2, "hp": 10, "flash_time": 0,
             "inv": {0: {"type": "wood", "count": 10}}, "inv_open": False, "inv_mode": "normal", "inv_cursor": 0, "drag_item": None,
-            "is_busy": False, "online": True, "hit_time": 0
+            "is_busy": False, "online": True, "hit_time": 0, "last_state_hash": None
         }
     else:
         srv.players[uid]["online"] = True
@@ -577,6 +576,7 @@ def init_player(uid, s_id, name):
         srv.players[uid]["msg_id"] = None
         srv.players[uid]["name"] = transliterate(name)
         srv.players[uid]["hit_time"] = 0
+        srv.players[uid]["last_state_hash"] = None
     return srv.players[uid]
 
 def make_keyboard(uid):
@@ -806,18 +806,12 @@ def render_scene(px, py, pz, pa, pt, uid, s_id):
     srv = SERVERS[s_id]
     st = srv.players[uid]
     rl = st["res_level"]
+    
     img_w, img_h, scale = RESOLUTIONS[rl]["w"], RESOLUTIONS[rl]["h"], RESOLUTIONS[rl]["scale"]
+    out_w, out_h = RESOLUTIONS[rl]["out_w"], RESOLUTIONS[rl]["out_h"]
     
     sky_col, global_light = get_environment_light(s_id)
     img = Image.new("RGBA", (img_w, img_h), sky_col)
-    d = ImageDraw.Draw(img)
-
-    # ИСПРАВЛЕНИЕ: Оптимизированное сохранение в JPEG даже для инвентаря
-    if st.get("inv_open"):
-        draw_inv(img, d, img_w, img_h, st)
-        bio = io.BytesIO()
-        img.convert("RGB").save(bio, "JPEG", quality=90)
-        return bio.getvalue()
 
     horiz_y = img_h // 2
     pix = img.load()
@@ -825,7 +819,9 @@ def render_scene(px, py, pz, pa, pt, uid, s_id):
 
     fwd_x, fwd_y = math.sin(pa), math.cos(pa)
     vr = st["view_radius"]
+    names_to_draw = []
     
+    # 1. 3D Рендер окружения
     for face in srv.faces:
         if abs(face["cx"] - px) > vr or abs(face["cy"] - py) > vr: continue
         bx, by = face["cx"]-px, face["cy"]-py
@@ -847,6 +843,7 @@ def render_scene(px, py, pz, pa, pt, uid, s_id):
         if face.get("tex"): draw_poly_tex(pix, zbuf, proj, face["tex"], final_lf)
         else: draw_poly_color(pix, zbuf, proj, apply_light(face.get("sc", (255,255,255)), final_lf))
 
+    # 2. Рендер других игроков
     for pid, ps in srv.players.items():
         if pid == uid or not ps.get("online", True): continue
         ox, oy, oa = ps["x"], ps["y"], ps["angle"]
@@ -886,51 +883,65 @@ def render_scene(px, py, pz, pa, pt, uid, s_id):
                 else: 
                     draw_poly_color(pix, zbuf, proj, apply_light(col, final_lf))
 
+        # Сохраняем позиции ников для отрисовки ПОСЛЕ апскейла
         nv = world_to_view(ox, oy, oz + 2.4, px, py, pz, pa, pt)
         if nv[1] >= NEAR_CLIP:
             px_n = img_w/2 + (nv[0]/nv[1])*scale
             py_n = horiz_y - (nv[2]/nv[1])*scale
-            name_text = ps["name"]
-            try:
-                bbox = d.textbbox((0, 0), name_text, font=FONT)
-                tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
-            except:
-                tw, th = len(name_text)*6, 12
-            d.rectangle((px_n - tw/2 - 2, py_n - th/2 - 2, px_n + tw/2 + 2, py_n + th/2 + 2), fill=(0,0,0,128))
-            d.text((px_n - tw/2, py_n - th/2), name_text, font=FONT, fill=(255,255,255))
+            # Маппинг координат на финальное разрешение
+            px_out = px_n * (out_w / img_w)
+            py_out = py_n * (out_h / img_h)
+            names_to_draw.append((px_out, py_out, ps["name"]))
 
-    d.line((img_w/2-5, img_h/2, img_w/2+5, img_h/2), fill=(255,255,255))
-    d.line((img_w/2, img_h/2-5, img_w/2, img_h/2+5), fill=(255,255,255))
+    # 3. АПСКЕЙЛ (Увеличиваем картинку перед рисованием интерфейса)
+    if img_w != out_w or img_h != out_h:
+        img = img.resize((out_w, out_h), Image.Resampling.NEAREST)
+
+    d = ImageDraw.Draw(img)
+
+    # 4. ОТРИСОВКА ИНТЕРФЕЙСА (Теперь ХУД всегда правильного размера)
+    if st.get("inv_open"):
+        draw_inv(img, d, out_w, out_h, st)
+        bio = io.BytesIO()
+        img.convert("RGB").save(bio, "JPEG", quality=90)
+        return bio.getvalue()
+
+    for px_out, py_out, name_text in names_to_draw:
+        try:
+            bbox = d.textbbox((0, 0), name_text, font=FONT)
+            tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
+        except:
+            tw, th = len(name_text)*6, 12
+        d.rectangle((px_out - tw/2 - 2, py_out - th/2 - 2, px_out + tw/2 + 2, py_out + th/2 + 2), fill=(0,0,0,128))
+        d.text((px_out - tw/2, py_out - th/2), name_text, font=FONT, fill=(255,255,255))
+
+    d.line((out_w/2-5, out_h/2, out_w/2+5, out_h/2), fill=(255,255,255))
+    d.line((out_w/2, out_h/2-5, out_w/2, out_h/2+5), fill=(255,255,255))
 
     d.rectangle((5,5, 150,25), fill=(0,0,0,150))
     d.text((10,8), f"X:{px:.1f} Z:{pz-1.6:.1f} Y:{py:.1f}", fill=(255,255,255))
 
     for i in range(5):
-        hx, hy = img_w - 90 + i*16, 10
+        hx, hy = out_w - 90 + i*16, 10
         d.rectangle((hx, hy, hx+12, hy+12), outline=(0,0,0))
         if st["hp"] >= i*2+2: d.rectangle((hx+1, hy+1, hx+11, hy+11), fill=(255,50,50))
         elif st["hp"] == i*2+1: d.rectangle((hx+1, hy+1, hx+6, hy+11), fill=(255,50,50))
 
     if srv.type == "survival":
-        hx = img_w//2 - 100
+        hx = out_w//2 - 100
         for i in range(5):
-            d.rectangle((hx+i*40, img_h-45, hx+i*40+36, img_h-9), fill=(100,100,100,150), outline=(255,255,255) if i==st["inv_cursor"] and not st.get("inv_open") else None)
+            d.rectangle((hx+i*40, out_h-45, hx+i*40+36, out_h-9), fill=(100,100,100,150), outline=(255,255,255) if i==st["inv_cursor"] and not st.get("inv_open") else None)
             item = st["inv"].get(i)
             if item:
                 icon = get_inv_icon(item["type"])
-                img.paste(icon, (hx+i*40+4, img_h-41), icon)
+                img.paste(icon, (hx+i*40+4, out_h-41), icon)
                 if item.get("durability") is None:
-                    d.text((hx+i*40+20, img_h-25), str(item["count"]), fill=(255,255,0))
+                    d.text((hx+i*40+20, out_h-25), str(item["count"]), fill=(255,255,0))
                 if "durability" in item:
                     max_dur = 66 if item["type"] == "stone_pickaxe" else 30
                     dur_pct = max(0, item["durability"] / max_dur)
-                    d.rectangle((hx+i*40+4, img_h-13, hx+i*40+32, img_h-11), fill=(50,50,50))
-                    d.rectangle((hx+i*40+4, img_h-13, hx+i*40+4+28*dur_pct, img_h-11), fill=(0,255,0) if dur_pct>0.3 else (255,0,0))
-
-    # ИСПРАВЛЕНИЕ: Оптимизация. Апскейл картинки и сохранение в JPEG (легче и быстрее)
-    out_w, out_h = RESOLUTIONS[rl]["out_w"], RESOLUTIONS[rl]["out_h"]
-    if img_w != out_w or img_h != out_h:
-        img = img.resize((out_w, out_h), Image.Resampling.NEAREST)
+                    d.rectangle((hx+i*40+4, out_h-13, hx+i*40+32, out_h-11), fill=(50,50,50))
+                    d.rectangle((hx+i*40+4, out_h-13, hx+i*40+4+28*dur_pct, out_h-11), fill=(0,255,0) if dur_pct>0.3 else (255,0,0))
 
     bio = io.BytesIO()
     img.convert("RGB").save(bio, "JPEG", quality=90)
@@ -982,11 +993,23 @@ async def send_view(cid, uid):
             img_bytes = await asyncio.to_thread(render_scene, st["x"], st["y"], st["z"]+1.6, st["angle"], st["tilt"], uid, s_id)
             
         cap = "\n".join(SERVERS[s_id].chat) if SERVERS[s_id].chat else "🎮 Приятной игры!"
+        kb_str = kb.to_json()
+        
+        # УМНОЕ КЭШИРОВАНИЕ (Анти-спам одинаковыми картинками)
+        img_hash = hashlib.md5(img_bytes).hexdigest()
+        current_state = f"{img_hash}_{kb_str}_{cap}"
+        
+        # Если кадр, интерфейс и чат не изменились - не тратим лимиты Telegram!
+        if st.get("last_state_hash") == current_state:
+            st["is_busy"] = False
+            return
+            
+        st["last_state_hash"] = current_state
         
         if st.get("msg_id"):
             try:
                 bio_edit = io.BytesIO(img_bytes)
-                bio_edit.name = "s.jpg" # ИСПРАВЛЕНИЕ: Формат JPG
+                bio_edit.name = "s.jpg" 
                 await bot.edit_message_media(chat_id=cid, message_id=st["msg_id"], media=InputMediaPhoto(bio_edit, caption=cap), reply_markup=kb)
                 st["is_busy"] = False
                 return
@@ -998,7 +1021,7 @@ async def send_view(cid, uid):
             except Exception: pass
 
         bio_send = io.BytesIO(img_bytes)
-        bio_send.name = "s.jpg" # ИСПРАВЛЕНИЕ: Формат JPG
+        bio_send.name = "s.jpg"
         msg = await bot.send_photo(cid, bio_send, caption=cap, reply_markup=kb)
         st["msg_id"] = msg.message_id
     finally:
@@ -1149,7 +1172,6 @@ async def h_cb(c):
         except: pass
         return
         
-    # ИСПРАВЛЕНИЕ: Мгновенный ответ Телеграму, чтобы кнопки не висли при долгом рендере
     try: await bot.answer_callback_query(c.id)
     except: pass
         
@@ -1285,14 +1307,13 @@ async def h_cb(c):
             
         tz = get_ground_z(nx, ny, srv)
             
-        # ИСПРАВЛЕНИЕ: Система анти-застревания и проверки коллизий
         if is_blocked(srv, st["x"], st["y"], st["z"]):
-            st["z"] += 1.0 # Выталкиваем из блока вверх
+            st["z"] += 1.0 
             ev = True
         else:
             diff = tz - st["z"]
             if diff <= 0.1 or (0 < diff <= 1.5 and st["jump"]):
-                if not is_blocked(srv, nx, ny, tz): # Идем, только если не упремся головой
+                if not is_blocked(srv, nx, ny, tz): 
                     st["x"], st["y"], st["z"] = nx, ny, tz
                     ev = True
                     if diff <= -4:
@@ -1413,6 +1434,8 @@ async def h_cb(c):
                     await asyncio.sleep(1.0)
                     p_st = get_st(p_uid)
                     if p_st and p_st.get("msg_id") == m_id:
+                        # Сбрасываем хэш, чтобы кнопка обновилась
+                        p_st["last_state_hash"] = None
                         try: await bot.edit_message_reply_markup(chat_id=cid, message_id=m_id, reply_markup=make_keyboard(p_uid))
                         except: pass
 
