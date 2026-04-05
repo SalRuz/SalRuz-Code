@@ -17,7 +17,6 @@ bot = AsyncTeleBot(BOT_TOKEN)
 
 RENDER_SEMAPHORE = asyncio.Semaphore(2)
 
-# --- ИНИЦИАЛИЗАЦИЯ ДАННЫХ И БД ---
 try:
     DATA_DIR = Path("/app/data")
     DATA_DIR.mkdir(parents=True, exist_ok=True)
@@ -35,22 +34,22 @@ if not DB_PATH.exists():
 TEX_DIR = Path("textures")
 TEX_DIR.mkdir(exist_ok=True)
 
-# --- ЗАГРУЗКА ШРИФТОВ ДЛЯ РУССКОГО ЯЗЫКА ---
-def load_font():
-    paths = [
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-        "/usr/share/fonts/truetype/freefont/FreeSans.ttf",
-        "/usr/share/fonts/dejavu/DejaVuSans.ttf",
-        "C:\\Windows\\Fonts\\arial.ttf",
-        "C:\\Windows\\Fonts\\segoeui.ttf"
-    ]
-    for p in paths:
-        if os.path.exists(p):
-            try: return ImageFont.truetype(p, 12)
-            except: pass
-    return ImageFont.load_default()
+# --- ТРАНСЛИТЕРАЦИЯ ---
+CYRILLIC_TO_LATIN = {
+    'а': 'a', 'б': 'b', 'в': 'v', 'г': 'g', 'д': 'd', 'е': 'e', 'ё': 'yo', 'ж': 'zh',
+    'з': 'z', 'и': 'i', 'й': 'y', 'к': 'k', 'л': 'l', 'м': 'm', 'н': 'n', 'о': 'o',
+    'п': 'p', 'р': 'r', 'с': 's', 'т': 't', 'у': 'u', 'ф': 'f', 'х': 'h', 'ц': 'ts',
+    'ч': 'ch', 'ш': 'sh', 'щ': 'shch', 'ъ': 'sch', 'ы': 'y', 'ь': '', 'э': 'e', 'ю': 'yu', 'я': 'ya',
+    'А': 'A', 'Б': 'B', 'В': 'V', 'Г': 'G', 'Д': 'D', 'Е': 'E', 'Ё': 'Yo', 'Ж': 'Zh',
+    'З': 'Z', 'И': 'I', 'Й': 'Y', 'К': 'K', 'Л': 'L', 'М': 'M', 'Н': 'N', 'О': 'O',
+    'П': 'P', 'Р': 'R', 'С': 'S', 'Т': 'T', 'У': 'U', 'Ф': 'F', 'Х': 'H', 'Ц': 'Ts',
+    'Ч': 'Ch', 'Ш': 'Sh', 'Щ': 'Shch', 'Ъ': 'Sch', 'Ы': 'Y', 'Ь': '', 'Э': 'E', 'Ю': 'Yu', 'Я': 'Ya'
+}
 
-FONT = load_font()
+def transliterate(text):
+    return "".join(CYRILLIC_TO_LATIN.get(c, c) for c in text)
+
+FONT = ImageFont.load_default()
 
 # --- КОНСТАНТЫ И НАСТРОЙКИ ---
 CAMERA_HEIGHT_OFFSET = 1.6
@@ -63,10 +62,13 @@ SKY_COLOR = (135, 206, 235)
 NEAR_CLIP = 0.05
 RAY_STEP = 0.02
 RAY_MAX_DIST = 24
+
+# Игрок стал визуально чуть ниже
 PLAYER_BODY_SIZE = 0.6
-PLAYER_BODY_HEIGHT = 1.6
+PLAYER_BODY_HEIGHT = 1.3 
 PLAYER_HEAD_SIZE = 0.4
-PLAYER_HEAD_OFFSET = 0.2
+PLAYER_HEAD_OFFSET = 0.1
+
 PLAYER_BODY_COLOR = (255, 255, 0)
 PLAYER_HEAD_COLOR = (255, 220, 100)
 
@@ -98,7 +100,6 @@ PLAYER_FACES = [
     ("left", [0, 4, 7, 3], lambda c: c),
 ]
 
-# --- МАТЕМАТИКА ---
 def clamp(v, lo, hi): return max(lo, min(hi, v))
 def apply_light(c, lf): return tuple(min(255, max(0, int(ch*lf))) for ch in c)
 def normalize_vector(v):
@@ -118,7 +119,6 @@ def normalize_angle(a):
     while a >= 2*math.pi: a -= 2*math.pi
     return a
 
-# --- ТЕКСТУРЫ ---
 def create_fallback_tex(name, color, draw_func=None):
     p = TEX_DIR / name
     if not p.exists():
@@ -144,6 +144,12 @@ create_fallback_tex("trava_bok.png", (139, 94, 52), draw_grass_side)
 create_fallback_tex("zemlya.png", (139, 94, 52), draw_dirt)
 create_fallback_tex("drevesina.png", (110, 70, 30))
 create_fallback_tex("drevesina_vn.png", (150, 100, 50))
+create_fallback_tex("listva.png", (50, 150, 50))
+create_fallback_tex("kamen.png", (120, 120, 120))
+create_fallback_tex("bedrok.png", (40, 40, 40))
+create_fallback_tex("doska.png", (180, 140, 80))
+create_fallback_tex("verstak.png", (200, 100, 50))
+create_fallback_tex("verstak_bok.png", (180, 90, 40))
 
 def load_tex(name, fallback_color=(255,0,255)):
     p = TEX_DIR / name
@@ -154,13 +160,14 @@ TEX_CACHE = {
     "trava_top": load_tex("trava.png", (100, 220, 100)),
     "trava_side": load_tex("trava_bok.png", (120, 180, 80)),
     "zemlya": load_tex("zemlya.png", (139, 94, 52)),
-    "stone": load_tex("stone.png", (120, 120, 120)),
+    "stone": load_tex("kamen.png", (120, 120, 120)),
     "wood_side": load_tex("drevesina.png", (110, 70, 30)),
     "wood_top": load_tex("drevesina_vn.png", (150, 100, 50)),
-    "leaves": load_tex("leaves.png", (50, 150, 50)),
-    "planks": load_tex("planks.png", (180, 140, 80)),
-    "workbench": load_tex("workbench.png", (200, 100, 50)),
-    "bedrock": load_tex("bedrock.png", (40, 40, 40))
+    "leaves": load_tex("listva.png", (50, 150, 50)),
+    "planks": load_tex("doska.png", (180, 140, 80)),
+    "bedrock": load_tex("bedrok.png", (40, 40, 40)),
+    "workbench_top": load_tex("verstak.png", (200, 100, 50)),
+    "workbench_side": load_tex("verstak_bok.png", (180, 90, 40))
 }
 
 CRACK_TEX = []
@@ -184,7 +191,6 @@ def bake_face(tex):
 DEFAULT_FACE_TEX = bake_face(Image.new("RGB", (128, 128), (255, 220, 100)))
 BLOCK_STATS = {"dirt": 3, "grass": 3, "wood": 6, "leaves": 2, "stone": 12, "planks": 4, "workbench": 6, "bedrock": 9999}
 
-# --- КЛАСС СЕРВЕРА ---
 class Server:
     def __init__(self, s_id, s_type):
         self.id = s_id
@@ -254,7 +260,8 @@ class Server:
                     tex = None
                     if btype == "grass": tex = TEX_CACHE["trava_top"] if fn=="top" else TEX_CACHE["trava_side"] if fn not in ["top","bottom"] else TEX_CACHE["zemlya"]
                     elif btype == "wood": tex = TEX_CACHE["wood_top"] if fn in ["top","bottom"] else TEX_CACHE["wood_side"]
-                    elif btype in ["dirt", "stone", "leaves", "planks", "workbench", "bedrock"]:
+                    elif btype == "workbench": tex = TEX_CACHE["workbench_top"] if fn=="top" else TEX_CACHE["planks"] if fn=="bottom" else TEX_CACHE["workbench_side"]
+                    elif btype in ["dirt", "stone", "leaves", "planks", "bedrock"]:
                         tex = TEX_CACHE.get(btype, TEX_CACHE["zemlya"])
                     face_info["tex"] = tex
                 
@@ -274,7 +281,6 @@ class Server:
         self.chat.append(txt)
         if len(self.chat) > 4: self.chat.pop(0)
 
-# --- ГЛОБАЛЬНЫЕ ДАННЫЕ И СОХРАНЕНИЕ ---
 SERVERS = {1: Server(1, "classic"), 2: Server(2, "survival")}
 user_server_map = {}
 player_skins = {}
@@ -294,8 +300,7 @@ def save_all_data():
         
         s2_data = {"players": SERVERS[2].players, "blocks": SERVERS[2].blocks, "damage": SERVERS[2].block_damage}
         with open(DATA_DIR / "srv2.pkl", "wb") as f: pickle.dump(s2_data, f)
-    except Exception as e:
-        print("Ошибка сохранения:", e)
+    except Exception as e: pass
 
 def load_all_data():
     try:
@@ -318,8 +323,7 @@ def load_all_data():
                 SERVERS[2].blocks = data.get("blocks", {})
                 SERVERS[2].block_damage = data.get("damage", {})
             SERVERS[2].rebuild_mesh()
-    except Exception as e:
-        print("Ошибка загрузки, генерируем заново:", e)
+    except Exception as e: pass
 
 async def auto_saver():
     while True:
@@ -344,13 +348,14 @@ def init_player(uid, s_id, name):
         srv.players[uid] = {
             "x": srv.size/2, "y": srv.size/2, "z": get_ground_z(srv.size/2, srv.size/2, srv), 
             "angle": 0.0, "tilt": 0.0, "jump": False,
-            "name": name, "msg_id": None, "view_radius": 8, "res_level": 2, "hp": 10, "flash_time": 0,
-            "inv": {0: {"type": "wood", "count": 10}}, "inv_open": False, "inv_cursor": 0, "drag_item": None,
+            "name": transliterate(name), "msg_id": None, "view_radius": 8, "res_level": 2, "hp": 10, "flash_time": 0,
+            "inv": {0: {"type": "wood", "count": 10}}, "inv_open": False, "inv_mode": "normal", "inv_cursor": 0, "drag_item": None,
             "cache_hash": None, "cache_img": None, "is_busy": False, "online": True
         }
     else:
         srv.players[uid]["online"] = True
         srv.players[uid]["msg_id"] = None
+        srv.players[uid]["name"] = transliterate(name)
     return srv.players[uid]
 
 def make_keyboard(uid):
@@ -380,7 +385,7 @@ def make_keyboard(uid):
     kb.add(
         InlineKeyboardButton("↙️", callback_data="move_bl"),
         InlineKeyboardButton("⬇️", callback_data="move_b"),
-        InlineKeyboardButton("���️", callback_data="move_br")
+        InlineKeyboardButton("↘️", callback_data="move_br")
     )
     kb.add(
         InlineKeyboardButton("🌀⬅️", callback_data="turn_left"),
@@ -402,7 +407,6 @@ def make_keyboard(uid):
     )
     return kb
 
-# --- ОПТИМИЗИРОВАННЫЙ РЕНДЕР ---
 def world_to_view(wx, wy, wz, px, py, pz, angle, tilt):
     dx, dy = wx-px, wy-py
     s, c = math.sin(angle), math.cos(angle)
@@ -487,11 +491,21 @@ def draw_poly_tex(pix, zb, v2d, tex, lf):
 def draw_inv(d, w, h, st):
     d.rectangle((0,0, w, h), fill=(0,0,0, 200))
     slots = {}
-    cx, cy = w//2 - 60, h//2 - 120
-    for i, (dx, dy) in enumerate([(0,0), (40,0), (0,40), (40,40)]): slots[20+i] = (cx+dx, cy+dy)
-    slots[24] = (cx+100, cy+20)
-    d.text((cx, cy-15), "Crafting", fill=(255,255,255))
-    d.line((cx+85, cy+30, cx+95, cy+30), fill=(255,255,255), width=2)
+    mode = st.get("inv_mode", "normal")
+    
+    if mode == "workbench":
+        cx, cy = w//2 - 80, h//2 - 120
+        for r in range(3):
+            for c in range(3): slots[30 + r*3 + c] = (cx+c*40, cy+r*40)
+        slots[39] = (cx+140, cy+40)
+        d.text((cx, cy-15), "Workbench", fill=(255,255,255))
+        d.line((cx+125, cy+50, cx+135, cy+50), fill=(255,255,255), width=2)
+    else:
+        cx, cy = w//2 - 60, h//2 - 120
+        for i, (dx, dy) in enumerate([(0,0), (40,0), (0,40), (40,40)]): slots[20+i] = (cx+dx, cy+dy)
+        slots[24] = (cx+100, cy+20)
+        d.text((cx, cy-15), "Crafting", fill=(255,255,255))
+        d.line((cx+85, cy+30, cx+95, cy+30), fill=(255,255,255), width=2)
     
     mx, my = w//2 - 100, h//2
     for r in range(3):
@@ -501,7 +515,7 @@ def draw_inv(d, w, h, st):
     for c in range(5): slots[c] = (hx+c*40, hy)
 
     for sid, (sx, sy) in slots.items():
-        color = (100,100,100) if sid != 24 else (150,150,50)
+        color = (100,100,100) if sid not in (24, 39) else (150,150,50)
         d.rectangle((sx, sy, sx+36, sy+36), fill=color, outline=(255,255,255) if st["inv_cursor"]==sid else (50,50,50), width=2 if st["inv_cursor"]==sid else 1)
         item = st["inv"].get(sid)
         if item:
@@ -512,17 +526,37 @@ def draw_inv(d, w, h, st):
         d.text((10, 10), f"Dragging: {st['drag_item']['count']}x {st['drag_item']['type']}", fill=(0,255,0))
 
 def update_crafting(st):
-    c_slots = [st["inv"].get(i) for i in range(20, 24)]
+    mode = st.get("inv_mode", "normal")
+    c_indices = range(30, 39) if mode == "workbench" else range(20, 24)
+    out_idx = 39 if mode == "workbench" else 24
+    
+    c_slots = [st["inv"].get(i) for i in c_indices]
     res = None
-    woods = sum(1 for i in c_slots if i and i["type"]=="wood")
-    planks = sum(1 for i in c_slots if i and i["type"]=="planks")
+    
+    woods = [i["count"] for i in c_slots if i and i["type"] == "wood"]
+    planks = [i["count"] for i in c_slots if i and i["type"] == "planks"]
     total = sum(1 for i in c_slots if i)
     
-    if woods == 1 and total == 1: res = {"type": "planks", "count": 4}
-    elif planks == 4 and total == 4: res = {"type": "workbench", "count": 1}
+    if len(woods) == 1 and total == 1: 
+        op_count = woods[0]
+        res = {"type": "planks", "count": op_count * 4, "ops": op_count}
+    elif len(planks) == 4 and total == 4:
+        op_count = min(planks)
+        res = {"type": "workbench", "count": op_count * 1, "ops": op_count}
     
-    if res: st["inv"][24] = res
-    elif 24 in st["inv"]: del st["inv"][24]
+    if res: st["inv"][out_idx] = res
+    elif out_idx in st["inv"]: del st["inv"][out_idx]
+
+def close_inv(st):
+    st["inv_open"] = False
+    indices = list(range(20, 24)) + list(range(30, 39))
+    for i in indices:
+        if i in st["inv"]:
+            item = st["inv"].pop(i)
+            free = next((k for k in range(20) if k not in st["inv"]), None)
+            if free is not None: st["inv"][free] = item
+    if 24 in st["inv"]: del st["inv"][24]
+    if 39 in st["inv"]: del st["inv"][39]
 
 def render_scene(px, py, pz, pa, pt, uid, s_id):
     srv = SERVERS[s_id]
@@ -572,8 +606,9 @@ def render_scene(px, py, pz, pa, pt, uid, s_id):
         d_sq = (ox-px)**2 + (oy-py)**2
         if d_sq > vr**2 or (d_sq > 9.0 and ((ox-px)*fwd_x + (oy-py)*fwd_y)/math.sqrt(d_sq) < -0.3): continue
         
-        bv = build_box(ox, oy, oz, PLAYER_BODY_SIZE, PLAYER_BODY_HEIGHT, oa)
-        hv = build_box(ox, oy, oz+PLAYER_BODY_HEIGHT+PLAYER_HEAD_OFFSET, PLAYER_HEAD_SIZE, PLAYER_HEAD_SIZE, oa)
+        # Исправление зеркальности (-oa)
+        bv = build_box(ox, oy, oz, PLAYER_BODY_SIZE, PLAYER_BODY_HEIGHT, -oa)
+        hv = build_box(ox, oy, oz+PLAYER_BODY_HEIGHT+PLAYER_HEAD_OFFSET, PLAYER_HEAD_SIZE, PLAYER_HEAD_SIZE, -oa)
         flash = time.time() - ps.get("flash_time", 0) < 0.25
         
         for b_verts, col, tex_mode in [(bv, (255,50,50) if flash else PLAYER_BODY_COLOR, False), (hv, (255,50,50) if flash else PLAYER_HEAD_COLOR, True)]:
@@ -590,19 +625,12 @@ def render_scene(px, py, pz, pa, pt, uid, s_id):
                     draw_poly_tex(pix, zbuf, proj, t, lf)
                 else: draw_poly_color(pix, zbuf, proj, apply_light(col, lf))
 
-        # Отрисовка имени (Ника) игрока над головой с поддержкой русского
         nv = world_to_view(ox, oy, oz + 2.4, px, py, pz, pa, pt)
         if nv[1] >= NEAR_CLIP:
             px_n = img_w/2 + (nv[0]/nv[1])*scale
             py_n = horiz_y - (nv[2]/nv[1])*scale
-            
             name_text = ps["name"]
-            try:
-                bbox = d.textbbox((0, 0), name_text, font=FONT)
-                tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
-            except:
-                tw, th = d.textsize(name_text, font=FONT) if hasattr(d, "textsize") else (len(name_text)*6, 12)
-                
+            tw, th = len(name_text)*6, 12
             d.rectangle((px_n - tw/2 - 2, py_n - th/2 - 2, px_n + tw/2 + 2, py_n + th/2 + 2), fill=(0,0,0,128))
             d.text((px_n - tw/2, py_n - th/2), name_text, font=FONT, fill=(255,255,255))
 
@@ -621,7 +649,7 @@ def render_scene(px, py, pz, pa, pt, uid, s_id):
     if srv.type == "survival":
         hx = img_w//2 - 100
         for i in range(5):
-            d.rectangle((hx+i*40, img_h-45, hx+i*40+36, img_h-9), fill=(100,100,100,150), outline=(255,255,255) if i==st["inv_cursor"] else None)
+            d.rectangle((hx+i*40, img_h-45, hx+i*40+36, img_h-9), fill=(100,100,100,150), outline=(255,255,255) if i==st["inv_cursor"] and not st.get("inv_open") else None)
             item = st["inv"].get(i)
             if item:
                 d.text((hx+i*40+2, img_h-43), item["type"][:3], fill=(255,255,255))
@@ -745,26 +773,6 @@ async def cb_join(c):
     await broadcast_chat(s_id, f"🎉 {st['name']} присоединился!")
     await send_view(c.message.chat.id, uid)
 
-@bot.message_handler(commands=["block"])
-async def h_block(m):
-    uid = m.from_user.id
-    try: await bot.delete_message(m.chat.id, m.message_id)
-    except: pass
-    
-    s_id = user_server_map.get(uid)
-    if not s_id or s_id != 1: return
-    
-    pb_data = last_target_block.get(uid)
-    if not pb_data or pb_data[0] != "block": return
-        
-    t = pb_data[1]
-    pending_skin_mode[uid] = ("block", t)
-    st = get_st(uid)
-    st["cache_hash"] = None
-    if st.get("msg_id"):
-        try: await bot.edit_message_reply_markup(m.chat.id, st["msg_id"], reply_markup=make_keyboard(uid))
-        except: pass
-
 @bot.message_handler(content_types=["photo"])
 async def h_photo(m):
     uid = m.from_user.id
@@ -808,7 +816,6 @@ async def h_photo(m):
                     tasks.append(send_view(p_uid, p_uid))
 
         if tasks: await asyncio.gather(*tasks)
-            
     except Exception as e: pass
 
 @bot.callback_query_handler(func=lambda c: True)
@@ -828,32 +835,65 @@ async def h_cb(c):
     
     if st.get("inv_open"):
         c_idx = st["inv_cursor"]
+        mode = st.get("inv_mode", "normal")
+        
         if d == "inv_u":
-            if 0 <= c_idx <= 4: st["inv_cursor"] = c_idx + 15
-            elif 5 <= c_idx <= 9:
-                if c_idx in (5, 6): st["inv_cursor"] = 22
-                elif c_idx in (7, 8): st["inv_cursor"] = 23
-                elif c_idx == 9: st["inv_cursor"] = 24
-            elif 10 <= c_idx <= 19: st["inv_cursor"] -= 5
-            elif c_idx in (22, 23): st["inv_cursor"] -= 2
+            if mode == "workbench":
+                if 0 <= c_idx <= 4: c_idx += 30
+                elif 5 <= c_idx <= 9: 
+                    if c_idx in (5,6): c_idx = 36
+                    elif c_idx in (7,8): c_idx = 38
+                    elif c_idx == 9: c_idx = 39
+                elif 10 <= c_idx <= 19: c_idx -= 5
+                elif 33 <= c_idx <= 38: c_idx -= 3
+            else:
+                if 0 <= c_idx <= 4: c_idx += 15
+                elif 5 <= c_idx <= 9:
+                    if c_idx in (5, 6): c_idx = 22
+                    elif c_idx in (7, 8): c_idx = 23
+                    elif c_idx == 9: c_idx = 24
+                elif 10 <= c_idx <= 19: c_idx -= 5
+                elif c_idx in (22, 23): c_idx -= 2
         elif d == "inv_d":
-            if c_idx in (20, 21): st["inv_cursor"] += 2
-            elif c_idx == 22: st["inv_cursor"] = 6
-            elif c_idx == 23: st["inv_cursor"] = 7
-            elif c_idx == 24: st["inv_cursor"] = 9
-            elif 5 <= c_idx <= 14: st["inv_cursor"] += 5
-            elif 15 <= c_idx <= 19: st["inv_cursor"] -= 15
+            if mode == "workbench":
+                if 30 <= c_idx <= 35: c_idx += 3
+                elif c_idx in (36,37,38): c_idx = 7
+                elif c_idx == 39: c_idx = 9
+                elif 5 <= c_idx <= 14: c_idx += 5
+                elif 15 <= c_idx <= 19: c_idx -= 15
+            else:
+                if c_idx in (20, 21): c_idx += 2
+                elif c_idx == 22: c_idx = 6
+                elif c_idx == 23: c_idx = 7
+                elif c_idx == 24: c_idx = 9
+                elif 5 <= c_idx <= 14: c_idx += 5
+                elif 15 <= c_idx <= 19: c_idx -= 15
         elif d == "inv_l":
-            if c_idx in (21, 23): st["inv_cursor"] -= 1
-            elif c_idx == 24: st["inv_cursor"] = 21
-            elif c_idx not in (0, 5, 10, 15, 20, 22): st["inv_cursor"] -= 1
+            if mode == "workbench":
+                if c_idx in (31,32,34,35,37,38): c_idx -= 1
+                elif c_idx == 39: c_idx = 35
+                elif c_idx not in (0,5,10,15,30,33,36): c_idx -= 1
+            else:
+                if c_idx in (21, 23): c_idx -= 1
+                elif c_idx == 24: c_idx = 21
+                elif c_idx not in (0, 5, 10, 15, 20, 22): c_idx -= 1
         elif d == "inv_r":
-            if c_idx in (20, 22): st["inv_cursor"] += 1
-            elif c_idx in (21, 23): st["inv_cursor"] = 24
-            elif c_idx not in (4, 9, 14, 19, 24): st["inv_cursor"] += 1
-        elif d == "inv_click_1": # Кнопка положить по 1 шт.
+            if mode == "workbench":
+                if c_idx in (30,31,33,34,36,37): c_idx += 1
+                elif c_idx in (32,35,38): c_idx = 39
+                elif c_idx not in (4,9,14,19,39): c_idx += 1
+            else:
+                if c_idx in (20, 22): c_idx += 1
+                elif c_idx in (21, 23): c_idx = 24
+                elif c_idx not in (4, 9, 14, 19, 24): c_idx += 1
+                
+        st["inv_cursor"] = c_idx
+        out_idx = 39 if mode == "workbench" else 24
+        c_indices = range(30, 39) if mode == "workbench" else range(20, 24)
+
+        if d == "inv_click_1":
             c_id = st["inv_cursor"]
-            if c_id != 24 and st.get("drag_item"):
+            if c_id != out_idx and st.get("drag_item"):
                 tmp = st["inv"].get(c_id)
                 if tmp is None:
                     st["inv"][c_id] = {"type": st["drag_item"]["type"], "count": 1}
@@ -864,14 +904,27 @@ async def h_cb(c):
                     st["drag_item"]["count"] -= 1
                     if st["drag_item"]["count"] <= 0: st["drag_item"] = None
             update_crafting(st)
+            
         elif d == "inv_click":
             c_id = st["inv_cursor"]
-            if c_id == 24 and st.get("drag_item") is None and 24 in st["inv"]:
-                st["drag_item"] = st["inv"].pop(24)
-                for i in range(20, 24):
-                    if i in st["inv"]:
-                        st["inv"][i]["count"]-=1
-                        if st["inv"][i]["count"]<=0: del st["inv"][i]
+            if c_id == out_idx and out_idx in st["inv"]:
+                # Если в руке уже есть предмет, прячем его в свободную ячейку
+                if st.get("drag_item"):
+                    free_slot = next((i for i in range(20) if i not in st["inv"]), None)
+                    if free_slot is None: 
+                        pass # Отмена, если места нет!
+                    else:
+                        st["inv"][free_slot] = st["drag_item"]
+                        st["drag_item"] = None
+
+                if st.get("drag_item") is None:
+                    crafted = st["inv"].pop(out_idx)
+                    ops = crafted.pop("ops", 1)
+                    st["drag_item"] = crafted
+                    for i in c_indices:
+                        if i in st["inv"]:
+                            st["inv"][i]["count"] -= ops
+                            if st["inv"][i]["count"] <= 0: del st["inv"][i]
             else:
                 tmp = st["inv"].get(c_id)
                 if st["drag_item"]:
@@ -886,7 +939,9 @@ async def h_cb(c):
                         st["drag_item"] = tmp
                         del st["inv"][c_id]
             update_crafting(st)
-        elif d == "inv_close": st["inv_open"] = False
+            
+        elif d == "inv_close": 
+            close_inv(st)
         
         await send_view(c.message.chat.id, uid)
         try: await bot.answer_callback_query(c.id)
@@ -905,7 +960,6 @@ async def h_cb(c):
         tz = get_ground_z(nx, ny, srv)
             
         diff = tz - st["z"]
-        # ИСПРАВЛЕНИЕ: Мягкая проверка высоты блока (допускаем прыжок на высоту до 1.5)
         if diff <= 0.1 or (0 < diff <= 1.5 and st["jump"]):
             st["x"], st["y"], st["z"] = nx, ny, tz
             ev = True
@@ -930,26 +984,34 @@ async def h_cb(c):
             if pb and pb[0]=="block": pending_skin_mode[uid] = ("block", pb[1])
             try: await bot.edit_message_reply_markup(c.message.chat.id, c.message.message_id, reply_markup=make_keyboard(uid))
             except: pass
-        else: st["inv_open"] = True
+        else: 
+            st["inv_open"] = True
+            st["inv_mode"] = "normal"
 
     elif d == "build":
         pb = ray_pick(st["x"], st["y"], st["z"]+1.6, st["angle"], st["tilt"], s_id, uid)
         if pb and pb[0]=="block":
-            c_slot = st["inv_cursor"] if st["inv_cursor"] < 5 else 0
-            item = st["inv"].get(c_slot)
-            if item or srv.type == "classic":
-                btype = item["type"] if item else "planks"
-                bx, by, bz = pb[1]
-                for offset in [(0,0,1),(0,0,-1),(0,1,0),(0,-1,0),(1,0,0),(-1,0,0)]:
-                    nb = (bx+offset[0], by+offset[1], bz+offset[2])
-                    if nb not in srv.blocks:
-                        srv.blocks[nb] = {"type": btype} if srv.type=="survival" else {"color":(255,255,255)}
-                        if item:
-                            item["count"] -= 1
-                            if item["count"] <= 0: del st["inv"][c_slot]
-                        srv.rebuild_mesh()
-                        ev = True
-                        break
+            bx, by, bz = pb[1]
+            if srv.type == "survival" and srv.blocks.get(pb[1], {}).get("type") == "workbench":
+                st["inv_open"] = True
+                st["inv_mode"] = "workbench"
+                st["inv_cursor"] = 34
+                ev = True
+            else:
+                c_slot = st["inv_cursor"] if st["inv_cursor"] < 5 else 0
+                item = st["inv"].get(c_slot)
+                if item or srv.type == "classic":
+                    btype = item["type"] if item else "planks"
+                    for offset in [(0,0,1),(0,0,-1),(0,1,0),(0,-1,0),(1,0,0),(-1,0,0)]:
+                        nb = (bx+offset[0], by+offset[1], bz+offset[2])
+                        if nb not in srv.blocks:
+                            srv.blocks[nb] = {"type": btype} if srv.type=="survival" else {"color":(255,255,255)}
+                            if item:
+                                item["count"] -= 1
+                                if item["count"] <= 0: del st["inv"][c_slot]
+                            srv.rebuild_mesh()
+                            ev = True
+                            break
 
     elif d == "break":
         pb = ray_pick(st["x"], st["y"], st["z"]+1.6, st["angle"], st["tilt"], s_id, uid)
