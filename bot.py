@@ -71,7 +71,6 @@ CAMERA_HEIGHT_OFFSET = 1.6
 MOVE_STEP = 1.0
 TURN_ANGLE = math.radians(15)
 
-# Увеличен угол наклона (теперь можно смотреть прямо под ноги)
 TILT_STEP = 0.15
 MAX_TILT = 1.5   
 MIN_TILT = -1.5  
@@ -266,7 +265,6 @@ class Server:
                 for x in range(self.size):
                     self.blocks[(x, y, 0)] = {"color": colors[(x + y + random.randint(0, 1)) % 3]}
             
-            # Спавн платформа из бедрока 2х2
             cx, cy = int(self.size/2), int(self.size/2)
             for dx in [0, 1]:
                 for dy in [0, 1]:
@@ -294,48 +292,55 @@ class Server:
         self.rebuild_mesh()
 
     def rebuild_mesh(self):
-        self.faces = []
-        for (gx, gy, gz), bdata in self.blocks.items():
-            vw = [
-                (gx, gy, gz), (gx+1, gy, gz), (gx+1, gy+1, gz), (gx, gy+1, gz),
-                (gx, gy, gz+1), (gx+1, gy, gz+1), (gx+1, gy+1, gz+1), (gx, gy+1, gz+1)
-            ]
-            for fn, idx, offset in BLOCK_FACES_DATA:
-                nb = (gx + offset[0], gy + offset[1], gz + offset[2])
-                if nb in self.blocks: continue
-                
-                n = face_normal(vw, idx)
-                lf = calc_light(n)
-                br = 1.0 if fn == "top" else 0.85
-                
-                face_info = {"cx": gx+0.5, "cy": gy+0.5, "cz": gz+0.5, "verts": [vw[i] for i in idx], "n": n, "lf": lf*br, "pos": (gx,gy,gz)}
-                
-                if self.type == "classic":
-                    face_info["sc"] = apply_light(bdata.get("color", (40,40,40) if bdata.get("type") == "bedrock" else (255,255,255)), lf*br)
-                    face_info["tex"] = bdata.get("tex")
-                else:
-                    btype = bdata["type"]
-                    tex = None
-                    if btype == "grass": tex = TEX_CACHE["trava_top"] if fn=="top" else TEX_CACHE["trava_side"] if fn not in ["top","bottom"] else TEX_CACHE["zemlya"]
-                    elif btype == "wood": tex = TEX_CACHE["wood_top"] if fn in ["top","bottom"] else TEX_CACHE["wood_side"]
-                    elif btype == "workbench": tex = TEX_CACHE["workbench_top"] if fn=="top" else TEX_CACHE["planks"] if fn=="bottom" else TEX_CACHE["workbench_side"]
-                    elif btype in ["dirt", "stone", "leaves", "planks", "bedrock", "cobblestone"]:
-                        tex = TEX_CACHE.get(btype, TEX_CACHE["zemlya"])
-                    face_info["tex"] = tex
-                
-                dmg = self.block_damage.get((gx,gy,gz), 0)
-                if dmg > 0 and self.type == "survival" and bdata.get("type") != "bedrock":
-                    mhp = 12 if bdata.get("type") in ("stone", "cobblestone") else BLOCK_STATS.get(bdata.get("type"), 3)
-                    stage = min(4, int((dmg / mhp) * 5))
-                    if face_info.get("tex"):
-                        combined = face_info["tex"].copy()
-                        combined.alpha_composite(CRACK_TEX[stage])
-                        face_info["tex"] = combined
-                
-                self.faces.append(face_info)
-        self.version += 1
+        new_faces = []
+        try:
+            for (gx, gy, gz), bdata in self.blocks.items():
+                vw = [
+                    (gx, gy, gz), (gx+1, gy, gz), (gx+1, gy+1, gz), (gx, gy+1, gz),
+                    (gx, gy, gz+1), (gx+1, gy, gz+1), (gx+1, gy+1, gz+1), (gx, gy+1, gz+1)
+                ]
+                for fn, idx, offset in BLOCK_FACES_DATA:
+                    nb = (gx + offset[0], gy + offset[1], gz + offset[2])
+                    if nb in self.blocks: continue
+                    
+                    n = face_normal(vw, idx)
+                    lf = calc_light(n)
+                    br = 1.0 if fn == "top" else 0.85
+                    
+                    face_info = {"cx": gx+0.5, "cy": gy+0.5, "cz": gz+0.5, "verts": [vw[i] for i in idx], "n": n, "lf": lf*br, "pos": (gx,gy,gz)}
+                    
+                    if self.type == "classic":
+                        c_val = bdata.get("color")
+                        if not c_val: c_val = (40,40,40) if bdata.get("type") == "bedrock" else (255,255,255)
+                        face_info["sc"] = apply_light(c_val, lf*br)
+                        face_info["tex"] = bdata.get("tex")
+                    else:
+                        btype = bdata.get("type", "stone")
+                        tex = None
+                        if btype == "grass": tex = TEX_CACHE["trava_top"] if fn=="top" else TEX_CACHE["trava_side"] if fn not in ["top","bottom"] else TEX_CACHE["zemlya"]
+                        elif btype == "wood": tex = TEX_CACHE["wood_top"] if fn in ["top","bottom"] else TEX_CACHE["wood_side"]
+                        elif btype == "workbench": tex = TEX_CACHE["workbench_top"] if fn=="top" else TEX_CACHE["planks"] if fn=="bottom" else TEX_CACHE["workbench_side"]
+                        elif btype in ["dirt", "stone", "leaves", "planks", "bedrock", "cobblestone"]:
+                            tex = TEX_CACHE.get(btype, TEX_CACHE["zemlya"])
+                        face_info["tex"] = tex
+                    
+                    dmg = self.block_damage.get((gx,gy,gz), 0)
+                    if dmg > 0 and self.type == "survival" and bdata.get("type") != "bedrock":
+                        mhp = 12 if bdata.get("type") in ("stone", "cobblestone") else BLOCK_STATS.get(bdata.get("type", "dirt"), 3)
+                        stage = min(4, int((dmg / mhp) * 5))
+                        if face_info.get("tex"):
+                            combined = face_info["tex"].copy()
+                            combined.alpha_composite(CRACK_TEX[stage])
+                            face_info["tex"] = combined
+                    
+                    new_faces.append(face_info)
+            self.faces = new_faces
+            self.version += 1
+        except Exception as e:
+            print(f"Mesh rebuild warning: {e}")
 
     def broadcast(self, txt):
+        if not txt: return
         self.chat.append(txt)
         if len(self.chat) > 4: self.chat.pop(0)
 
@@ -347,7 +352,7 @@ pending_skin_mode = {}
 def save_all_data():
     try:
         s1_data = {"players": SERVERS[1].players, "blocks": {}}
-        for pos, bd in SERVERS[1].blocks.items():
+        for pos, bd in list(SERVERS[1].blocks.items()):
             s1_data["blocks"][pos] = {"color": bd.get("color"), "type": bd.get("type")}
             if bd.get("tex"):
                 bio = io.BytesIO()
@@ -365,18 +370,23 @@ def load_all_data():
             with open(DATA_DIR / "srv1.pkl", "rb") as f:
                 data = pickle.load(f)
                 SERVERS[1].players = data.get("players", {})
-                for p_uid, p_data in SERVERS[1].players.items(): p_data["online"] = False
+                for p_uid, p_data in SERVERS[1].players.items(): 
+                    p_data["online"] = False
+                    p_data["last_action"] = time.time()
                 for pos, bd in data.get("blocks", {}).items():
-                    SERVERS[1].blocks[pos] = {"color": bd["color"], "type": bd.get("type")}
+                    SERVERS[1].blocks[pos] = {"color": bd.get("color", (255,255,255)), "type": bd.get("type")}
                     if "tex_bytes" in bd:
-                        SERVERS[1].blocks[pos]["tex"] = Image.open(io.BytesIO(bd["tex_bytes"])).convert("RGBA")
+                        try: SERVERS[1].blocks[pos]["tex"] = Image.open(io.BytesIO(bd["tex_bytes"])).convert("RGBA")
+                        except Exception: pass
             SERVERS[1].rebuild_mesh()
             
         if (DATA_DIR / "srv2.pkl").exists():
             with open(DATA_DIR / "srv2.pkl", "rb") as f:
                 data = pickle.load(f)
                 SERVERS[2].players = data.get("players", {})
-                for p_uid, p_data in SERVERS[2].players.items(): p_data["online"] = False
+                for p_uid, p_data in SERVERS[2].players.items(): 
+                    p_data["online"] = False
+                    p_data["last_action"] = time.time()
                 SERVERS[2].blocks = data.get("blocks", {})
                 SERVERS[2].block_damage = data.get("damage", {})
             SERVERS[2].rebuild_mesh()
@@ -386,6 +396,27 @@ async def auto_saver():
     while True:
         await asyncio.sleep(30)
         save_all_data()
+
+async def afk_checker():
+    """Система проверки АФК игроков (5 минут)"""
+    while True:
+        await asyncio.sleep(60)
+        now = time.time()
+        for s_id, srv in list(SERVERS.items()):
+            for uid, ps in list(srv.players.items()):
+                if ps.get("online") and (now - ps.get("last_action", now) > 300):
+                    ps["online"] = False
+                    user_server_map.pop(uid, None)
+                    
+                    try:
+                        await bot.send_message(uid, "⏱ Вы были кикнуты с сервера за бездействие (более 5 минут).", reply_markup=server_menu())
+                    except: pass
+                    
+                    await broadcast_chat(s_id, f"💤 {ps['name']} отключен (АФК)")
+                    
+                    for p_uid, p_state in list(srv.players.items()):
+                        if p_state.get("online"):
+                            asyncio.create_task(send_view(p_uid, p_uid))
 
 def get_st(uid):
     s_id = user_server_map.get(uid)
@@ -404,13 +435,14 @@ def init_player(uid, s_id, name):
     if uid not in srv.players:
         srv.players[uid] = {
             "x": srv.size/2, "y": srv.size/2, "z": get_ground_z(srv.size/2, srv.size/2, srv), 
-            "angle": 0.0, "tilt": 0.0, "jump": False,
+            "angle": 0.0, "tilt": 0.0, "jump": False, "last_action": time.time(),
             "name": transliterate(name), "msg_id": None, "view_radius": 8, "res_level": 2, "hp": 10, "flash_time": 0,
             "inv": {0: {"type": "wood", "count": 10}}, "inv_open": False, "inv_mode": "normal", "inv_cursor": 0, "drag_item": None,
             "is_busy": False, "online": True
         }
     else:
         srv.players[uid]["online"] = True
+        srv.players[uid]["last_action"] = time.time()
         srv.players[uid]["msg_id"] = None
         srv.players[uid]["name"] = transliterate(name)
     return srv.players[uid]
@@ -669,7 +701,7 @@ def render_scene(px, py, pz, pa, pt, uid, s_id):
             proj.append((px_p, py_p, v[1]) + (v[3:] if len(v)>3 else ()))
         
         if face.get("tex"): draw_poly_tex(pix, zbuf, proj, face["tex"], face["lf"])
-        else: draw_poly_color(pix, zbuf, proj, face["sc"])
+        else: draw_poly_color(pix, zbuf, proj, face.get("sc", (255,255,255)))
 
     for pid, ps in srv.players.items():
         if pid == uid or not ps.get("online", True): continue
@@ -691,10 +723,12 @@ def render_scene(px, py, pz, pa, pt, uid, s_id):
                 if len(vc)<3: continue
                 proj = [(img_w/2 + (v[0]/v[1])*scale, horiz_y - (v[2]/v[1])*scale, v[1]) + (v[3:] if len(v)>3 else ()) for v in vc]
                 
-                if tex_mode and not flash and (fn=="front" or pid in player_skins):
+                # ИСПРАВЛЕНИЕ: Скин применяется строго только к лицевой стороне головы
+                if tex_mode and not flash and fn == "front":
                     t = player_skins.get(pid, DEFAULT_FACE_TEX)
                     draw_poly_tex(pix, zbuf, proj, t, lf)
-                else: draw_poly_color(pix, zbuf, proj, apply_light(col, lf))
+                else: 
+                    draw_poly_color(pix, zbuf, proj, apply_light(col, lf))
 
         nv = world_to_view(ox, oy, oz + 2.4, px, py, pz, pa, pt)
         if nv[1] >= NEAR_CLIP:
@@ -759,19 +793,21 @@ def ray_pick(px, py, pz, pa, pt, s_id, ignore_uid=None):
     return None
 
 async def broadcast_chat(s_id, txt):
-    SERVERS[s_id].broadcast(txt)
-    cap = "\n".join(SERVERS[s_id].chat)
-    for uid, st in SERVERS[s_id].players.items():
+    if txt:
+        SERVERS[s_id].broadcast(txt)
+    cap = "\n".join(SERVERS[s_id].chat) if SERVERS[s_id].chat else "🎮 Приятной игры!"
+    for uid, st in list(SERVERS[s_id].players.items()):
         if st.get("msg_id") and st.get("online"):
             try: await bot.edit_message_caption(caption=cap, chat_id=uid, message_id=st["msg_id"], reply_markup=make_keyboard(uid))
             except ApiTelegramException as e:
-                if "not modified" not in str(e).lower(): pass
-            except: pass
+                pass
+            except Exception: pass
 
 async def send_view(cid, uid):
     s_id = user_server_map.get(uid)
     if not s_id: return
     st = get_st(uid)
+    if not st: return
     
     if st.get("is_busy"): return
     st["is_busy"] = True
@@ -807,7 +843,7 @@ async def send_view(cid, uid):
                 else:
                     st["is_busy"] = False
                     return
-            except: 
+            except Exception: 
                 st["is_busy"] = False
                 return
 
@@ -838,7 +874,9 @@ async def h_start(m):
         
     old_s = user_server_map.get(uid)
     if old_s and old_s in SERVERS:
-        if uid in SERVERS[old_s].players: SERVERS[old_s].players[uid]["online"] = False
+        if uid in SERVERS[old_s].players: 
+            SERVERS[old_s].players[uid]["online"] = False
+            await broadcast_chat(old_s, f"💨 {SERVERS[old_s].players[uid]['name']} вышел")
         user_server_map.pop(uid, None)
         save_all_data()
         
@@ -860,6 +898,34 @@ async def h_reset(m):
         for uid, p in SERVERS[s_id].players.items(): 
             if p.get("online"): await send_view(uid, uid)
 
+@bot.message_handler(commands=["block"])
+async def h_block(m):
+    # Команда оставлена для обратной совместимости, но кнопка 'paint' безопаснее.
+    uid = m.from_user.id
+    try: await bot.delete_message(m.chat.id, m.message_id)
+    except: pass
+
+# --- ИСПРАВЛЕНИЕ: ОБРАБОТЧИК ЧАТА И АФК ---
+@bot.message_handler(content_types=["text"])
+async def h_text(m):
+    uid = m.from_user.id
+    if m.text.startswith("/"): return
+
+    try: await bot.delete_message(m.chat.id, m.message_id)
+    except: pass
+
+    s_id = user_server_map.get(uid)
+    if not s_id: return
+    
+    st = get_st(uid)
+    if not st or not st.get("online"): return
+
+    # Обновление активности
+    st["last_action"] = time.time()
+    
+    text = m.text[:100] 
+    await broadcast_chat(s_id, f"💬 {st['name']}: {text}")
+
 @bot.callback_query_handler(func=lambda c: c.data.startswith("join_"))
 async def cb_join(c):
     s_id = int(c.data.split("_")[1])
@@ -871,31 +937,13 @@ async def cb_join(c):
     await broadcast_chat(s_id, f"🎉 {st['name']} присоединился!")
     await send_view(c.message.chat.id, uid)
 
-@bot.message_handler(commands=["block"])
-async def h_block(m):
-    uid = m.from_user.id
-    try: await bot.delete_message(m.chat.id, m.message_id)
-    except: pass
-    
-    s_id = user_server_map.get(uid)
-    if not s_id or s_id != 1: return
-    
-    pb_data = last_target_block.get(uid)
-    if not pb_data or pb_data[0] != "block": return
-        
-    t = pb_data[1]
-    pending_skin_mode[uid] = ("block", t)
-    st = get_st(uid)
-    st["cache_hash"] = None
-    if st.get("msg_id"):
-        try: await bot.edit_message_reply_markup(m.chat.id, st["msg_id"], reply_markup=make_keyboard(uid))
-        except: pass
-
 @bot.message_handler(content_types=["photo"])
 async def h_photo(m):
     uid = m.from_user.id
     st = get_st(uid)
     if not st: return
+    
+    st["last_action"] = time.time()
     s_id = user_server_map.get(uid)
     un = st["name"]
     try: await bot.delete_message(m.chat.id, m.message_id)
@@ -942,6 +990,10 @@ async def h_cb(c):
     s_id = user_server_map.get(uid)
     if not s_id: return
     st = get_st(uid)
+    
+    # Обновление активности
+    st["last_action"] = time.time()
+
     if st.get("is_busy"): 
         try: await bot.answer_callback_query(c.id, "⏳ Рендер...")
         except: pass
@@ -1144,7 +1196,7 @@ async def h_cb(c):
                 if srv.blocks.get(pb[1], {}).get("type") == "bedrock":
                     pass 
                 elif srv.type == "survival":
-                    btype = srv.blocks[pb[1]]["type"]
+                    btype = srv.blocks[pb[1]].get("type", "stone")
                     
                     if btype in ("stone", "cobblestone"):
                         if is_stone_pick: mhp = 6
@@ -1199,7 +1251,7 @@ async def h_cb(c):
 
     tasks = [send_view(c.message.chat.id, uid)]
     if ev:
-        for p_uid, ps in srv.players.items():
+        for p_uid, ps in list(srv.players.items()):
             if p_uid != uid and ps.get("online", True) and abs(ps["x"]-st["x"])<ps.get("view_radius", 8) and abs(ps["y"]-st["y"])<ps.get("view_radius", 8):
                 tasks.append(send_view(p_uid, p_uid))
     await asyncio.gather(*tasks)
@@ -1208,6 +1260,7 @@ async def main():
     print("Bot is starting! Loading data...")
     load_all_data()
     asyncio.create_task(auto_saver())
+    asyncio.create_task(afk_checker())
     print("Bot running!")
     await bot.polling(non_stop=True)
 
