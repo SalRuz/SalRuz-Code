@@ -315,7 +315,8 @@ class Server:
             for dx in [0, 1]:
                 for dy in [0, 1]: self.blocks[(cx+dx, cy+dy, 0)] = {"type": "bedrock", "tex": TEX_CACHE["bedrock"]}
         else:
-            self.load_chunks_around(0, 0, radius=2)
+            # ИСПРАВЛЕНИЕ: Снижен радиус генерации старта для уменьшения лагов (с 2 до 1)
+            self.load_chunks_around(0, 0, radius=1)
 
         self.rebuild_mesh()
 
@@ -477,6 +478,7 @@ def load_all_data():
                 for p_uid, p_data in SERVERS[1].players.items(): 
                     p_data["online"] = False
                     p_data["last_action"] = time.time()
+                    p_data["action_lock"] = False
                 for pos, bd in data.get("blocks", {}).items():
                     SERVERS[1].blocks[pos] = {"color": bd.get("color", (255,255,255)), "type": bd.get("type")}
                     if "tex_bytes" in bd:
@@ -491,6 +493,7 @@ def load_all_data():
                 for p_uid, p_data in SERVERS[2].players.items(): 
                     p_data["online"] = False
                     p_data["last_action"] = time.time()
+                    p_data["action_lock"] = False
                 SERVERS[2].blocks = data.get("blocks", {})
                 SERVERS[2].block_damage = data.get("damage", {})
                 SERVERS[2].seed = data.get("seed", random.randint(0, 999999))
@@ -568,7 +571,7 @@ def init_player(uid, s_id, name):
             "angle": 0.0, "tilt": 0.0, "jump": False, "last_action": time.time(),
             "name": transliterate(name), "msg_id": None, "view_radius": 8, "res_level": 2, "hp": 10, "flash_time": 0,
             "inv": {0: {"type": "wood", "count": 10}}, "inv_open": False, "inv_mode": "normal", "inv_cursor": 0, "drag_item": None,
-            "is_busy": False, "online": True, "hit_time": 0, "last_state_hash": None
+            "is_busy": False, "online": True, "hit_time": 0, "last_state_hash": None, "action_lock": False
         }
     else:
         srv.players[uid]["online"] = True
@@ -577,6 +580,7 @@ def init_player(uid, s_id, name):
         srv.players[uid]["name"] = transliterate(name)
         srv.players[uid]["hit_time"] = 0
         srv.players[uid]["last_state_hash"] = None
+        srv.players[uid]["action_lock"] = False
     return srv.players[uid]
 
 def make_keyboard(uid):
@@ -813,6 +817,16 @@ def render_scene(px, py, pz, pa, pt, uid, s_id):
     sky_col, global_light = get_environment_light(s_id)
     img = Image.new("RGBA", (img_w, img_h), sky_col)
 
+    # ИСПРАВЛЕНИЕ 1: Сначала растягиваем фон, а ПОТОМ рисуем инвентарь (чтобы не было крашей/пустоты)
+    if st.get("inv_open"):
+        if img_w != out_w or img_h != out_h:
+            img = img.resize((out_w, out_h), Image.Resampling.NEAREST)
+        d = ImageDraw.Draw(img)
+        draw_inv(img, d, out_w, out_h, st)
+        bio = io.BytesIO()
+        img.convert("RGB").save(bio, "JPEG", quality=90)
+        return bio.getvalue()
+
     horiz_y = img_h // 2
     pix = img.load()
     zbuf = [[float("inf")] * img_w for _ in range(img_h)]
@@ -821,7 +835,6 @@ def render_scene(px, py, pz, pa, pt, uid, s_id):
     vr = st["view_radius"]
     names_to_draw = []
     
-    # 1. 3D Рендер окружения
     for face in srv.faces:
         if abs(face["cx"] - px) > vr or abs(face["cy"] - py) > vr: continue
         bx, by = face["cx"]-px, face["cy"]-py
@@ -843,7 +856,6 @@ def render_scene(px, py, pz, pa, pt, uid, s_id):
         if face.get("tex"): draw_poly_tex(pix, zbuf, proj, face["tex"], final_lf)
         else: draw_poly_color(pix, zbuf, proj, apply_light(face.get("sc", (255,255,255)), final_lf))
 
-    # 2. Рендер других игроков
     for pid, ps in srv.players.items():
         if pid == uid or not ps.get("online", True): continue
         ox, oy, oa = ps["x"], ps["y"], ps["angle"]
@@ -883,28 +895,18 @@ def render_scene(px, py, pz, pa, pt, uid, s_id):
                 else: 
                     draw_poly_color(pix, zbuf, proj, apply_light(col, final_lf))
 
-        # Сохраняем позиции ников для отрисовки ПОСЛЕ апскейла
         nv = world_to_view(ox, oy, oz + 2.4, px, py, pz, pa, pt)
         if nv[1] >= NEAR_CLIP:
             px_n = img_w/2 + (nv[0]/nv[1])*scale
             py_n = horiz_y - (nv[2]/nv[1])*scale
-            # Маппинг координат на финальное разрешение
             px_out = px_n * (out_w / img_w)
             py_out = py_n * (out_h / img_h)
             names_to_draw.append((px_out, py_out, ps["name"]))
 
-    # 3. АПСКЕЙЛ (Увеличиваем картинку перед рисованием интерфейса)
     if img_w != out_w or img_h != out_h:
         img = img.resize((out_w, out_h), Image.Resampling.NEAREST)
 
     d = ImageDraw.Draw(img)
-
-    # 4. ОТРИСОВКА ИНТЕРФЕЙСА (Теперь ХУД всегда правильного размера)
-    if st.get("inv_open"):
-        draw_inv(img, d, out_w, out_h, st)
-        bio = io.BytesIO()
-        img.convert("RGB").save(bio, "JPEG", quality=90)
-        return bio.getvalue()
 
     for px_out, py_out, name_text in names_to_draw:
         try:
@@ -978,9 +980,6 @@ async def send_view(cid, uid):
     st = get_st(uid)
     if not st: return
     
-    if st.get("is_busy"): return
-    st["is_busy"] = True
-    
     try:
         kb = make_keyboard(uid)
         if st.get("inv_open"):
@@ -995,14 +994,11 @@ async def send_view(cid, uid):
         cap = "\n".join(SERVERS[s_id].chat) if SERVERS[s_id].chat else "🎮 Приятной игры!"
         kb_str = kb.to_json()
         
-        # УМНОЕ КЭШИРОВАНИЕ (Анти-спам одинаковыми картинками)
         img_hash = hashlib.md5(img_bytes).hexdigest()
         current_state = f"{img_hash}_{kb_str}_{cap}"
         
-        # Если кадр, интерфейс и чат не изменились - не тратим лимиты Telegram!
         if st.get("last_state_hash") == current_state:
-            st["is_busy"] = False
-            return
+            return 
             
         st["last_state_hash"] = current_state
         
@@ -1011,12 +1007,10 @@ async def send_view(cid, uid):
                 bio_edit = io.BytesIO(img_bytes)
                 bio_edit.name = "s.jpg" 
                 await bot.edit_message_media(chat_id=cid, message_id=st["msg_id"], media=InputMediaPhoto(bio_edit, caption=cap), reply_markup=kb)
-                st["is_busy"] = False
                 return
             except ApiTelegramException as e:
                 err = str(e).lower()
                 if "not modified" in err:
-                    st["is_busy"] = False
                     return
             except Exception: pass
 
@@ -1025,7 +1019,7 @@ async def send_view(cid, uid):
         msg = await bot.send_photo(cid, bio_send, caption=cap, reply_markup=kb)
         st["msg_id"] = msg.message_id
     finally:
-        st["is_busy"] = False
+        pass
 
 def server_menu():
     kb = InlineKeyboardMarkup()
@@ -1057,7 +1051,7 @@ async def h_start(m):
                 changed = True
                 SERVERS[old_s].broadcast(f"💨 {ps['name']} вышел")
                 tasks = [send_view(p_uid, p_uid) for p_uid, p_st in SERVERS[old_s].players.items() if p_uid != uid and p_st.get("online")]
-                if tasks: await asyncio.gather(*tasks)
+                if tasks: await asyncio.gather(*tasks, return_exceptions=True)
                     
         user_server_map.pop(uid, None)
         save_all_data()
@@ -1115,7 +1109,7 @@ async def cb_join(c):
     SERVERS[s_id].broadcast(f"🎉 {st['name']} присоединился!")
     
     tasks = [send_view(p_uid, p_uid) for p_uid, ps in SERVERS[s_id].players.items() if ps.get("online")]
-    if tasks: await asyncio.gather(*tasks)
+    if tasks: await asyncio.gather(*tasks, return_exceptions=True)
     await update_server_menus()
 
 @bot.message_handler(content_types=["photo"])
@@ -1156,7 +1150,7 @@ async def h_photo(m):
                 if p_uid == uid or (ps["x"] - st["x"])**2 + (ps["y"] - st["y"])**2 <= ps.get("view_radius", 8)**2:
                     tasks.append(send_view(p_uid, p_uid))
 
-        if tasks: await asyncio.gather(*tasks)
+        if tasks: await asyncio.gather(*tasks, return_exceptions=True)
     except Exception as e: pass
 
 @bot.callback_query_handler(func=lambda c: True)
@@ -1167,286 +1161,292 @@ async def h_cb(c):
     st = get_st(uid)
     st["last_action"] = time.time()
 
-    if st.get("is_busy"): 
-        try: await bot.answer_callback_query(c.id, "⏳ Рендер...")
+    # ИСПРАВЛЕНИЕ 2: Строгая блокировка от спама (чтобы не было краша dict changed size)
+    if st.get("action_lock"): 
+        try: await bot.answer_callback_query(c.id, "⏳")
         except: pass
         return
         
-    try: await bot.answer_callback_query(c.id)
-    except: pass
-        
-    srv = SERVERS[s_id]
-    d = c.data
-    ev = False
+    st["action_lock"] = True
     
-    if st.get("inv_open"):
-        c_idx = st["inv_cursor"]
-        mode = st.get("inv_mode", "normal")
-        
-        if d == "inv_u":
-            if mode == "workbench":
-                if 0 <= c_idx <= 4: c_idx += 30
-                elif 5 <= c_idx <= 9: 
-                    if c_idx in (5,6): c_idx = 36
-                    elif c_idx in (7,8): c_idx = 38
-                    elif c_idx == 9: c_idx = 39
-                elif 10 <= c_idx <= 19: c_idx -= 5
-                elif 33 <= c_idx <= 38: c_idx -= 3
-            else:
-                if 0 <= c_idx <= 4: c_idx += 15
-                elif 5 <= c_idx <= 9:
-                    if c_idx in (5, 6): c_idx = 22
-                    elif c_idx in (7, 8): c_idx = 23
-                    elif c_idx == 9: c_idx = 24
-                elif 10 <= c_idx <= 19: c_idx -= 5
-                elif c_idx in (22, 23): c_idx -= 2
-        elif d == "inv_d":
-            if mode == "workbench":
-                if 30 <= c_idx <= 35: c_idx += 3
-                elif c_idx in (36,37,38): c_idx = 7
-                elif c_idx == 39: c_idx = 9
-                elif 5 <= c_idx <= 14: c_idx += 5
-                elif 15 <= c_idx <= 19: c_idx -= 15
-            else:
-                if c_idx in (20, 21): c_idx += 2
-                elif c_idx == 22: c_idx = 6
-                elif c_idx == 23: c_idx = 7
-                elif c_idx == 24: c_idx = 9
-                elif 5 <= c_idx <= 14: c_idx += 5
-                elif 15 <= c_idx <= 19: c_idx -= 15
-        elif d == "inv_l":
-            if mode == "workbench":
-                if c_idx in (31,32,34,35,37,38): c_idx -= 1
-                elif c_idx == 39: c_idx = 35
-                elif c_idx not in (0,5,10,15,30,33,36): c_idx -= 1
-            else:
-                if c_idx in (21, 23): c_idx -= 1
-                elif c_idx == 24: c_idx = 21
-                elif c_idx not in (0, 5, 10, 15, 20, 22): c_idx -= 1
-        elif d == "inv_r":
-            if mode == "workbench":
-                if c_idx in (30,31,33,34,36,37): c_idx += 1
-                elif c_idx in (32,35,38): c_idx = 39
-                elif c_idx not in (4,9,14,19,39): c_idx += 1
-            else:
-                if c_idx in (20, 22): c_idx += 1
-                elif c_idx in (21, 23): c_idx = 24
-                elif c_idx not in (4, 9, 14, 19, 24): c_idx += 1
-                
-        st["inv_cursor"] = c_idx
-        out_idx = 39 if mode == "workbench" else 24
-        c_indices = range(30, 39) if mode == "workbench" else range(20, 24)
-
-        if d == "inv_click_1":
-            c_id = st["inv_cursor"]
-            if c_id != out_idx and st.get("drag_item"):
-                tmp = st["inv"].get(c_id)
-                if tmp is None:
-                    st["inv"][c_id] = {"type": st["drag_item"]["type"], "count": 1}
-                    st["drag_item"]["count"] -= 1
-                    if st["drag_item"]["count"] <= 0: st["drag_item"] = None
-                elif tmp["type"] == st["drag_item"]["type"] and tmp.get("durability") is None:
-                    st["inv"][c_id]["count"] += 1
-                    st["drag_item"]["count"] -= 1
-                    if st["drag_item"]["count"] <= 0: st["drag_item"] = None
-            update_crafting(st)
+    try:
+        try: await bot.answer_callback_query(c.id)
+        except: pass
             
-        elif d == "inv_click":
-            c_id = st["inv_cursor"]
-            if c_id == out_idx and out_idx in st["inv"]:
-                if st.get("drag_item"):
-                    free_slot = next((i for i in range(20) if i not in st["inv"]), None)
-                    if free_slot is not None:
-                        st["inv"][free_slot] = st["drag_item"]
-                        st["drag_item"] = None
-
-                if st.get("drag_item") is None:
-                    crafted = st["inv"].pop(out_idx)
-                    ops = crafted.pop("ops", 1)
-                    st["drag_item"] = crafted
-                    for i in c_indices:
-                        if i in st["inv"]:
-                            st["inv"][i]["count"] -= ops
-                            if st["inv"][i]["count"] <= 0: del st["inv"][i]
-            else:
-                tmp = st["inv"].get(c_id)
-                if st["drag_item"]:
-                    if tmp and tmp["type"] == st["drag_item"]["type"] and tmp.get("durability") is None:
-                        tmp["count"] += st["drag_item"]["count"]
-                        st["drag_item"] = None
-                    else:
-                        st["inv"][c_id] = st["drag_item"]
-                        st["drag_item"] = tmp
+        srv = SERVERS[s_id]
+        d = c.data
+        ev = False
+        
+        if st.get("inv_open"):
+            c_idx = st["inv_cursor"]
+            mode = st.get("inv_mode", "normal")
+            
+            if d == "inv_u":
+                if mode == "workbench":
+                    if 0 <= c_idx <= 4: c_idx += 30
+                    elif 5 <= c_idx <= 9: 
+                        if c_idx in (5,6): c_idx = 36
+                        elif c_idx in (7,8): c_idx = 38
+                        elif c_idx == 9: c_idx = 39
+                    elif 10 <= c_idx <= 19: c_idx -= 5
+                    elif 33 <= c_idx <= 38: c_idx -= 3
                 else:
-                    if tmp:
-                        st["drag_item"] = tmp
-                        del st["inv"][c_id]
-            update_crafting(st)
-            
-        elif d == "inv_close": 
-            close_inv(st)
-        
-        await send_view(c.message.chat.id, uid)
-        return
+                    if 0 <= c_idx <= 4: c_idx += 15
+                    elif 5 <= c_idx <= 9:
+                        if c_idx in (5, 6): c_idx = 22
+                        elif c_idx in (7, 8): c_idx = 23
+                        elif c_idx == 9: c_idx = 24
+                    elif 10 <= c_idx <= 19: c_idx -= 5
+                    elif c_idx in (22, 23): c_idx -= 2
+            elif d == "inv_d":
+                if mode == "workbench":
+                    if 30 <= c_idx <= 35: c_idx += 3
+                    elif c_idx in (36,37,38): c_idx = 7
+                    elif c_idx == 39: c_idx = 9
+                    elif 5 <= c_idx <= 14: c_idx += 5
+                    elif 15 <= c_idx <= 19: c_idx -= 15
+                else:
+                    if c_idx in (20, 21): c_idx += 2
+                    elif c_idx == 22: c_idx = 6
+                    elif c_idx == 23: c_idx = 7
+                    elif c_idx == 24: c_idx = 9
+                    elif 5 <= c_idx <= 14: c_idx += 5
+                    elif 15 <= c_idx <= 19: c_idx -= 15
+            elif d == "inv_l":
+                if mode == "workbench":
+                    if c_idx in (31,32,34,35,37,38): c_idx -= 1
+                    elif c_idx == 39: c_idx = 35
+                    elif c_idx not in (0,5,10,15,30,33,36): c_idx -= 1
+                else:
+                    if c_idx in (21, 23): c_idx -= 1
+                    elif c_idx == 24: c_idx = 21
+                    elif c_idx not in (0, 5, 10, 15, 20, 22): c_idx -= 1
+            elif d == "inv_r":
+                if mode == "workbench":
+                    if c_idx in (30,31,33,34,36,37): c_idx += 1
+                    elif c_idx in (32,35,38): c_idx = 39
+                    elif c_idx not in (4,9,14,19,39): c_idx += 1
+                else:
+                    if c_idx in (20, 22): c_idx += 1
+                    elif c_idx in (21, 23): c_idx = 24
+                    elif c_idx not in (4, 9, 14, 19, 24): c_idx += 1
+                    
+            st["inv_cursor"] = c_idx
+            out_idx = 39 if mode == "workbench" else 24
+            c_indices = range(30, 39) if mode == "workbench" else range(20, 24)
 
-    if d in ["move_f", "move_b", "move_l", "move_r", "move_fl", "move_fr", "move_bl", "move_br"]:
-        f, s = 0, 0
-        if "f" in d: f=1
-        if "b" in d: f=-1
-        if "l" in d: s=-1
-        if "r" in d: s=1
-        a = st["angle"]
-        nx = st["x"] + (math.sin(a)*f + math.cos(a)*s)*MOVE_STEP
-        ny = st["y"] + (math.cos(a)*f - math.sin(a)*s)*MOVE_STEP
-        
-        if srv.type == "classic":
-            nx, ny = clamp(nx, 0.5, srv.size-0.5), clamp(ny, 0.5, srv.size-0.5)
-            
-        if srv.type == "survival":
-            srv.load_chunks_around(nx, ny, radius=2)
-            
-        tz = get_ground_z(nx, ny, srv)
-            
-        if is_blocked(srv, st["x"], st["y"], st["z"]):
-            st["z"] += 1.0 
-            ev = True
-        else:
-            diff = tz - st["z"]
-            if diff <= 0.1 or (0 < diff <= 1.5 and st["jump"]):
-                if not is_blocked(srv, nx, ny, tz): 
-                    st["x"], st["y"], st["z"] = nx, ny, tz
-                    ev = True
-                    if diff <= -4:
-                        st["hp"] -= (1 + int(abs(diff)-4)//2)
-                        st["flash_time"] = time.time()
-                        if st["hp"]<=0:
-                            await broadcast_chat(s_id, f"💀 {st['name']} разбился!")
-                            st["x"], st["y"], st["z"], st["hp"] = 0.5, 0.5, get_ground_z(0.5, 0.5, srv), 10
-        st["jump"] = False
-        
-    elif d == "refresh": 
-        st["angle"] = normalize_angle(st["angle"] + math.pi); ev = True
-    elif d == "turn_left": st["angle"] = normalize_angle(st["angle"] - TURN_ANGLE); ev = True
-    elif d == "turn_right": st["angle"] = normalize_angle(st["angle"] + TURN_ANGLE); ev = True
-    elif d == "look_up": st["tilt"] = max(st["tilt"] - TILT_STEP, MIN_TILT); ev = True
-    elif d == "look_down": st["tilt"] = min(st["tilt"] + TILT_STEP, MAX_TILT); ev = True
-    elif d == "toggle_jump": st["jump"] = not st["jump"]
-    elif d == "cycle_view": st["view_radius"] = 16 if st["view_radius"]==8 else 32 if st["view_radius"]==16 else 8
-    elif d == "cycle_res": st["res_level"] = st["res_level"]+1 if st["res_level"]<4 else 1
-    elif d == "paint":
-        if srv.type == "classic":
-            pb = ray_pick(st["x"], st["y"], st["z"]+1.6, st["angle"], st["tilt"], s_id, uid)
-            if pb and pb[0]=="block": pending_skin_mode[uid] = ("block", pb[1])
-            try: await bot.edit_message_reply_markup(c.message.chat.id, c.message.message_id, reply_markup=make_keyboard(uid))
-            except: pass
-        else: 
-            st["inv_open"] = True; st["inv_mode"] = "normal"
-
-    elif d == "build":
-        pb = ray_pick(st["x"], st["y"], st["z"]+1.6, st["angle"], st["tilt"], s_id, uid)
-        if pb and pb[0]=="block" and (srv.type == "classic" or pb[3] <= 5.0):
-            if srv.type == "survival" and srv.blocks.get(pb[1], {}).get("type") == "workbench":
-                st["inv_open"] = True; st["inv_mode"] = "workbench"; st["inv_cursor"] = 34; ev = True
-            elif pb[2] is not None:
-                nb = pb[2] 
-                target_b = pb[1] 
+            if d == "inv_click_1":
+                c_id = st["inv_cursor"]
+                if c_id != out_idx and st.get("drag_item"):
+                    tmp = st["inv"].get(c_id)
+                    if tmp is None:
+                        st["inv"][c_id] = {"type": st["drag_item"]["type"], "count": 1}
+                        st["drag_item"]["count"] -= 1
+                        if st["drag_item"]["count"] <= 0: st["drag_item"] = None
+                    elif tmp["type"] == st["drag_item"]["type"] and tmp.get("durability") is None:
+                        st["inv"][c_id]["count"] += 1
+                        st["drag_item"]["count"] -= 1
+                        if st["drag_item"]["count"] <= 0: st["drag_item"] = None
+                update_crafting(st)
                 
-                c_slot = st["inv_cursor"] if st["inv_cursor"] < 5 else 0
-                item = st["inv"].get(c_slot)
-                if item and item["type"] in ["wood_pickaxe", "stone_pickaxe", "stick"]: pass
-                elif item or srv.type == "classic":
-                    btype = item["type"] if item else "planks"
-                    if nb not in srv.blocks:
-                        if btype == "torch":
-                            dx, dy, dz = nb[0]-target_b[0], nb[1]-target_b[1], nb[2]-target_b[2]
-                            srv.blocks[nb] = {"type": "torch", "attach": (dx, dy, dz)}
+            elif d == "inv_click":
+                c_id = st["inv_cursor"]
+                if c_id == out_idx and out_idx in st["inv"]:
+                    if st.get("drag_item"):
+                        free_slot = next((i for i in range(20) if i not in st["inv"]), None)
+                        if free_slot is not None:
+                            st["inv"][free_slot] = st["drag_item"]
+                            st["drag_item"] = None
+
+                    if st.get("drag_item") is None:
+                        crafted = st["inv"].pop(out_idx)
+                        ops = crafted.pop("ops", 1)
+                        st["drag_item"] = crafted
+                        for i in c_indices:
+                            if i in st["inv"]:
+                                st["inv"][i]["count"] -= ops
+                                if st["inv"][i]["count"] <= 0: del st["inv"][i]
+                else:
+                    tmp = st["inv"].get(c_id)
+                    if st["drag_item"]:
+                        if tmp and tmp["type"] == st["drag_item"]["type"] and tmp.get("durability") is None:
+                            tmp["count"] += st["drag_item"]["count"]
+                            st["drag_item"] = None
                         else:
-                            srv.blocks[nb] = {"type": btype} if srv.type=="survival" else {"color":(255,255,255)}
-                            
-                        if item:
-                            item["count"] -= 1
-                            if item["count"] <= 0: del st["inv"][c_slot]
-                        srv.rebuild_mesh(); ev = True
-
-    elif d == "break":
-        c_slot = st["inv_cursor"] if st["inv_cursor"] < 5 else 0
-        tool = st["inv"].get(c_slot)
-        is_wood_pick = tool and tool["type"] == "wood_pickaxe"
-        is_stone_pick = tool and tool["type"] == "stone_pickaxe"
-        is_pick = is_wood_pick or is_stone_pick
-
-        pb = ray_pick(st["x"], st["y"], st["z"]+1.6, st["angle"], st["tilt"], s_id, uid)
-        if pb and (srv.type == "classic" or pb[3] <= 5.0):
-            if pb[0] == "block":
-                bx, by, bz = pb[1]
-                if srv.blocks.get(pb[1], {}).get("type") == "bedrock": pass 
-                elif srv.type == "survival":
-                    btype = srv.blocks[pb[1]].get("type", "stone")
-                    
-                    if btype in ("stone", "cobblestone", "coal_ore", "iron_ore"):
-                        mhp = 6 if is_stone_pick else 9 if is_wood_pick else 12
-                    elif btype in ("planks", "workbench"):
-                        mhp = 5
+                            st["inv"][c_id] = st["drag_item"]
+                            st["drag_item"] = tmp
                     else:
-                        mhp = BLOCK_STATS.get(btype, 3)
+                        if tmp:
+                            st["drag_item"] = tmp
+                            del st["inv"][c_id]
+                update_crafting(st)
+                
+            elif d == "inv_close": 
+                close_inv(st)
+            
+            await send_view(c.message.chat.id, uid)
+            return
 
-                    srv.block_damage[pb[1]] = srv.block_damage.get(pb[1], 0) + 1
+        if d in ["move_f", "move_b", "move_l", "move_r", "move_fl", "move_fr", "move_bl", "move_br"]:
+            f, s = 0, 0
+            if "f" in d: f=1
+            if "b" in d: f=-1
+            if "l" in d: s=-1
+            if "r" in d: s=1
+            a = st["angle"]
+            nx = st["x"] + (math.sin(a)*f + math.cos(a)*s)*MOVE_STEP
+            ny = st["y"] + (math.cos(a)*f - math.sin(a)*s)*MOVE_STEP
+            
+            if srv.type == "classic":
+                nx, ny = clamp(nx, 0.5, srv.size-0.5), clamp(ny, 0.5, srv.size-0.5)
+                
+            if srv.type == "survival":
+                # ИСПРАВЛЕНИЕ 3: Радиус 1 вместо 2 спасает от сильных лагов (генерация 9 чанков вместо 25)
+                srv.load_chunks_around(nx, ny, radius=1)
+                
+            tz = get_ground_z(nx, ny, srv)
+                
+            if is_blocked(srv, st["x"], st["y"], st["z"]):
+                st["z"] += 1.0 
+                ev = True
+            else:
+                diff = tz - st["z"]
+                if diff <= 0.1 or (0 < diff <= 1.5 and st["jump"]):
+                    if not is_blocked(srv, nx, ny, tz): 
+                        st["x"], st["y"], st["z"] = nx, ny, tz
+                        ev = True
+                        if diff <= -4:
+                            st["hp"] -= (1 + int(abs(diff)-4)//2)
+                            st["flash_time"] = time.time()
+                            if st["hp"]<=0:
+                                await broadcast_chat(s_id, f"💀 {st['name']} разбился!")
+                                st["x"], st["y"], st["z"], st["hp"] = 0.5, 0.5, get_ground_z(0.5, 0.5, srv), 10
+            st["jump"] = False
+            
+        elif d == "refresh": 
+            st["angle"] = normalize_angle(st["angle"] + math.pi); ev = True
+        elif d == "turn_left": st["angle"] = normalize_angle(st["angle"] - TURN_ANGLE); ev = True
+        elif d == "turn_right": st["angle"] = normalize_angle(st["angle"] + TURN_ANGLE); ev = True
+        elif d == "look_up": st["tilt"] = max(st["tilt"] - TILT_STEP, MIN_TILT); ev = True
+        elif d == "look_down": st["tilt"] = min(st["tilt"] + TILT_STEP, MAX_TILT); ev = True
+        elif d == "toggle_jump": st["jump"] = not st["jump"]
+        elif d == "cycle_view": st["view_radius"] = 16 if st["view_radius"]==8 else 32 if st["view_radius"]==16 else 8
+        elif d == "cycle_res": st["res_level"] = st["res_level"]+1 if st["res_level"]<4 else 1
+        elif d == "paint":
+            if srv.type == "classic":
+                pb = ray_pick(st["x"], st["y"], st["z"]+1.6, st["angle"], st["tilt"], s_id, uid)
+                if pb and pb[0]=="block": pending_skin_mode[uid] = ("block", pb[1])
+                try: await bot.edit_message_reply_markup(c.message.chat.id, c.message.message_id, reply_markup=make_keyboard(uid))
+                except: pass
+            else: 
+                st["inv_open"] = True; st["inv_mode"] = "normal"
+
+        elif d == "build":
+            pb = ray_pick(st["x"], st["y"], st["z"]+1.6, st["angle"], st["tilt"], s_id, uid)
+            if pb and pb[0]=="block" and (srv.type == "classic" or pb[3] <= 5.0):
+                if srv.type == "survival" and srv.blocks.get(pb[1], {}).get("type") == "workbench":
+                    st["inv_open"] = True; st["inv_mode"] = "workbench"; st["inv_cursor"] = 34; ev = True
+                elif pb[2] is not None:
+                    nb = pb[2] 
+                    target_b = pb[1] 
                     
-                    if srv.block_damage[pb[1]] >= mhp:
-                        del srv.blocks[pb[1]]
-                        del srv.block_damage[pb[1]]
-                        
-                        drop_t = btype
-                        if btype == "grass": drop_t = "dirt"
-                        elif btype == "leaves": drop_t = None
-                        elif btype == "stone": drop_t = "cobblestone"
-                        elif btype == "coal_ore": drop_t = "coal"
-                        elif btype == "iron_ore": drop_t = "iron"
-
-                        if drop_t:
-                            for i in range(20):
-                                if i in st["inv"] and st["inv"][i]["type"] == drop_t and st["inv"][i]["count"]<64 and st["inv"][i].get("durability") is None:
-                                    st["inv"][i]["count"] += 1; break
+                    c_slot = st["inv_cursor"] if st["inv_cursor"] < 5 else 0
+                    item = st["inv"].get(c_slot)
+                    if item and item["type"] in ["wood_pickaxe", "stone_pickaxe", "stick"]: pass
+                    elif item or srv.type == "classic":
+                        btype = item["type"] if item else "planks"
+                        if nb not in srv.blocks:
+                            if btype == "torch":
+                                dx, dy, dz = nb[0]-target_b[0], nb[1]-target_b[1], nb[2]-target_b[2]
+                                srv.blocks[nb] = {"type": "torch", "attach": (dx, dy, dz)}
                             else:
-                                for i in range(20):
-                                    if i not in st["inv"]:
-                                        st["inv"][i] = {"type": drop_t, "count": 1}; break
+                                srv.blocks[nb] = {"type": btype} if srv.type=="survival" else {"color":(255,255,255)}
+                                
+                            if item:
+                                item["count"] -= 1
+                                if item["count"] <= 0: del st["inv"][c_slot]
+                            srv.rebuild_mesh(); ev = True
+
+        elif d == "break":
+            c_slot = st["inv_cursor"] if st["inv_cursor"] < 5 else 0
+            tool = st["inv"].get(c_slot)
+            is_wood_pick = tool and tool["type"] == "wood_pickaxe"
+            is_stone_pick = tool and tool["type"] == "stone_pickaxe"
+            is_pick = is_wood_pick or is_stone_pick
+
+            pb = ray_pick(st["x"], st["y"], st["z"]+1.6, st["angle"], st["tilt"], s_id, uid)
+            if pb and (srv.type == "classic" or pb[3] <= 5.0):
+                if pb[0] == "block":
+                    bx, by, bz = pb[1]
+                    if srv.blocks.get(pb[1], {}).get("type") == "bedrock": pass 
+                    elif srv.type == "survival":
+                        btype = srv.blocks[pb[1]].get("type", "stone")
                         
-                        if is_pick:
-                            tool["durability"] -= 1
-                            if tool["durability"] <= 0: del st["inv"][c_slot]
-                    srv.rebuild_mesh()
-                else:
-                    del srv.blocks[pb[1]]
-                    srv.rebuild_mesh()
-                ev = True
-            elif pb[0] == "player":
-                tgt = srv.players[pb[1]]
-                damage = 3 if is_stone_pick else 2 if is_wood_pick else 1
-                tgt["hp"] -= damage
-                tgt["flash_time"] = time.time()
-                if tgt["hp"] <= 0:
-                    await broadcast_chat(s_id, f"💀 {tgt['name']} был убит игроком {st['name']}!")
-                    tgt["hp"], tgt["x"], tgt["y"], tgt["z"] = 10, 0.5, 0.5, get_ground_z(0.5, 0.5, srv)
-                ev = True
-                st["hit_time"] = time.time()
-                async def reset_hit_btn(cid, p_uid, m_id):
-                    await asyncio.sleep(1.0)
-                    p_st = get_st(p_uid)
-                    if p_st and p_st.get("msg_id") == m_id:
-                        # Сбрасываем хэш, чтобы кнопка обновилась
-                        p_st["last_state_hash"] = None
-                        try: await bot.edit_message_reply_markup(chat_id=cid, message_id=m_id, reply_markup=make_keyboard(p_uid))
-                        except: pass
+                        if btype in ("stone", "cobblestone", "coal_ore", "iron_ore"):
+                            mhp = 6 if is_stone_pick else 9 if is_wood_pick else 12
+                        elif btype in ("planks", "workbench"):
+                            mhp = 5
+                        else:
+                            mhp = BLOCK_STATS.get(btype, 3)
 
-                if st.get("msg_id"): asyncio.create_task(reset_hit_btn(c.message.chat.id, uid, st["msg_id"]))
+                        srv.block_damage[pb[1]] = srv.block_damage.get(pb[1], 0) + 1
+                        
+                        if srv.block_damage[pb[1]] >= mhp:
+                            del srv.blocks[pb[1]]
+                            del srv.block_damage[pb[1]]
+                            
+                            drop_t = btype
+                            if btype == "grass": drop_t = "dirt"
+                            elif btype == "leaves": drop_t = None
+                            elif btype == "stone": drop_t = "cobblestone"
+                            elif btype == "coal_ore": drop_t = "coal"
+                            elif btype == "iron_ore": drop_t = "iron"
 
-    tasks = [send_view(c.message.chat.id, uid)]
-    if ev:
-        for p_uid, ps in list(srv.players.items()):
-            if p_uid != uid and ps.get("online", True) and abs(ps["x"]-st["x"])<ps.get("view_radius", 8) and abs(ps["y"]-st["y"])<ps.get("view_radius", 8):
-                tasks.append(send_view(p_uid, p_uid))
-    await asyncio.gather(*tasks)
+                            if drop_t:
+                                for i in range(20):
+                                    if i in st["inv"] and st["inv"][i]["type"] == drop_t and st["inv"][i]["count"]<64 and st["inv"][i].get("durability") is None:
+                                        st["inv"][i]["count"] += 1; break
+                                else:
+                                    for i in range(20):
+                                        if i not in st["inv"]:
+                                            st["inv"][i] = {"type": drop_t, "count": 1}; break
+                            
+                            if is_pick:
+                                tool["durability"] -= 1
+                                if tool["durability"] <= 0: del st["inv"][c_slot]
+                        srv.rebuild_mesh()
+                    else:
+                        del srv.blocks[pb[1]]
+                        srv.rebuild_mesh()
+                    ev = True
+                elif pb[0] == "player":
+                    tgt = srv.players[pb[1]]
+                    damage = 3 if is_stone_pick else 2 if is_wood_pick else 1
+                    tgt["hp"] -= damage
+                    tgt["flash_time"] = time.time()
+                    if tgt["hp"] <= 0:
+                        await broadcast_chat(s_id, f"💀 {tgt['name']} был убит игроком {st['name']}!")
+                        tgt["hp"], tgt["x"], tgt["y"], tgt["z"] = 10, 0.5, 0.5, get_ground_z(0.5, 0.5, srv)
+                    ev = True
+                    st["hit_time"] = time.time()
+                    async def reset_hit_btn(cid, p_uid, m_id):
+                        await asyncio.sleep(1.0)
+                        p_st = get_st(p_uid)
+                        if p_st and p_st.get("msg_id") == m_id:
+                            p_st["last_state_hash"] = None
+                            try: await bot.edit_message_reply_markup(chat_id=cid, message_id=m_id, reply_markup=make_keyboard(p_uid))
+                            except: pass
+
+                    if st.get("msg_id"): asyncio.create_task(reset_hit_btn(c.message.chat.id, uid, st["msg_id"]))
+
+        tasks = [send_view(c.message.chat.id, uid)]
+        if ev:
+            for p_uid, ps in list(srv.players.items()):
+                if p_uid != uid and ps.get("online", True) and abs(ps["x"]-st["x"])<ps.get("view_radius", 8) and abs(ps["y"]-st["y"])<ps.get("view_radius", 8):
+                    tasks.append(send_view(p_uid, p_uid))
+        await asyncio.gather(*tasks, return_exceptions=True)
+    finally:
+        st["action_lock"] = False # Снимаем строгую блокировку
 
 async def main():
     print("Bot is starting! Loading data...")
