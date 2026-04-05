@@ -9,6 +9,7 @@ import pickle
 from pathlib import Path
 from telebot.async_telebot import AsyncTeleBot
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, InputMediaPhoto
+from telebot.apihelper import ApiTelegramException
 from PIL import Image, ImageDraw, ImageOps, ImageFont
 
 ADMIN_ID = 1170970828
@@ -49,7 +50,21 @@ CYRILLIC_TO_LATIN = {
 def transliterate(text):
     return "".join(CYRILLIC_TO_LATIN.get(c, c) for c in text)
 
-FONT = ImageFont.load_default()
+def load_font():
+    paths = [
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/truetype/freefont/FreeSans.ttf",
+        "/usr/share/fonts/dejavu/DejaVuSans.ttf",
+        "C:\\Windows\\Fonts\\arial.ttf",
+        "C:\\Windows\\Fonts\\segoeui.ttf"
+    ]
+    for p in paths:
+        if os.path.exists(p):
+            try: return ImageFont.truetype(p, 12)
+            except: pass
+    return ImageFont.load_default()
+
+FONT = load_font()
 
 # --- КОНСТАНТЫ И НАСТРОЙКИ ---
 CAMERA_HEIGHT_OFFSET = 1.6
@@ -63,7 +78,6 @@ NEAR_CLIP = 0.05
 RAY_STEP = 0.02
 RAY_MAX_DIST = 24
 
-# Игрок стал визуально чуть ниже
 PLAYER_BODY_SIZE = 0.6
 PLAYER_BODY_HEIGHT = 1.3 
 PLAYER_HEAD_SIZE = 0.4
@@ -119,6 +133,7 @@ def normalize_angle(a):
     while a >= 2*math.pi: a -= 2*math.pi
     return a
 
+# --- ТЕКСТУРЫ ---
 def create_fallback_tex(name, color, draw_func=None):
     p = TEX_DIR / name
     if not p.exists():
@@ -128,16 +143,24 @@ def create_fallback_tex(name, color, draw_func=None):
 
 def draw_grass_top(d):
     for _ in range(300): d.point((random.randint(0,127), random.randint(0,127)), fill=(80, 200, 80))
-
 def draw_grass_side(d):
     d.rectangle((0, 0, 128, 128), fill=(139, 94, 52))
     d.rectangle((0, 0, 128, 32), fill=(100, 220, 100))
     for i in range(15):
         x = random.randint(0, 120)
         d.polygon([(x, 32), (x+4, 48), (x+8, 32)], fill=(100, 220, 100))
-
 def draw_dirt(d):
     for _ in range(400): d.point((random.randint(0,127), random.randint(0,127)), fill=(100, 70, 40))
+def draw_stick(d):
+    d.line((32, 96, 96, 32), fill=(139, 69, 19), width=10)
+def draw_pickaxe(d):
+    d.line((32, 96, 96, 32), fill=(139, 69, 19), width=8) 
+    d.polygon([(64, 16), (112, 32), (96, 64)], fill=(180, 140, 80)) 
+def draw_cobble(d):
+    d.rectangle((0,0,128,128), fill=(100,100,100))
+    for _ in range(50):
+        x, y = random.randint(0,120), random.randint(0,120)
+        d.rectangle((x, y, x+10, y+10), fill=(70,70,70))
 
 create_fallback_tex("trava.png", (100, 220, 100), draw_grass_top)
 create_fallback_tex("trava_bok.png", (139, 94, 52), draw_grass_side)
@@ -150,6 +173,9 @@ create_fallback_tex("bedrok.png", (40, 40, 40))
 create_fallback_tex("doska.png", (180, 140, 80))
 create_fallback_tex("verstak.png", (200, 100, 50))
 create_fallback_tex("verstak_bok.png", (180, 90, 40))
+create_fallback_tex("palka.png", (139, 69, 19), draw_stick)
+create_fallback_tex("der_kirka.png", (180, 140, 80), draw_pickaxe)
+create_fallback_tex("buliga.png", (100, 100, 100), draw_cobble)
 
 def load_tex(name, fallback_color=(255,0,255)):
     p = TEX_DIR / name
@@ -167,7 +193,10 @@ TEX_CACHE = {
     "planks": load_tex("doska.png", (180, 140, 80)),
     "bedrock": load_tex("bedrok.png", (40, 40, 40)),
     "workbench_top": load_tex("verstak.png", (200, 100, 50)),
-    "workbench_side": load_tex("verstak_bok.png", (180, 90, 40))
+    "workbench_side": load_tex("verstak_bok.png", (180, 90, 40)),
+    "stick": load_tex("palka.png", (139, 69, 19)),
+    "wood_pickaxe": load_tex("der_kirka.png", (180, 140, 80)),
+    "cobblestone": load_tex("buliga.png", (100, 100, 100))
 }
 
 CRACK_TEX = []
@@ -189,7 +218,6 @@ def bake_face(tex):
     return img
 
 DEFAULT_FACE_TEX = bake_face(Image.new("RGB", (128, 128), (255, 220, 100)))
-BLOCK_STATS = {"dirt": 3, "grass": 3, "wood": 6, "leaves": 2, "stone": 12, "planks": 4, "workbench": 6, "bedrock": 9999}
 
 class Server:
     def __init__(self, s_id, s_type):
@@ -261,13 +289,13 @@ class Server:
                     if btype == "grass": tex = TEX_CACHE["trava_top"] if fn=="top" else TEX_CACHE["trava_side"] if fn not in ["top","bottom"] else TEX_CACHE["zemlya"]
                     elif btype == "wood": tex = TEX_CACHE["wood_top"] if fn in ["top","bottom"] else TEX_CACHE["wood_side"]
                     elif btype == "workbench": tex = TEX_CACHE["workbench_top"] if fn=="top" else TEX_CACHE["planks"] if fn=="bottom" else TEX_CACHE["workbench_side"]
-                    elif btype in ["dirt", "stone", "leaves", "planks", "bedrock"]:
+                    elif btype in ["dirt", "stone", "leaves", "planks", "bedrock", "cobblestone"]:
                         tex = TEX_CACHE.get(btype, TEX_CACHE["zemlya"])
                     face_info["tex"] = tex
                 
                 dmg = self.block_damage.get((gx,gy,gz), 0)
                 if dmg > 0 and self.type == "survival" and bdata["type"] != "bedrock":
-                    mhp = BLOCK_STATS.get(bdata["type"], 3)
+                    mhp = 12 if bdata["type"] == "stone" else 3
                     stage = min(4, int((dmg / mhp) * 5))
                     if face_info.get("tex"):
                         combined = face_info["tex"].copy()
@@ -350,7 +378,7 @@ def init_player(uid, s_id, name):
             "angle": 0.0, "tilt": 0.0, "jump": False,
             "name": transliterate(name), "msg_id": None, "view_radius": 8, "res_level": 2, "hp": 10, "flash_time": 0,
             "inv": {0: {"type": "wood", "count": 10}}, "inv_open": False, "inv_mode": "normal", "inv_cursor": 0, "drag_item": None,
-            "cache_hash": None, "cache_img": None, "is_busy": False, "online": True
+            "is_busy": False, "online": True
         }
     else:
         srv.players[uid]["online"] = True
@@ -364,11 +392,10 @@ def make_keyboard(uid):
     srv = SERVERS[s_id]
     
     jump_text = "🦘 Прыжок (Вкл)" if st.get("jump") else "🦘 Прыжок"
-    vr_text = f"👁 Дальность: {st.get('view_radius', 8)}"
+    vr_text = f"👁 {st.get('view_radius', 8)}"
     res_text = f"🖥 {RESOLUTIONS[st.get('res_level', 2)]['w']}p"
     
-    if srv.type == "classic":
-        paint_text = "📸 Жду фото..." if pending_skin_mode.get(uid) and pending_skin_mode[uid][0] == "block" else "🎨 Крась"
+    if srv.type == "classic": paint_text = "📸 Жду фото..." if pending_skin_mode.get(uid) and pending_skin_mode[uid][0] == "block" else "🎨 Крась"
     else: paint_text = "🎒 Инвентарь"
     
     kb = InlineKeyboardMarkup(row_width=3)
@@ -398,7 +425,7 @@ def make_keyboard(uid):
     kb.add(
         InlineKeyboardButton("🔨 Строй", callback_data="build"),
         InlineKeyboardButton(paint_text, callback_data="paint"),
-        InlineKeyboardButton("⛏️/🗡 Ломай", callback_data="break")
+        InlineKeyboardButton("⛏️ Ломай", callback_data="break")
     )
     kb.add(
         InlineKeyboardButton(jump_text, callback_data="toggle_jump"),
@@ -519,8 +546,14 @@ def draw_inv(d, w, h, st):
         d.rectangle((sx, sy, sx+36, sy+36), fill=color, outline=(255,255,255) if st["inv_cursor"]==sid else (50,50,50), width=2 if st["inv_cursor"]==sid else 1)
         item = st["inv"].get(sid)
         if item:
-            d.text((sx+2, sy+2), item["type"][:3], fill=(255,255,255))
-            d.text((sx+20, sy+20), str(item["count"]), fill=(255,255,0))
+            if item["type"] == "wood_pickaxe": d.text((sx+2, sy+2), "WPi", fill=(255,255,255))
+            else:
+                d.text((sx+2, sy+2), item["type"][:3], fill=(255,255,255))
+                d.text((sx+20, sy+20), str(item["count"]), fill=(255,255,0))
+            if "durability" in item:
+                dur_pct = max(0, item["durability"] / 30.0)
+                d.rectangle((sx+4, sy+32, sx+32, sy+34), fill=(50,50,50))
+                d.rectangle((sx+4, sy+32, sx+4+28*dur_pct, sy+34), fill=(0,255,0) if dur_pct>0.3 else (255,0,0))
             
     if st["drag_item"]:
         d.text((10, 10), f"Dragging: {st['drag_item']['count']}x {st['drag_item']['type']}", fill=(0,255,0))
@@ -535,14 +568,20 @@ def update_crafting(st):
     
     woods = [i["count"] for i in c_slots if i and i["type"] == "wood"]
     planks = [i["count"] for i in c_slots if i and i["type"] == "planks"]
+    sticks = [i["count"] for i in c_slots if i and i["type"] == "stick"]
     total = sum(1 for i in c_slots if i)
     
     if len(woods) == 1 and total == 1: 
-        op_count = woods[0]
-        res = {"type": "planks", "count": op_count * 4, "ops": op_count}
+        op = woods[0]
+        res = {"type": "planks", "count": op * 4, "ops": op}
     elif len(planks) == 4 and total == 4:
-        op_count = min(planks)
-        res = {"type": "workbench", "count": op_count * 1, "ops": op_count}
+        op = min(planks)
+        res = {"type": "workbench", "count": op, "ops": op}
+    elif len(planks) == 2 and total == 2:
+        op = min(planks)
+        res = {"type": "stick", "count": op * 4, "ops": op}
+    elif len(planks) == 3 and len(sticks) == 2 and total == 5:
+        res = {"type": "wood_pickaxe", "count": 1, "ops": 1, "durability": 30}
     
     if res: st["inv"][out_idx] = res
     elif out_idx in st["inv"]: del st["inv"][out_idx]
@@ -606,7 +645,6 @@ def render_scene(px, py, pz, pa, pt, uid, s_id):
         d_sq = (ox-px)**2 + (oy-py)**2
         if d_sq > vr**2 or (d_sq > 9.0 and ((ox-px)*fwd_x + (oy-py)*fwd_y)/math.sqrt(d_sq) < -0.3): continue
         
-        # Исправление зеркальности (-oa)
         bv = build_box(ox, oy, oz, PLAYER_BODY_SIZE, PLAYER_BODY_HEIGHT, -oa)
         hv = build_box(ox, oy, oz+PLAYER_BODY_HEIGHT+PLAYER_HEAD_OFFSET, PLAYER_HEAD_SIZE, PLAYER_HEAD_SIZE, -oa)
         flash = time.time() - ps.get("flash_time", 0) < 0.25
@@ -630,7 +668,11 @@ def render_scene(px, py, pz, pa, pt, uid, s_id):
             px_n = img_w/2 + (nv[0]/nv[1])*scale
             py_n = horiz_y - (nv[2]/nv[1])*scale
             name_text = ps["name"]
-            tw, th = len(name_text)*6, 12
+            try:
+                bbox = d.textbbox((0, 0), name_text, font=FONT)
+                tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
+            except:
+                tw, th = len(name_text)*6, 12
             d.rectangle((px_n - tw/2 - 2, py_n - th/2 - 2, px_n + tw/2 + 2, py_n + th/2 + 2), fill=(0,0,0,128))
             d.text((px_n - tw/2, py_n - th/2), name_text, font=FONT, fill=(255,255,255))
 
@@ -652,8 +694,14 @@ def render_scene(px, py, pz, pa, pt, uid, s_id):
             d.rectangle((hx+i*40, img_h-45, hx+i*40+36, img_h-9), fill=(100,100,100,150), outline=(255,255,255) if i==st["inv_cursor"] and not st.get("inv_open") else None)
             item = st["inv"].get(i)
             if item:
-                d.text((hx+i*40+2, img_h-43), item["type"][:3], fill=(255,255,255))
-                d.text((hx+i*40+20, img_h-25), str(item["count"]), fill=(255,255,0))
+                if item["type"] == "wood_pickaxe": d.text((hx+i*40+2, img_h-43), "WPi", fill=(255,255,255))
+                else:
+                    d.text((hx+i*40+2, img_h-43), item["type"][:3], fill=(255,255,255))
+                    d.text((hx+i*40+20, img_h-25), str(item["count"]), fill=(255,255,0))
+                if "durability" in item:
+                    dur_pct = max(0, item["durability"] / 30.0)
+                    d.rectangle((hx+i*40+4, img_h-13, hx+i*40+32, img_h-11), fill=(50,50,50))
+                    d.rectangle((hx+i*40+4, img_h-13, hx+i*40+4+28*dur_pct, img_h-11), fill=(0,255,0) if dur_pct>0.3 else (255,0,0))
 
     bio = io.BytesIO()
     img.convert("RGB").save(bio, "PNG")
@@ -663,6 +711,7 @@ def ray_pick(px, py, pz, pa, pt, s_id, ignore_uid=None):
     srv = SERVERS[s_id]
     dx, dy, dz = math.sin(pa)*math.cos(pt), math.cos(pa)*math.cos(pt), -math.sin(pt)
     t = 0.0
+    prev_cb = None
     while t <= RAY_MAX_DIST:
         wx, wy, wz = px+dx*t, py+dy*t, pz+dz*t
         for pid, ps in srv.players.items():
@@ -670,7 +719,8 @@ def ray_pick(px, py, pz, pa, pt, s_id, ignore_uid=None):
             if abs(wx-ps["x"])<0.3 and abs(wy-ps["y"])<0.3 and ps["z"]<=wz<=ps["z"]+2.0:
                 return ("player", pid, t)
         cb = (int(math.floor(wx)), int(math.floor(wy)), int(math.floor(wz)))
-        if cb in srv.blocks: return ("block", cb, None)
+        if cb in srv.blocks: return ("block", cb, prev_cb)
+        prev_cb = cb
         t += RAY_STEP
     return None
 
@@ -680,6 +730,8 @@ async def broadcast_chat(s_id, txt):
     for uid, st in SERVERS[s_id].players.items():
         if st.get("msg_id") and st.get("online"):
             try: await bot.edit_message_caption(caption=cap, chat_id=uid, message_id=st["msg_id"], reply_markup=make_keyboard(uid))
+            except ApiTelegramException as e:
+                if "not modified" not in str(e).lower(): pass
             except: pass
 
 async def send_view(cid, uid):
@@ -701,15 +753,17 @@ async def send_view(cid, uid):
         async with RENDER_SEMAPHORE:
             img_bytes = await asyncio.to_thread(render_scene, st["x"], st["y"], st["z"]+1.6, st["angle"], st["tilt"], uid, s_id)
             
-        bio = io.BytesIO(img_bytes)
-        bio.name = "s.png"
         cap = "\n".join(SERVERS[s_id].chat) if SERVERS[s_id].chat else "🎮 Приятной игры!"
         
         if st.get("msg_id"):
             try:
-                await bot.edit_message_media(chat_id=cid, message_id=st["msg_id"], media=InputMediaPhoto(bio, caption=cap), reply_markup=kb)
+                await bot.edit_message_media(chat_id=cid, message_id=st["msg_id"], media=InputMediaPhoto(io.BytesIO(img_bytes), caption=cap), reply_markup=kb)
                 st["is_busy"] = False
                 return
+            except ApiTelegramException as e:
+                if "not modified" in str(e).lower():
+                    st["is_busy"] = False
+                    return
             except: pass
 
         bio = io.BytesIO(img_bytes)
@@ -899,7 +953,7 @@ async def h_cb(c):
                     st["inv"][c_id] = {"type": st["drag_item"]["type"], "count": 1}
                     st["drag_item"]["count"] -= 1
                     if st["drag_item"]["count"] <= 0: st["drag_item"] = None
-                elif tmp["type"] == st["drag_item"]["type"]:
+                elif tmp["type"] == st["drag_item"]["type"] and tmp.get("durability") is None:
                     st["inv"][c_id]["count"] += 1
                     st["drag_item"]["count"] -= 1
                     if st["drag_item"]["count"] <= 0: st["drag_item"] = None
@@ -908,12 +962,9 @@ async def h_cb(c):
         elif d == "inv_click":
             c_id = st["inv_cursor"]
             if c_id == out_idx and out_idx in st["inv"]:
-                # Если в руке уже есть предмет, прячем его в свободную ячейку
                 if st.get("drag_item"):
                     free_slot = next((i for i in range(20) if i not in st["inv"]), None)
-                    if free_slot is None: 
-                        pass # Отмена, если места нет!
-                    else:
+                    if free_slot is not None:
                         st["inv"][free_slot] = st["drag_item"]
                         st["drag_item"] = None
 
@@ -928,7 +979,7 @@ async def h_cb(c):
             else:
                 tmp = st["inv"].get(c_id)
                 if st["drag_item"]:
-                    if tmp and tmp["type"] == st["drag_item"]["type"]:
+                    if tmp and tmp["type"] == st["drag_item"]["type"] and tmp.get("durability") is None:
                         tmp["count"] += st["drag_item"]["count"]
                         st["drag_item"] = None
                     else:
@@ -971,6 +1022,7 @@ async def h_cb(c):
                     st["x"], st["y"], st["z"], st["hp"] = srv.size/2, srv.size/2, get_ground_z(srv.size/2, srv.size/2, srv), 10
         st["jump"] = False
         
+    elif d == "refresh": st["angle"] = normalize_angle(st["angle"] + math.pi); ev = True
     elif d == "turn_left": st["angle"] = normalize_angle(st["angle"] - TURN_ANGLE); ev = True
     elif d == "turn_right": st["angle"] = normalize_angle(st["angle"] + TURN_ANGLE); ev = True
     elif d == "look_up": st["tilt"] = max(st["tilt"] - TILT_STEP, MIN_TILT); ev = True
@@ -991,29 +1043,32 @@ async def h_cb(c):
     elif d == "build":
         pb = ray_pick(st["x"], st["y"], st["z"]+1.6, st["angle"], st["tilt"], s_id, uid)
         if pb and pb[0]=="block":
-            bx, by, bz = pb[1]
             if srv.type == "survival" and srv.blocks.get(pb[1], {}).get("type") == "workbench":
                 st["inv_open"] = True
                 st["inv_mode"] = "workbench"
                 st["inv_cursor"] = 34
                 ev = True
-            else:
+            elif pb[2]:
+                nb = pb[2]
                 c_slot = st["inv_cursor"] if st["inv_cursor"] < 5 else 0
                 item = st["inv"].get(c_slot)
-                if item or srv.type == "classic":
+                if item and item["type"] in ["wood_pickaxe", "stick"]:
+                    pass
+                elif item or srv.type == "classic":
                     btype = item["type"] if item else "planks"
-                    for offset in [(0,0,1),(0,0,-1),(0,1,0),(0,-1,0),(1,0,0),(-1,0,0)]:
-                        nb = (bx+offset[0], by+offset[1], bz+offset[2])
-                        if nb not in srv.blocks:
-                            srv.blocks[nb] = {"type": btype} if srv.type=="survival" else {"color":(255,255,255)}
-                            if item:
-                                item["count"] -= 1
-                                if item["count"] <= 0: del st["inv"][c_slot]
-                            srv.rebuild_mesh()
-                            ev = True
-                            break
+                    if nb not in srv.blocks:
+                        srv.blocks[nb] = {"type": btype} if srv.type=="survival" else {"color":(255,255,255)}
+                        if item:
+                            item["count"] -= 1
+                            if item["count"] <= 0: del st["inv"][c_slot]
+                        srv.rebuild_mesh()
+                        ev = True
 
     elif d == "break":
+        c_slot = st["inv_cursor"] if st["inv_cursor"] < 5 else 0
+        tool = st["inv"].get(c_slot)
+        is_pick = tool and tool["type"] == "wood_pickaxe"
+
         pb = ray_pick(st["x"], st["y"], st["z"]+1.6, st["angle"], st["tilt"], s_id, uid)
         if pb:
             if pb[0] == "block":
@@ -1021,18 +1076,30 @@ async def h_cb(c):
                 if srv.type == "survival":
                     if srv.blocks[pb[1]]["type"] != "bedrock":
                         btype = srv.blocks[pb[1]]["type"]
-                        mhp = BLOCK_STATS.get(btype, 3)
+                        mhp = 9 if btype == "stone" and is_pick else (12 if btype == "stone" else BLOCK_STATS.get(btype, 3))
                         srv.block_damage[pb[1]] = srv.block_damage.get(pb[1], 0) + 1
+                        
                         if srv.block_damage[pb[1]] >= mhp:
                             del srv.blocks[pb[1]]
                             del srv.block_damage[pb[1]]
-                            for i in range(20):
-                                if i in st["inv"] and st["inv"][i]["type"] == btype and st["inv"][i]["count"]<64:
-                                    st["inv"][i]["count"] += 1; break
-                            else:
+                            
+                            drop_t = btype
+                            if btype == "grass": drop_t = "dirt"
+                            elif btype == "leaves": drop_t = None
+                            elif btype == "stone": drop_t = "cobblestone"
+
+                            if drop_t:
                                 for i in range(20):
-                                    if i not in st["inv"]:
-                                        st["inv"][i] = {"type": btype, "count": 1}; break
+                                    if i in st["inv"] and st["inv"][i]["type"] == drop_t and st["inv"][i]["count"]<64 and st["inv"][i].get("durability") is None:
+                                        st["inv"][i]["count"] += 1; break
+                                else:
+                                    for i in range(20):
+                                        if i not in st["inv"]:
+                                            st["inv"][i] = {"type": drop_t, "count": 1}; break
+                            
+                            if is_pick:
+                                tool["durability"] -= 1
+                                if tool["durability"] <= 0: del st["inv"][c_slot]
                         srv.rebuild_mesh()
                 else:
                     del srv.blocks[pb[1]]
@@ -1041,7 +1108,7 @@ async def h_cb(c):
             elif pb[0] == "player":
                 tgt = srv.players[pb[1]]
                 if pb[2] <= 4.0:
-                    tgt["hp"] -= 1
+                    tgt["hp"] -= 2 if is_pick else 1
                     tgt["flash_time"] = time.time()
                     if tgt["hp"] <= 0:
                         await broadcast_chat(s_id, f"💀 {tgt['name']} был убит игроком {st['name']}!")
