@@ -238,7 +238,8 @@ def bake_face(tex):
     d.rectangle((48*sx, 88*sy, 80*sx, 96*sy), fill=(0,0,0,255))
     return img
 
-DEFAULT_BASE_TEX = Image.new("RGB", (128, 128), (255, 220, 100))
+# ИСПРАВЛЕНИЕ: Базовая текстура тоже должна быть RGBA, чтобы не вызывало ошибку "tuple index out of range"
+DEFAULT_BASE_TEX = Image.new("RGBA", (128, 128), (255, 220, 100, 255))
 DEFAULT_FACE_TEX = bake_face(DEFAULT_BASE_TEX)
 
 BLOCK_STATS = {"dirt": 3, "grass": 3, "wood": 6, "leaves": 2, "stone": 12, "planks": 4, "workbench": 6, "bedrock": 9999, "cobblestone": 12}
@@ -349,7 +350,7 @@ SERVERS = {1: Server(1, "classic"), 2: Server(2, "survival")}
 user_server_map = {}
 player_skins = {}
 pending_skin_mode = {}
-ACTIVE_MENUS = {} # Добавлено для отслеживания отправленных меню серверов
+ACTIVE_MENUS = {} 
 
 def save_all_data():
     try:
@@ -394,7 +395,6 @@ def load_all_data():
             SERVERS[2].rebuild_mesh()
     except Exception as e: pass
 
-# --- ФУНКЦИЯ АВТО-ОБНОВЛЕНИЯ МЕНЮ СЕРВЕРОВ ---
 async def update_server_menus():
     kb = server_menu()
     to_remove = []
@@ -416,7 +416,6 @@ async def auto_saver():
         save_all_data()
 
 async def afk_checker():
-    """Система проверки АФК игроков (5 минут)"""
     while True:
         await asyncio.sleep(60)
         now = time.time()
@@ -433,7 +432,6 @@ async def afk_checker():
                         ACTIVE_MENUS[uid] = {"chat_id": uid, "msg_id": msg.message_id}
                     except: pass
                     
-                    # Пишем о кике в чат и обновляем рендер у всех остальных 
                     srv.broadcast(f"💤 {ps['name']} отключен (АФК)")
                     
                     for p_uid, p_state in list(srv.players.items()):
@@ -462,13 +460,14 @@ def init_player(uid, s_id, name):
             "angle": 0.0, "tilt": 0.0, "jump": False, "last_action": time.time(),
             "name": transliterate(name), "msg_id": None, "view_radius": 8, "res_level": 2, "hp": 10, "flash_time": 0,
             "inv": {0: {"type": "wood", "count": 10}}, "inv_open": False, "inv_mode": "normal", "inv_cursor": 0, "drag_item": None,
-            "is_busy": False, "online": True
+            "is_busy": False, "online": True, "hit_time": 0
         }
     else:
         srv.players[uid]["online"] = True
         srv.players[uid]["last_action"] = time.time()
         srv.players[uid]["msg_id"] = None
         srv.players[uid]["name"] = transliterate(name)
+        srv.players[uid]["hit_time"] = 0
     return srv.players[uid]
 
 def make_keyboard(uid):
@@ -479,6 +478,10 @@ def make_keyboard(uid):
     jump_text = "🦘 Прыжок (Вкл)" if st.get("jump") else "🦘 Прыжок"
     vr_text = f"👁 {st.get('view_radius', 8)}"
     res_text = f"🖥 {RESOLUTIONS[st.get('res_level', 2)]['w']}p"
+    
+    # ИСПРАВЛЕНИЕ: Временный текст при ударе
+    is_hit = st.get("hit_time", 0) > 0 and (time.time() - st["hit_time"]) < 1.0
+    break_text = "💥 Ударил!" if is_hit else "⛏️ Ломай"
     
     if srv.type == "classic": paint_text = "📸 Жду фото..." if pending_skin_mode.get(uid) and pending_skin_mode[uid][0] == "block" else "🎨 Крась"
     else: paint_text = "🎒 Инвентарь"
@@ -510,7 +513,7 @@ def make_keyboard(uid):
     kb.add(
         InlineKeyboardButton("🔨 Строй", callback_data="build"),
         InlineKeyboardButton(paint_text, callback_data="paint"),
-        InlineKeyboardButton("⛏️ Ломай", callback_data="break")
+        InlineKeyboardButton(break_text, callback_data="break")
     )
     kb.add(
         InlineKeyboardButton(jump_text, callback_data="toggle_jump"),
@@ -598,7 +601,9 @@ def draw_poly_tex(pix, zb, v2d, tex, lf):
                     tu, tv = (u1+(u2-u1)*t2)/iz, (v1+(v2-v1)*t2)/iz
                     tx, ty = int(clamp(tu,0,0.999)*tw), int(clamp(tv,0,0.999)*th)
                     c = t_dat[ty*tw + tx]
-                    if c[3]>100: pix[x,y] = apply_light(c[:3], lf)
+                    # ИСПРАВЛЕНИЕ: Защита от "tuple index out of range" если вдруг текстура RGB а не RGBA
+                    if len(c) < 4 or c[3] > 100:
+                        pix[x,y] = apply_light(c[:3], lf)
 
 def draw_inv(img, d, w, h, st):
     d.rectangle((0,0, w, h), fill=(0,0,0, 200))
@@ -747,7 +752,6 @@ def render_scene(px, py, pz, pa, pt, uid, s_id):
                 if len(vc)<3: continue
                 proj = [(img_w/2 + (v[0]/v[1])*scale, horiz_y - (v[2]/v[1])*scale, v[1]) + (v[3:] if len(v)>3 else ()) for v in vc]
                 
-                # --- ИСПРАВЛЕНИЕ СКИНОВ: Базовая текстура на все стороны, а лицо - только спереди ---
                 if tex_mode and not flash:
                     skin_data = player_skins.get(pid)
                     if isinstance(skin_data, dict):
@@ -902,7 +906,6 @@ async def h_start(m):
     old_s = user_server_map.get(uid)
     changed = False
     
-    # --- ИСПРАВЛЕНИЕ ВЫХОДА: Пушим в чат и обновляем рендер для остальных игроков ---
     if old_s and old_s in SERVERS:
         if uid in SERVERS[old_s].players:
             ps = SERVERS[old_s].players[uid]
@@ -911,20 +914,19 @@ async def h_start(m):
                 changed = True
                 SERVERS[old_s].broadcast(f"💨 {ps['name']} вышел")
                 
-                # Принудительно рендерим новую картинку (и новый чат) для всех онлайн-игроков на сервере
                 tasks = []
                 for p_uid, p_st in SERVERS[old_s].players.items():
                     if p_uid != uid and p_st.get("online"):
                         tasks.append(send_view(p_uid, p_uid))
                 
+                # ИСПРАВЛЕНИЕ: Вызов gather напрямую
                 if tasks:
-                    asyncio.create_task(asyncio.gather(*tasks))
+                    await asyncio.gather(*tasks)
                     
         user_server_map.pop(uid, None)
         save_all_data()
         
     msg = await bot.send_message(m.chat.id, "Выбери сервер:", reply_markup=server_menu())
-    # Запоминаем меню для автообновления
     ACTIVE_MENUS[uid] = {"chat_id": m.chat.id, "msg_id": msg.message_id}
     
     if changed:
@@ -975,7 +977,7 @@ async def cb_join(c):
     s_id = int(c.data.split("_")[1])
     uid = c.from_user.id
     
-    ACTIVE_MENUS.pop(uid, None) # Убираем из активных меню
+    ACTIVE_MENUS.pop(uid, None)
     
     try: await bot.delete_message(c.message.chat.id, c.message.message_id)
     except: pass
@@ -983,12 +985,11 @@ async def cb_join(c):
     st = init_player(uid, s_id, c.from_user.first_name)
     SERVERS[s_id].broadcast(f"🎉 {st['name']} присоединился!")
     
-    # Обновляем рендер у всех на сервере (чтобы они увидели вхождение нового игрока)
     tasks = [send_view(p_uid, p_uid) for p_uid, ps in SERVERS[s_id].players.items() if ps.get("online")]
     if tasks:
         await asyncio.gather(*tasks)
         
-    await update_server_menus() # Обновляем количество человек на сервере в меню
+    await update_server_menus()
 
 @bot.message_handler(content_types=["photo"])
 async def h_photo(m):
@@ -1024,7 +1025,6 @@ async def h_photo(m):
                     tasks.append(send_view(p_uid, p_uid))
             
         elif m.caption and "/skin" in m.caption.lower():
-            # --- ИСПРАВЛЕНИЕ СКИНОВ: Сохраняем и чистую текстуру, и текстуру с лицом ---
             base_tex = tex.copy()
             baked_tex = bake_face(tex)
             player_skins[uid] = {"base": base_tex, "face": baked_tex}
@@ -1298,7 +1298,19 @@ async def h_cb(c):
                     await broadcast_chat(s_id, f"💀 {tgt['name']} был убит игроком {st['name']}!")
                     tgt["hp"], tgt["x"], tgt["y"], tgt["z"] = 10, srv.size/2, srv.size/2, get_ground_z(srv.size/2, srv.size/2, srv)
                 ev = True
-                await send_view(c.message.chat.id, pb[1])
+                
+                # ИСПРАВЛЕНИЕ: Меняем текст кнопки на "💥 Ударил!" на 1 секунду
+                st["hit_time"] = time.time()
+                
+                async def reset_hit_btn(cid, p_uid, m_id):
+                    await asyncio.sleep(1.0)
+                    p_st = get_st(p_uid)
+                    if p_st and p_st.get("msg_id") == m_id:
+                        try: await bot.edit_message_reply_markup(chat_id=cid, message_id=m_id, reply_markup=make_keyboard(p_uid))
+                        except: pass
+
+                if st.get("msg_id"):
+                    asyncio.create_task(reset_hit_btn(c.message.chat.id, uid, st["msg_id"]))
 
     try: await bot.answer_callback_query(c.id)
     except: pass
