@@ -9,13 +9,12 @@ import pickle
 from pathlib import Path
 from telebot.async_telebot import AsyncTeleBot
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, InputMediaPhoto
-from PIL import Image, ImageDraw, ImageOps
+from PIL import Image, ImageDraw, ImageOps, ImageFont
 
 ADMIN_ID = 1170970828
 BOT_TOKEN = "8512207770:AAEKLtYEph7gleybGhF2lc7Gwq82Kj1yedM"
 bot = AsyncTeleBot(BOT_TOKEN)
 
-# Лимит одновременных рендеров (спасает процессор от зависания)
 RENDER_SEMAPHORE = asyncio.Semaphore(2)
 
 # --- ИНИЦИАЛИЗАЦИЯ ДАННЫХ И БД ---
@@ -35,6 +34,23 @@ if not DB_PATH.exists():
 
 TEX_DIR = Path("textures")
 TEX_DIR.mkdir(exist_ok=True)
+
+# --- ЗАГРУЗКА ШРИФТОВ ДЛЯ РУССКОГО ЯЗЫКА ---
+def load_font():
+    paths = [
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/truetype/freefont/FreeSans.ttf",
+        "/usr/share/fonts/dejavu/DejaVuSans.ttf",
+        "C:\\Windows\\Fonts\\arial.ttf",
+        "C:\\Windows\\Fonts\\segoeui.ttf"
+    ]
+    for p in paths:
+        if os.path.exists(p):
+            try: return ImageFont.truetype(p, 12)
+            except: pass
+    return ImageFont.load_default()
+
+FONT = load_font()
 
 # --- КОНСТАНТЫ И НАСТРОЙКИ ---
 CAMERA_HEIGHT_OFFSET = 1.6
@@ -71,7 +87,7 @@ BLOCK_FACES_DATA = [
     ("front", [0, 1, 5, 4], (0, -1, 0)),
     ("back", [2, 3, 7, 6], (0, 1, 0)),
     ("right", [1, 2, 6, 5], (1, 0, 0)),
-    ("left", [3, 0, 4, 7], (-1, 0, 0)), # Исправлен порядок для левой стороны (текстуры теперь ровные)
+    ("left", [3, 0, 4, 7], (-1, 0, 0)),
 ]
 PLAYER_FACES = [
     ("bottom", [0, 3, 2, 1], lambda c: c),
@@ -364,7 +380,7 @@ def make_keyboard(uid):
     kb.add(
         InlineKeyboardButton("↙️", callback_data="move_bl"),
         InlineKeyboardButton("⬇️", callback_data="move_b"),
-        InlineKeyboardButton("↘️", callback_data="move_br")
+        InlineKeyboardButton("���️", callback_data="move_br")
     )
     kb.add(
         InlineKeyboardButton("🌀⬅️", callback_data="turn_left"),
@@ -517,7 +533,6 @@ def render_scene(px, py, pz, pa, pt, uid, s_id):
     img = Image.new("RGBA", (img_w, img_h), SKY_COLOR)
     d = ImageDraw.Draw(img)
 
-    # ОПТИМИЗАЦИЯ: Если инвентарь открыт, мы НЕ рендерим мир, чтобы игра не зависала
     if st.get("inv_open"):
         draw_inv(d, img_w, img_h, st)
         bio = io.BytesIO()
@@ -575,11 +590,26 @@ def render_scene(px, py, pz, pa, pt, uid, s_id):
                     draw_poly_tex(pix, zbuf, proj, t, lf)
                 else: draw_poly_color(pix, zbuf, proj, apply_light(col, lf))
 
+        # Отрисовка имени (Ника) игрока над головой с поддержкой русского
+        nv = world_to_view(ox, oy, oz + 2.4, px, py, pz, pa, pt)
+        if nv[1] >= NEAR_CLIP:
+            px_n = img_w/2 + (nv[0]/nv[1])*scale
+            py_n = horiz_y - (nv[2]/nv[1])*scale
+            
+            name_text = ps["name"]
+            try:
+                bbox = d.textbbox((0, 0), name_text, font=FONT)
+                tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
+            except:
+                tw, th = d.textsize(name_text, font=FONT) if hasattr(d, "textsize") else (len(name_text)*6, 12)
+                
+            d.rectangle((px_n - tw/2 - 2, py_n - th/2 - 2, px_n + tw/2 + 2, py_n + th/2 + 2), fill=(0,0,0,128))
+            d.text((px_n - tw/2, py_n - th/2), name_text, font=FONT, fill=(255,255,255))
+
     d.line((img_w/2-5, img_h/2, img_w/2+5, img_h/2), fill=(255,255,255))
     d.line((img_w/2, img_h/2-5, img_w/2, img_h/2+5), fill=(255,255,255))
 
     d.rectangle((5,5, 150,25), fill=(0,0,0,150))
-    # Координата Z теперь располагается между X и Y
     d.text((10,8), f"X:{px:.1f} Z:{pz-1.6:.1f} Y:{py:.1f}", fill=(255,255,255))
 
     for i in range(5):
@@ -638,8 +668,7 @@ async def send_view(cid, uid):
             kb = InlineKeyboardMarkup(row_width=3)
             kb.add(InlineKeyboardButton("Вверх ⬆️", callback_data="inv_u"))
             kb.add(InlineKeyboardButton("Влево ⬅️", callback_data="inv_l"), InlineKeyboardButton("Взять/Класть ✋", callback_data="inv_click"), InlineKeyboardButton("Вправо ➡️", callback_data="inv_r"))
-            kb.add(InlineKeyboardButton("Вниз ⬇️", callback_data="inv_d"))
-            kb.add(InlineKeyboardButton("❌ Закрыть", callback_data="inv_close"))
+            kb.add(InlineKeyboardButton("Положить 1 шт. 🤏", callback_data="inv_click_1"), InlineKeyboardButton("Вниз ⬇️", callback_data="inv_d"), InlineKeyboardButton("❌ Закрыть", callback_data="inv_close"))
 
         async with RENDER_SEMAPHORE:
             img_bytes = await asyncio.to_thread(render_scene, st["x"], st["y"], st["z"]+1.6, st["angle"], st["tilt"], uid, s_id)
@@ -653,11 +682,8 @@ async def send_view(cid, uid):
                 await bot.edit_message_media(chat_id=cid, message_id=st["msg_id"], media=InputMediaPhoto(bio, caption=cap), reply_markup=kb)
                 st["is_busy"] = False
                 return
-            except: 
-                pass # Если редактирование сфейлилось, переотправим сообщением (но bio уже может быть закрыто!)
+            except: pass
 
-        # ИСПРАВЛЕНИЕ "I/O operation on closed file": 
-        # Телебот иногда закрывает bio после неудачного edit_message_media
         bio = io.BytesIO(img_bytes)
         bio.name = "s.png"
         msg = await bot.send_photo(cid, bio, caption=cap, reply_markup=kb)
@@ -686,10 +712,7 @@ async def h_start(m):
         
     old_s = user_server_map.get(uid)
     if old_s and old_s in SERVERS:
-        # ИСПРАВЛЕНИЕ СОХРАНЕНИЯ: Теперь мы не удаляем игрока из словаря игроков при выходе, 
-        # чтобы его вещи и позиция сохранились. Мы просто отмечаем его как оффлайн.
-        if uid in SERVERS[old_s].players: 
-            SERVERS[old_s].players[uid]["online"] = False
+        if uid in SERVERS[old_s].players: SERVERS[old_s].players[uid]["online"] = False
         user_server_map.pop(uid, None)
         save_all_data()
         
@@ -755,7 +778,6 @@ async def h_photo(m):
     try:
         fi = await bot.get_file(m.photo[-1].file_id)
         down_file = await bot.download_file(fi.file_path)
-        # ИСПРАВЛЕНИЕ: convert("RGBA") вместо "RGB". Предотвращает ошибку "tuple index out of range"
         im = Image.open(io.BytesIO(down_file)).convert("RGBA") 
         tex = ImageOps.fit(im, (128, 128), Image.Resampling.LANCZOS)
         
@@ -806,21 +828,42 @@ async def h_cb(c):
     
     if st.get("inv_open"):
         c_idx = st["inv_cursor"]
-        # ИСПРАВЛЕНИЕ ПЕРЕМЕЩЕНИЯ В ИНВЕНТАРЕ: Теперь курсор легко и плавно заходит в ячейки 20-23 (крафт)
         if d == "inv_u":
-            if 0 <= c_idx <= 4: st["inv_cursor"] += 15
-            elif 5 <= c_idx <= 9: st["inv_cursor"] = 20 + min(c_idx - 5, 3) 
+            if 0 <= c_idx <= 4: st["inv_cursor"] = c_idx + 15
+            elif 5 <= c_idx <= 9:
+                if c_idx in (5, 6): st["inv_cursor"] = 22
+                elif c_idx in (7, 8): st["inv_cursor"] = 23
+                elif c_idx == 9: st["inv_cursor"] = 24
             elif 10 <= c_idx <= 19: st["inv_cursor"] -= 5
+            elif c_idx in (22, 23): st["inv_cursor"] -= 2
         elif d == "inv_d":
-            if 20 <= c_idx <= 24: st["inv_cursor"] = c_idx - 15 if c_idx < 24 else 9
+            if c_idx in (20, 21): st["inv_cursor"] += 2
+            elif c_idx == 22: st["inv_cursor"] = 6
+            elif c_idx == 23: st["inv_cursor"] = 7
+            elif c_idx == 24: st["inv_cursor"] = 9
             elif 5 <= c_idx <= 14: st["inv_cursor"] += 5
             elif 15 <= c_idx <= 19: st["inv_cursor"] -= 15
         elif d == "inv_l":
-            if c_idx not in [0, 5, 10, 15, 20, 22, 24]: st["inv_cursor"] -= 1
+            if c_idx in (21, 23): st["inv_cursor"] -= 1
             elif c_idx == 24: st["inv_cursor"] = 21
+            elif c_idx not in (0, 5, 10, 15, 20, 22): st["inv_cursor"] -= 1
         elif d == "inv_r":
-            if c_idx not in [4, 9, 14, 19, 21, 23, 24]: st["inv_cursor"] += 1
-            elif c_idx in [21, 23]: st["inv_cursor"] = 24
+            if c_idx in (20, 22): st["inv_cursor"] += 1
+            elif c_idx in (21, 23): st["inv_cursor"] = 24
+            elif c_idx not in (4, 9, 14, 19, 24): st["inv_cursor"] += 1
+        elif d == "inv_click_1": # Кнопка положить по 1 шт.
+            c_id = st["inv_cursor"]
+            if c_id != 24 and st.get("drag_item"):
+                tmp = st["inv"].get(c_id)
+                if tmp is None:
+                    st["inv"][c_id] = {"type": st["drag_item"]["type"], "count": 1}
+                    st["drag_item"]["count"] -= 1
+                    if st["drag_item"]["count"] <= 0: st["drag_item"] = None
+                elif tmp["type"] == st["drag_item"]["type"]:
+                    st["inv"][c_id]["count"] += 1
+                    st["drag_item"]["count"] -= 1
+                    if st["drag_item"]["count"] <= 0: st["drag_item"] = None
+            update_crafting(st)
         elif d == "inv_click":
             c_id = st["inv_cursor"]
             if c_id == 24 and st.get("drag_item") is None and 24 in st["inv"]:
@@ -862,7 +905,8 @@ async def h_cb(c):
         tz = get_ground_z(nx, ny, srv)
             
         diff = tz - st["z"]
-        if diff <= 0 or (diff == 1 and st["jump"]):
+        # ИСПРАВЛЕНИЕ: Мягкая проверка высоты блока (допускаем прыжок на высоту до 1.5)
+        if diff <= 0.1 or (0 < diff <= 1.5 and st["jump"]):
             st["x"], st["y"], st["z"] = nx, ny, tz
             ev = True
             if diff <= -4:
