@@ -68,7 +68,6 @@ FONT = load_font()
 
 # --- КОНСТАНТЫ И НАСТРОЙКИ ---
 CAMERA_HEIGHT_OFFSET = 1.6
-MOVE_STEP = 1.0
 
 MAX_TILT = 1.5   
 MIN_TILT = -1.5  
@@ -359,7 +358,6 @@ class Server:
         if changed: self.rebuild_mesh()
 
     def generate_chunk(self, cx, cy):
-        # 1. Генерация базового ландшафта и пещер
         for x in range(cx * 16, cx * 16 + 16):
             for y in range(cy * 16, cy * 16 + 16):
                 h = int(math.sin(x/10.0 + self.seed)*4 + math.cos(y/10.0 - self.seed)*4 + math.sin((x+y)/5.0)*2)
@@ -384,8 +382,6 @@ class Server:
                                 if dx==0 and dy==0 and dz==4: continue
                                 self.blocks[(x+dx, y+dy, h+dz)] = {"type": "leaves"}
 
-        # 2. Генерация жил руд (3-5 блоков)
-        # Уголь
         for _ in range(18):
             vx, vy, vz = random.randint(cx*16, cx*16+15), random.randint(cy*16, cy*16+15), random.randint(-31, -6)
             vein_size = random.randint(3, 5)
@@ -396,7 +392,6 @@ class Server:
                 vy += random.choice([-1, 0, 1])
                 vz += random.choice([-1, 0, 1])
 
-        # Железо
         for _ in range(12):
             vx, vy, vz = random.randint(cx*16, cx*16+15), random.randint(cy*16, cy*16+15), random.randint(-31, -12)
             vein_size = random.randint(3, 5)
@@ -593,10 +588,10 @@ async def furnace_ticker():
                     if can_smelt and b.get("burn_time", 0) <= 0 and inv[1]:
                         f_type = inv[1]["type"]
                         fuel_val = 0
-                        if f_type == "coal": fuel_val = 80 # 8 предметов
-                        elif f_type == "wood": fuel_val = 20 # 2 предмета
-                        elif f_type in ("planks", "workbench", "wood_pickaxe"): fuel_val = 10 # 1 предмет
-                        elif f_type == "stick": fuel_val = 5 # 0.5 предмета
+                        if f_type == "coal": fuel_val = 80
+                        elif f_type == "wood": fuel_val = 20
+                        elif f_type in ("planks", "workbench", "wood_pickaxe"): fuel_val = 10
+                        elif f_type == "stick": fuel_val = 5
 
                         if fuel_val > 0:
                             b["burn_time"] = fuel_val
@@ -685,7 +680,7 @@ def init_player(uid, s_id, name):
             "angle": 0.0, "tilt": 0.0, "jump": False, "last_action": time.time(),
             "name": transliterate(name), "msg_id": None, "view_radius": 8, "res_level": 2, "hp": 10, "flash_time": 0,
             "inv": {0: {"type": "wood", "count": 10}}, "inv_open": False, "inv_mode": "normal", "inv_cursor": 0, "drag_item": None,
-            "furnace_pos": None,
+            "furnace_pos": None, "half_step": False,
             "is_busy": False, "online": True, "hit_time": 0, "last_state_hash": None, "action_lock": False
         }
     else:
@@ -704,6 +699,7 @@ def make_keyboard(uid):
     srv = SERVERS[s_id]
     
     jump_text = "🦘 Прыжок (Вкл)" if st.get("jump") else "🦘 Прыжок"
+    step_text = "👞 Шаг 0.5" if st.get("half_step") else "👟 Шаг 1.0"
     vr_text = f"👁 {st.get('view_radius', 8)}"
     res_text = f"🖥 {RESOLUTIONS[st.get('res_level', 2)]['out_w']}p"
     
@@ -725,34 +721,39 @@ def make_keyboard(uid):
         InlineKeyboardButton("➡️", callback_data="move_r")
     )
     kb.add(
-        InlineKeyboardButton("↙️", callback_data="move_bl"),
+        InlineKeyboardButton("���️", callback_data="move_bl"),
         InlineKeyboardButton("⬇️", callback_data="move_b"),
         InlineKeyboardButton("↘️", callback_data="move_br")
     )
-    # ИСПРАВЛЕНИЕ: Новая система поворотов
     kb.add(
         InlineKeyboardButton("🌀⬅️ 15°", callback_data="turn_l_15"),
         InlineKeyboardButton("🌀➡️ 15°", callback_data="turn_r_15")
     )
-    kb.add(
+    
+    # ИСПРАВЛЕНИЕ: Форсируем 4 кнопки в один ряд с помощью kb.row()
+    kb.row(
         InlineKeyboardButton("⏪ 90°", callback_data="turn_l_90"),
         InlineKeyboardButton("◀️ 30°", callback_data="turn_l_30"),
         InlineKeyboardButton("▶️ 30°", callback_data="turn_r_30"),
         InlineKeyboardButton("⏩ 90°", callback_data="turn_r_90")
     )
-    kb.add(
+    kb.row(
         InlineKeyboardButton("⏫ 30°", callback_data="look_up_30"),
         InlineKeyboardButton("🔼 15°", callback_data="look_up_15"),
         InlineKeyboardButton("🔽 15°", callback_data="look_down_15"),
         InlineKeyboardButton("⏬ 30°", callback_data="look_down_30")
     )
+    
     kb.add(
         InlineKeyboardButton("🔨 Строй", callback_data="build"),
         InlineKeyboardButton(paint_text, callback_data="paint"),
         InlineKeyboardButton(break_text, callback_data="break")
     )
-    kb.add(
+    
+    # ИСПРАВЛЕНИЕ: Форсируем 4 кнопки настроек в один ряд
+    kb.row(
         InlineKeyboardButton(jump_text, callback_data="toggle_jump"),
+        InlineKeyboardButton(step_text, callback_data="toggle_step"),
         InlineKeyboardButton(vr_text, callback_data="cycle_view"),
         InlineKeyboardButton(res_text, callback_data="cycle_res")
     )
@@ -1479,6 +1480,10 @@ async def h_cb(c):
             await send_view(c.message.chat.id, uid)
             return
 
+        elif d == "toggle_step":
+            st["half_step"] = not st.get("half_step", False)
+            ev = True
+
         if d in ["move_f", "move_b", "move_l", "move_r", "move_fl", "move_fr", "move_bl", "move_br"]:
             f, s = 0, 0
             if "f" in d: f=1
@@ -1486,8 +1491,11 @@ async def h_cb(c):
             if "l" in d: s=-1
             if "r" in d: s=1
             a = st["angle"]
-            nx = st["x"] + (math.sin(a)*f + math.cos(a)*s)*MOVE_STEP
-            ny = st["y"] + (math.cos(a)*f - math.sin(a)*s)*MOVE_STEP
+            
+            # ИСПРАВЛЕНИЕ: Используем динамический шаг
+            step_size = 0.5 if st.get("half_step") else 1.0
+            nx = st["x"] + (math.sin(a)*f + math.cos(a)*s) * step_size
+            ny = st["y"] + (math.cos(a)*f - math.sin(a)*s) * step_size
             
             if srv.type == "classic":
                 nx, ny = clamp(nx, 0.5, srv.size-0.5), clamp(ny, 0.5, srv.size-0.5)
@@ -1516,8 +1524,7 @@ async def h_cb(c):
             
         elif d == "refresh": 
             st["angle"] = normalize_angle(st["angle"] + math.pi); ev = True
-        
-        # ИСПРАВЛЕНИЕ: Новый механизм обработки любых углов поворота
+            
         elif d.startswith("turn_"):
             parts = d.split("_")
             direction = parts[1]
@@ -1596,7 +1603,6 @@ async def h_cb(c):
                     elif srv.type == "survival":
                         btype = srv.blocks[pb[1]].get("type", "stone")
                         
-                        # ИСПРАВЛЕНИЕ: Баланс кирок. Железная ломает камень за 6 хитов.
                         if btype in ("stone", "cobblestone", "coal_ore", "iron_ore", "furnace"):
                             mhp = 6 if is_iron_pick else 9 if is_stone_pick else 12 if is_wood_pick else 15
                         elif btype in ("planks", "workbench"):
