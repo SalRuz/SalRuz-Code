@@ -70,9 +70,12 @@ FONT = load_font()
 CAMERA_HEIGHT_OFFSET = 1.6
 MOVE_STEP = 1.0
 TURN_ANGLE = math.radians(15)
+
+# Увеличен угол наклона (теперь можно смотреть прямо под ноги)
 TILT_STEP = 0.15
-MAX_TILT = 0.95
-MIN_TILT = -0.95
+MAX_TILT = 1.5   
+MIN_TILT = -1.5  
+
 SKY_COLOR = (135, 206, 235)
 NEAR_CLIP = 0.05
 RAY_STEP = 0.02
@@ -262,6 +265,12 @@ class Server:
             for y in range(self.size):
                 for x in range(self.size):
                     self.blocks[(x, y, 0)] = {"color": colors[(x + y + random.randint(0, 1)) % 3]}
+            
+            # Спавн платформа из бедрока 2х2
+            cx, cy = int(self.size/2), int(self.size/2)
+            for dx in [0, 1]:
+                for dy in [0, 1]:
+                    self.blocks[(cx+dx, cy+dy, 0)] = {"type": "bedrock", "tex": TEX_CACHE["bedrock"]}
         else:
             for y in range(self.size):
                 for x in range(self.size):
@@ -302,7 +311,7 @@ class Server:
                 face_info = {"cx": gx+0.5, "cy": gy+0.5, "cz": gz+0.5, "verts": [vw[i] for i in idx], "n": n, "lf": lf*br, "pos": (gx,gy,gz)}
                 
                 if self.type == "classic":
-                    face_info["sc"] = apply_light(bdata.get("color", (255,255,255)), lf*br)
+                    face_info["sc"] = apply_light(bdata.get("color", (40,40,40) if bdata.get("type") == "bedrock" else (255,255,255)), lf*br)
                     face_info["tex"] = bdata.get("tex")
                 else:
                     btype = bdata["type"]
@@ -315,8 +324,8 @@ class Server:
                     face_info["tex"] = tex
                 
                 dmg = self.block_damage.get((gx,gy,gz), 0)
-                if dmg > 0 and self.type == "survival" and bdata["type"] != "bedrock":
-                    mhp = 12 if bdata["type"] in ("stone", "cobblestone") else BLOCK_STATS.get(bdata["type"], 3)
+                if dmg > 0 and self.type == "survival" and bdata.get("type") != "bedrock":
+                    mhp = 12 if bdata.get("type") in ("stone", "cobblestone") else BLOCK_STATS.get(bdata.get("type"), 3)
                     stage = min(4, int((dmg / mhp) * 5))
                     if face_info.get("tex"):
                         combined = face_info["tex"].copy()
@@ -339,7 +348,7 @@ def save_all_data():
     try:
         s1_data = {"players": SERVERS[1].players, "blocks": {}}
         for pos, bd in SERVERS[1].blocks.items():
-            s1_data["blocks"][pos] = {"color": bd.get("color")}
+            s1_data["blocks"][pos] = {"color": bd.get("color"), "type": bd.get("type")}
             if bd.get("tex"):
                 bio = io.BytesIO()
                 bd["tex"].save(bio, "PNG")
@@ -358,7 +367,7 @@ def load_all_data():
                 SERVERS[1].players = data.get("players", {})
                 for p_uid, p_data in SERVERS[1].players.items(): p_data["online"] = False
                 for pos, bd in data.get("blocks", {}).items():
-                    SERVERS[1].blocks[pos] = {"color": bd["color"]}
+                    SERVERS[1].blocks[pos] = {"color": bd["color"], "type": bd.get("type")}
                     if "tex_bytes" in bd:
                         SERVERS[1].blocks[pos]["tex"] = Image.open(io.BytesIO(bd["tex_bytes"])).convert("RGBA")
             SERVERS[1].rebuild_mesh()
@@ -742,9 +751,9 @@ def ray_pick(px, py, pz, pa, pt, s_id, ignore_uid=None):
         for pid, ps in srv.players.items():
             if pid == ignore_uid or not ps.get("online", True): continue
             if abs(wx-ps["x"])<0.3 and abs(wy-ps["y"])<0.3 and ps["z"]<=wz<=ps["z"]+2.0:
-                return ("player", pid, t)
+                return ("player", pid, None, t)
         cb = (int(math.floor(wx)), int(math.floor(wy)), int(math.floor(wz)))
-        if cb in srv.blocks: return ("block", cb, prev_cb)
+        if cb in srv.blocks: return ("block", cb, prev_cb, t)
         prev_cb = cb
         t += RAY_STEP
     return None
@@ -794,7 +803,7 @@ async def send_view(cid, uid):
                     st["is_busy"] = False
                     return
                 elif "not found" in err or "can't be edited" in err:
-                    pass # Сообщение было удалено пользователем, отправим новое
+                    pass 
                 else:
                     st["is_busy"] = False
                     return
@@ -802,7 +811,6 @@ async def send_view(cid, uid):
                 st["is_busy"] = False
                 return
 
-        # Если дошли сюда, значит старого сообщения нет — отправляем новое
         bio.seek(0)
         msg = await bot.send_photo(cid, bio, caption=cap, reply_markup=kb)
         st["msg_id"] = msg.message_id
@@ -862,6 +870,26 @@ async def cb_join(c):
     st = init_player(uid, s_id, c.from_user.first_name)
     await broadcast_chat(s_id, f"🎉 {st['name']} присоединился!")
     await send_view(c.message.chat.id, uid)
+
+@bot.message_handler(commands=["block"])
+async def h_block(m):
+    uid = m.from_user.id
+    try: await bot.delete_message(m.chat.id, m.message_id)
+    except: pass
+    
+    s_id = user_server_map.get(uid)
+    if not s_id or s_id != 1: return
+    
+    pb_data = last_target_block.get(uid)
+    if not pb_data or pb_data[0] != "block": return
+        
+    t = pb_data[1]
+    pending_skin_mode[uid] = ("block", t)
+    st = get_st(uid)
+    st["cache_hash"] = None
+    if st.get("msg_id"):
+        try: await bot.edit_message_reply_markup(m.chat.id, st["msg_id"], reply_markup=make_keyboard(uid))
+        except: pass
 
 @bot.message_handler(content_types=["photo"])
 async def h_photo(m):
@@ -1080,7 +1108,7 @@ async def h_cb(c):
 
     elif d == "build":
         pb = ray_pick(st["x"], st["y"], st["z"]+1.6, st["angle"], st["tilt"], s_id, uid)
-        if pb and pb[0]=="block" and (srv.type == "classic" or pb[2] <= 5.0):
+        if pb and pb[0]=="block" and (srv.type == "classic" or pb[3] <= 5.0):
             if srv.type == "survival" and srv.blocks.get(pb[1], {}).get("type") == "workbench":
                 st["inv_open"] = True
                 st["inv_mode"] = "workbench"
@@ -1110,44 +1138,45 @@ async def h_cb(c):
         is_pick = is_wood_pick or is_stone_pick
 
         pb = ray_pick(st["x"], st["y"], st["z"]+1.6, st["angle"], st["tilt"], s_id, uid)
-        if pb and (srv.type == "classic" or pb[2] <= 5.0):
+        if pb and (srv.type == "classic" or pb[3] <= 5.0):
             if pb[0] == "block":
                 bx, by, bz = pb[1]
-                if srv.type == "survival":
-                    if srv.blocks[pb[1]]["type"] != "bedrock":
-                        btype = srv.blocks[pb[1]]["type"]
-                        
-                        if btype in ("stone", "cobblestone"):
-                            if is_stone_pick: mhp = 6
-                            elif is_wood_pick: mhp = 9
-                            else: mhp = 12
-                        else:
-                            mhp = BLOCK_STATS.get(btype, 3)
+                if srv.blocks.get(pb[1], {}).get("type") == "bedrock":
+                    pass 
+                elif srv.type == "survival":
+                    btype = srv.blocks[pb[1]]["type"]
+                    
+                    if btype in ("stone", "cobblestone"):
+                        if is_stone_pick: mhp = 6
+                        elif is_wood_pick: mhp = 9
+                        else: mhp = 12
+                    else:
+                        mhp = BLOCK_STATS.get(btype, 3)
 
-                        srv.block_damage[pb[1]] = srv.block_damage.get(pb[1], 0) + 1
+                    srv.block_damage[pb[1]] = srv.block_damage.get(pb[1], 0) + 1
+                    
+                    if srv.block_damage[pb[1]] >= mhp:
+                        del srv.blocks[pb[1]]
+                        del srv.block_damage[pb[1]]
                         
-                        if srv.block_damage[pb[1]] >= mhp:
-                            del srv.blocks[pb[1]]
-                            del srv.block_damage[pb[1]]
-                            
-                            drop_t = btype
-                            if btype == "grass": drop_t = "dirt"
-                            elif btype == "leaves": drop_t = None
-                            elif btype == "stone": drop_t = "cobblestone"
+                        drop_t = btype
+                        if btype == "grass": drop_t = "dirt"
+                        elif btype == "leaves": drop_t = None
+                        elif btype == "stone": drop_t = "cobblestone"
 
-                            if drop_t:
+                        if drop_t:
+                            for i in range(20):
+                                if i in st["inv"] and st["inv"][i]["type"] == drop_t and st["inv"][i]["count"]<64 and st["inv"][i].get("durability") is None:
+                                    st["inv"][i]["count"] += 1; break
+                            else:
                                 for i in range(20):
-                                    if i in st["inv"] and st["inv"][i]["type"] == drop_t and st["inv"][i]["count"]<64 and st["inv"][i].get("durability") is None:
-                                        st["inv"][i]["count"] += 1; break
-                                else:
-                                    for i in range(20):
-                                        if i not in st["inv"]:
-                                            st["inv"][i] = {"type": drop_t, "count": 1}; break
-                            
-                            if is_pick:
-                                tool["durability"] -= 1
-                                if tool["durability"] <= 0: del st["inv"][c_slot]
-                        srv.rebuild_mesh()
+                                    if i not in st["inv"]:
+                                        st["inv"][i] = {"type": drop_t, "count": 1}; break
+                        
+                        if is_pick:
+                            tool["durability"] -= 1
+                            if tool["durability"] <= 0: del st["inv"][c_slot]
+                    srv.rebuild_mesh()
                 else:
                     del srv.blocks[pb[1]]
                     srv.rebuild_mesh()
