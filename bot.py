@@ -84,11 +84,12 @@ PLAYER_HEAD_OFFSET = 0.1
 PLAYER_BODY_COLOR = (255, 255, 0)
 PLAYER_HEAD_COLOR = (255, 220, 100)
 
+# ИСПРАВЛЕНИЕ: Новые разрешения для оптимизации рендера
 RESOLUTIONS = {
-    1: {"w": 256, "h": 192, "scale": 140},
-    2: {"w": 426, "h": 320, "scale": 233},
-    3: {"w": 640, "h": 480, "scale": 350},
-    4: {"w": 800, "h": 600, "scale": 437}
+    1: {"w": 160, "h": 120, "scale": 90, "out_w": 512, "out_h": 384},
+    2: {"w": 256, "h": 192, "scale": 140, "out_w": 512, "out_h": 384},
+    3: {"w": 320, "h": 240, "scale": 175, "out_w": 640, "out_h": 480},
+    4: {"w": 426, "h": 320, "scale": 233, "out_w": 852, "out_h": 640}
 }
 
 LIGHT_DIR_RAW = (0.5, 0.8, 0.3)
@@ -263,7 +264,6 @@ def bake_face(tex):
 DEFAULT_BASE_TEX = Image.new("RGBA", (128, 128), (255, 220, 100, 255))
 DEFAULT_FACE_TEX = bake_face(DEFAULT_BASE_TEX)
 
-# ИСПРАВЛЕНИЕ: Изменен баланс блоков (доски и верстак ломаются быстрее)
 BLOCK_STATS = {"dirt": 3, "grass": 3, "wood": 6, "leaves": 2, "stone": 12, "planks": 5, "workbench": 5, "bedrock": 9999, "cobblestone": 12, "coal_ore": 12, "iron_ore": 15, "torch": 1}
 
 def get_environment_light(s_id):
@@ -370,7 +370,6 @@ class Server:
             for pos, bdata in self.blocks.items():
                 gx, gy, gz = pos
                 
-                # ИСПРАВЛЕНИЕ: Кастомная геометрия для торчащего диагонального факела
                 if bdata.get("type") == "torch":
                     dx, dy, dz = bdata.get("attach", (0,0,1))
                     w, h = 0.08, 0.5
@@ -407,7 +406,6 @@ class Server:
                     lf = calc_light(n)
                     br = 1.0 if fn == "top" else 0.85
                     
-                    # Свет факелов на блоки 7х7
                     tl = 0.0
                     if self.type == "survival":
                         for tx, ty, tz in self.torches:
@@ -550,6 +548,15 @@ def get_ground_z(x, y, srv):
             tz = bz + 1; break
     return tz
 
+# ИСПРАВЛЕНИЕ: Функция для проверки коллизий (чтобы игрок не застревал)
+def is_blocked(srv, x, y, z):
+    ix, iy = int(math.floor(x)), int(math.floor(y))
+    for bz in [int(math.floor(z)), int(math.floor(z + 1.0))]:
+        b = srv.blocks.get((ix, iy, bz))
+        if b and b.get("type") != "torch":
+            return True
+    return False
+
 def init_player(uid, s_id, name):
     srv = SERVERS[s_id]
     user_server_map[uid] = s_id
@@ -579,7 +586,7 @@ def make_keyboard(uid):
     
     jump_text = "🦘 Прыжок (Вкл)" if st.get("jump") else "🦘 Прыжок"
     vr_text = f"👁 {st.get('view_radius', 8)}"
-    res_text = f"🖥 {RESOLUTIONS[st.get('res_level', 2)]['w']}p"
+    res_text = f"🖥 {RESOLUTIONS[st.get('res_level', 2)]['out_w']}p"
     
     is_hit = st.get("hit_time", 0) > 0 and (time.time() - st["hit_time"]) < 1.0
     break_text = "💥 Ударил!" if is_hit else "⛏️ Ломай"
@@ -701,7 +708,6 @@ def draw_poly_tex(pix, zb, v2d, tex, lf):
                     tu, tv = (u1+(u2-u1)*t2)/iz, (v1+(v2-v1)*t2)/iz
                     tx, ty = int(clamp(tu,0,0.999)*tw), int(clamp(tv,0,0.999)*th)
                     c = t_dat[ty*tw + tx]
-                    # ИСПРАВЛЕНИЕ: Пишем в z-буфер только если пиксель не прозрачный
                     if len(c) < 4 or c[3] > 100:
                         zb[y][x] = 1.0/iz
                         pix[x,y] = apply_light(c[:3], lf)
@@ -778,7 +784,6 @@ def update_crafting(st):
         res = {"type": "wood_pickaxe", "count": 1, "ops": 1, "durability": 30}
     elif len(cobbles) == 3 and len(sticks) == 2 and total == 5:
         res = {"type": "stone_pickaxe", "count": 1, "ops": 1, "durability": 66}
-    # ИСПРАВЛЕНИЕ: Крафт факела
     elif len(sticks) == 1 and len(coals) == 1 and total == 2:
         op = min(sticks[0], coals[0])
         res = {"type": "torch", "count": op * 4, "ops": op}
@@ -807,9 +812,12 @@ def render_scene(px, py, pz, pa, pt, uid, s_id):
     img = Image.new("RGBA", (img_w, img_h), sky_col)
     d = ImageDraw.Draw(img)
 
+    # ИСПРАВЛЕНИЕ: Оптимизированное сохранение в JPEG даже для инвентаря
     if st.get("inv_open"):
         draw_inv(img, d, img_w, img_h, st)
-        return img.convert("RGB").tobytes("jpeg", "RGB") # ИСПРАВЛЕНИЕ: Оптимизация
+        bio = io.BytesIO()
+        img.convert("RGB").save(bio, "JPEG", quality=90)
+        return bio.getvalue()
 
     horiz_y = img_h // 2
     pix = img.load()
@@ -834,7 +842,6 @@ def render_scene(px, py, pz, pa, pt, uid, s_id):
             px_p = img_w/2 + (v[0]/v[1])*scale
             proj.append((px_p, py_p, v[1]) + (v[3:] if len(v)>3 else ()))
         
-        # ИСПРАВЛЕНИЕ: Сложение света солнца и света факела
         final_lf = clamp(face["lf"] * global_light + face.get("tl", 0.0), 0.15, 1.0)
         
         if face.get("tex"): draw_poly_tex(pix, zbuf, proj, face["tex"], final_lf)
@@ -920,8 +927,13 @@ def render_scene(px, py, pz, pa, pt, uid, s_id):
                     d.rectangle((hx+i*40+4, img_h-13, hx+i*40+32, img_h-11), fill=(50,50,50))
                     d.rectangle((hx+i*40+4, img_h-13, hx+i*40+4+28*dur_pct, img_h-11), fill=(0,255,0) if dur_pct>0.3 else (255,0,0))
 
+    # ИСПРАВЛЕНИЕ: Оптимизация. Апскейл картинки и сохранение в JPEG (легче и быстрее)
+    out_w, out_h = RESOLUTIONS[rl]["out_w"], RESOLUTIONS[rl]["out_h"]
+    if img_w != out_w or img_h != out_h:
+        img = img.resize((out_w, out_h), Image.Resampling.NEAREST)
+
     bio = io.BytesIO()
-    img.convert("RGB").save(bio, "PNG")
+    img.convert("RGB").save(bio, "JPEG", quality=90)
     return bio.getvalue()
 
 def ray_pick(px, py, pz, pa, pt, s_id, ignore_uid=None):
@@ -971,12 +983,10 @@ async def send_view(cid, uid):
             
         cap = "\n".join(SERVERS[s_id].chat) if SERVERS[s_id].chat else "🎮 Приятной игры!"
         
-        # ИСПРАВЛЕНИЕ: Мы создаем НОВЫЙ io.BytesIO для каждого запроса API.
-        # Это навсегда убирает ошибку "I/O operation on closed file."
         if st.get("msg_id"):
             try:
                 bio_edit = io.BytesIO(img_bytes)
-                bio_edit.name = "s.png"
+                bio_edit.name = "s.jpg" # ИСПРАВЛЕНИЕ: Формат JPG
                 await bot.edit_message_media(chat_id=cid, message_id=st["msg_id"], media=InputMediaPhoto(bio_edit, caption=cap), reply_markup=kb)
                 st["is_busy"] = False
                 return
@@ -988,7 +998,7 @@ async def send_view(cid, uid):
             except Exception: pass
 
         bio_send = io.BytesIO(img_bytes)
-        bio_send.name = "s.png"
+        bio_send.name = "s.jpg" # ИСПРАВЛЕНИЕ: Формат JPG
         msg = await bot.send_photo(cid, bio_send, caption=cap, reply_markup=kb)
         st["msg_id"] = msg.message_id
     finally:
@@ -1139,6 +1149,10 @@ async def h_cb(c):
         except: pass
         return
         
+    # ИСПРАВЛЕНИЕ: Мгновенный ответ Телеграму, чтобы кнопки не висли при долгом рендере
+    try: await bot.answer_callback_query(c.id)
+    except: pass
+        
     srv = SERVERS[s_id]
     d = c.data
     ev = False
@@ -1251,8 +1265,6 @@ async def h_cb(c):
             close_inv(st)
         
         await send_view(c.message.chat.id, uid)
-        try: await bot.answer_callback_query(c.id)
-        except: pass
         return
 
     if d in ["move_f", "move_b", "move_l", "move_r", "move_fl", "move_fr", "move_bl", "move_br"]:
@@ -1273,16 +1285,22 @@ async def h_cb(c):
             
         tz = get_ground_z(nx, ny, srv)
             
-        diff = tz - st["z"]
-        if diff <= 0.1 or (0 < diff <= 1.5 and st["jump"]):
-            st["x"], st["y"], st["z"] = nx, ny, tz
+        # ИСПРАВЛЕНИЕ: Система анти-застревания и проверки коллизий
+        if is_blocked(srv, st["x"], st["y"], st["z"]):
+            st["z"] += 1.0 # Выталкиваем из блока вверх
             ev = True
-            if diff <= -4:
-                st["hp"] -= (1 + int(abs(diff)-4)//2)
-                st["flash_time"] = time.time()
-                if st["hp"]<=0:
-                    await broadcast_chat(s_id, f"💀 {st['name']} разбился!")
-                    st["x"], st["y"], st["z"], st["hp"] = 0.5, 0.5, get_ground_z(0.5, 0.5, srv), 10
+        else:
+            diff = tz - st["z"]
+            if diff <= 0.1 or (0 < diff <= 1.5 and st["jump"]):
+                if not is_blocked(srv, nx, ny, tz): # Идем, только если не упремся головой
+                    st["x"], st["y"], st["z"] = nx, ny, tz
+                    ev = True
+                    if diff <= -4:
+                        st["hp"] -= (1 + int(abs(diff)-4)//2)
+                        st["flash_time"] = time.time()
+                        if st["hp"]<=0:
+                            await broadcast_chat(s_id, f"💀 {st['name']} разбился!")
+                            st["x"], st["y"], st["z"], st["hp"] = 0.5, 0.5, get_ground_z(0.5, 0.5, srv), 10
         st["jump"] = False
         
     elif d == "refresh": 
@@ -1309,8 +1327,8 @@ async def h_cb(c):
             if srv.type == "survival" and srv.blocks.get(pb[1], {}).get("type") == "workbench":
                 st["inv_open"] = True; st["inv_mode"] = "workbench"; st["inv_cursor"] = 34; ev = True
             elif pb[2] is not None:
-                nb = pb[2] # Воздух, куда мы ставим
-                target_b = pb[1] # Блок, на который мы ставим
+                nb = pb[2] 
+                target_b = pb[1] 
                 
                 c_slot = st["inv_cursor"] if st["inv_cursor"] < 5 else 0
                 item = st["inv"].get(c_slot)
@@ -1318,8 +1336,6 @@ async def h_cb(c):
                 elif item or srv.type == "classic":
                     btype = item["type"] if item else "planks"
                     if nb not in srv.blocks:
-                        
-                        # ИСПРАВЛЕНИЕ: Логика прикрепления факела к стене
                         if btype == "torch":
                             dx, dy, dz = nb[0]-target_b[0], nb[1]-target_b[1], nb[2]-target_b[2]
                             srv.blocks[nb] = {"type": "torch", "attach": (dx, dy, dz)}
@@ -1346,7 +1362,6 @@ async def h_cb(c):
                 elif srv.type == "survival":
                     btype = srv.blocks[pb[1]].get("type", "stone")
                     
-                    # ИСПРАВЛЕНИЕ: Баланс блоков. Руды ломаются как камень, доски как верстак
                     if btype in ("stone", "cobblestone", "coal_ore", "iron_ore"):
                         mhp = 6 if is_stone_pick else 9 if is_wood_pick else 12
                     elif btype in ("planks", "workbench"):
@@ -1402,9 +1417,6 @@ async def h_cb(c):
                         except: pass
 
                 if st.get("msg_id"): asyncio.create_task(reset_hit_btn(c.message.chat.id, uid, st["msg_id"]))
-
-    try: await bot.answer_callback_query(c.id)
-    except: pass
 
     tasks = [send_view(c.message.chat.id, uid)]
     if ev:
