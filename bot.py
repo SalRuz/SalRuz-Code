@@ -238,7 +238,8 @@ def bake_face(tex):
     d.rectangle((48*sx, 88*sy, 80*sx, 96*sy), fill=(0,0,0,255))
     return img
 
-DEFAULT_FACE_TEX = bake_face(Image.new("RGB", (128, 128), (255, 220, 100)))
+DEFAULT_BASE_TEX = Image.new("RGB", (128, 128), (255, 220, 100))
+DEFAULT_FACE_TEX = bake_face(DEFAULT_BASE_TEX)
 
 BLOCK_STATS = {"dirt": 3, "grass": 3, "wood": 6, "leaves": 2, "stone": 12, "planks": 4, "workbench": 6, "bedrock": 9999, "cobblestone": 12}
 
@@ -348,6 +349,7 @@ SERVERS = {1: Server(1, "classic"), 2: Server(2, "survival")}
 user_server_map = {}
 player_skins = {}
 pending_skin_mode = {}
+ACTIVE_MENUS = {} # Добавлено для отслеживания отправленных меню серверов
 
 def save_all_data():
     try:
@@ -392,6 +394,22 @@ def load_all_data():
             SERVERS[2].rebuild_mesh()
     except Exception as e: pass
 
+# --- ФУНКЦИЯ АВТО-ОБНОВЛЕНИЯ МЕНЮ СЕРВЕРОВ ---
+async def update_server_menus():
+    kb = server_menu()
+    to_remove = []
+    for uid, m_info in list(ACTIVE_MENUS.items()):
+        try:
+            await bot.edit_message_reply_markup(chat_id=m_info["chat_id"], message_id=m_info["msg_id"], reply_markup=kb)
+        except ApiTelegramException as e:
+            err = str(e).lower()
+            if "not modified" in err: continue
+            to_remove.append(uid)
+        except Exception:
+            to_remove.append(uid)
+    for uid in to_remove:
+        ACTIVE_MENUS.pop(uid, None)
+
 async def auto_saver():
     while True:
         await asyncio.sleep(30)
@@ -402,21 +420,27 @@ async def afk_checker():
     while True:
         await asyncio.sleep(60)
         now = time.time()
+        changed = False
         for s_id, srv in list(SERVERS.items()):
             for uid, ps in list(srv.players.items()):
                 if ps.get("online") and (now - ps.get("last_action", now) > 300):
                     ps["online"] = False
                     user_server_map.pop(uid, None)
+                    changed = True
                     
                     try:
-                        await bot.send_message(uid, "⏱ Вы были кикнуты с сервера за бездействие (более 5 минут).", reply_markup=server_menu())
+                        msg = await bot.send_message(uid, "⏱ Вы были кикнуты с сервера за бездействие (более 5 минут).", reply_markup=server_menu())
+                        ACTIVE_MENUS[uid] = {"chat_id": uid, "msg_id": msg.message_id}
                     except: pass
                     
-                    await broadcast_chat(s_id, f"💤 {ps['name']} отключен (АФК)")
+                    # Пишем о кике в чат и обновляем рендер у всех остальных 
+                    srv.broadcast(f"💤 {ps['name']} отключен (АФК)")
                     
                     for p_uid, p_state in list(srv.players.items()):
                         if p_state.get("online"):
                             asyncio.create_task(send_view(p_uid, p_uid))
+        if changed:
+            await update_server_menus()
 
 def get_st(uid):
     s_id = user_server_map.get(uid)
@@ -723,9 +747,13 @@ def render_scene(px, py, pz, pa, pt, uid, s_id):
                 if len(vc)<3: continue
                 proj = [(img_w/2 + (v[0]/v[1])*scale, horiz_y - (v[2]/v[1])*scale, v[1]) + (v[3:] if len(v)>3 else ()) for v in vc]
                 
-                # ИСПРАВЛЕНИЕ: Скин применяется строго только к лицевой стороне головы
-                if tex_mode and not flash and fn == "front":
-                    t = player_skins.get(pid, DEFAULT_FACE_TEX)
+                # --- ИСПРАВЛЕНИЕ СКИНОВ: Базовая текстура на все стороны, а лицо - только спереди ---
+                if tex_mode and not flash:
+                    skin_data = player_skins.get(pid)
+                    if isinstance(skin_data, dict):
+                        t = skin_data["face"] if fn == "front" else skin_data["base"]
+                    else:
+                        t = DEFAULT_FACE_TEX if fn == "front" else DEFAULT_BASE_TEX
                     draw_poly_tex(pix, zbuf, proj, t, lf)
                 else: 
                     draw_poly_color(pix, zbuf, proj, apply_light(col, lf))
@@ -799,8 +827,7 @@ async def broadcast_chat(s_id, txt):
     for uid, st in list(SERVERS[s_id].players.items()):
         if st.get("msg_id") and st.get("online"):
             try: await bot.edit_message_caption(caption=cap, chat_id=uid, message_id=st["msg_id"], reply_markup=make_keyboard(uid))
-            except ApiTelegramException as e:
-                pass
+            except ApiTelegramException as e: pass
             except Exception: pass
 
 async def send_view(cid, uid):
@@ -873,14 +900,35 @@ async def h_start(m):
         except: pass
         
     old_s = user_server_map.get(uid)
+    changed = False
+    
+    # --- ИСПРАВЛЕНИЕ ВЫХОДА: Пушим в чат и обновляем рендер для остальных игроков ---
     if old_s and old_s in SERVERS:
-        if uid in SERVERS[old_s].players: 
-            SERVERS[old_s].players[uid]["online"] = False
-            await broadcast_chat(old_s, f"💨 {SERVERS[old_s].players[uid]['name']} вышел")
+        if uid in SERVERS[old_s].players:
+            ps = SERVERS[old_s].players[uid]
+            if ps["online"]:
+                ps["online"] = False
+                changed = True
+                SERVERS[old_s].broadcast(f"💨 {ps['name']} вышел")
+                
+                # Принудительно рендерим новую картинку (и новый чат) для всех онлайн-игроков на сервере
+                tasks = []
+                for p_uid, p_st in SERVERS[old_s].players.items():
+                    if p_uid != uid and p_st.get("online"):
+                        tasks.append(send_view(p_uid, p_uid))
+                
+                if tasks:
+                    asyncio.create_task(asyncio.gather(*tasks))
+                    
         user_server_map.pop(uid, None)
         save_all_data()
         
-    await bot.send_message(m.chat.id, "Выбери сервер:", reply_markup=server_menu())
+    msg = await bot.send_message(m.chat.id, "Выбери сервер:", reply_markup=server_menu())
+    # Запоминаем меню для автообновления
+    ACTIVE_MENUS[uid] = {"chat_id": m.chat.id, "msg_id": msg.message_id}
+    
+    if changed:
+        await update_server_menus()
 
 @bot.message_handler(commands=["reset"])
 async def h_reset(m):
@@ -900,12 +948,10 @@ async def h_reset(m):
 
 @bot.message_handler(commands=["block"])
 async def h_block(m):
-    # Команда оставлена для обратной совместимости, но кнопка 'paint' безопаснее.
     uid = m.from_user.id
     try: await bot.delete_message(m.chat.id, m.message_id)
     except: pass
 
-# --- ИСПРАВЛЕНИЕ: ОБРАБОТЧИК ЧАТА И АФК ---
 @bot.message_handler(content_types=["text"])
 async def h_text(m):
     uid = m.from_user.id
@@ -920,9 +966,7 @@ async def h_text(m):
     st = get_st(uid)
     if not st or not st.get("online"): return
 
-    # Обновление активности
     st["last_action"] = time.time()
-    
     text = m.text[:100] 
     await broadcast_chat(s_id, f"💬 {st['name']}: {text}")
 
@@ -930,12 +974,21 @@ async def h_text(m):
 async def cb_join(c):
     s_id = int(c.data.split("_")[1])
     uid = c.from_user.id
+    
+    ACTIVE_MENUS.pop(uid, None) # Убираем из активных меню
+    
     try: await bot.delete_message(c.message.chat.id, c.message.message_id)
     except: pass
     
     st = init_player(uid, s_id, c.from_user.first_name)
-    await broadcast_chat(s_id, f"🎉 {st['name']} присоединился!")
-    await send_view(c.message.chat.id, uid)
+    SERVERS[s_id].broadcast(f"🎉 {st['name']} присоединился!")
+    
+    # Обновляем рендер у всех на сервере (чтобы они увидели вхождение нового игрока)
+    tasks = [send_view(p_uid, p_uid) for p_uid, ps in SERVERS[s_id].players.items() if ps.get("online")]
+    if tasks:
+        await asyncio.gather(*tasks)
+        
+    await update_server_menus() # Обновляем количество человек на сервере в меню
 
 @bot.message_handler(content_types=["photo"])
 async def h_photo(m):
@@ -971,8 +1024,10 @@ async def h_photo(m):
                     tasks.append(send_view(p_uid, p_uid))
             
         elif m.caption and "/skin" in m.caption.lower():
+            # --- ИСПРАВЛЕНИЕ СКИНОВ: Сохраняем и чистую текстуру, и текстуру с лицом ---
+            base_tex = tex.copy()
             baked_tex = bake_face(tex)
-            player_skins[uid] = baked_tex
+            player_skins[uid] = {"base": base_tex, "face": baked_tex}
             await broadcast_chat(s_id, f"👕 {un} установил новый скин!")
             
             for p_uid, ps in SERVERS[s_id].players.items():
@@ -991,7 +1046,6 @@ async def h_cb(c):
     if not s_id: return
     st = get_st(uid)
     
-    # Обновление активности
     st["last_action"] = time.time()
 
     if st.get("is_busy"): 
