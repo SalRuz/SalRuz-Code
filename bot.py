@@ -315,7 +315,6 @@ class Server:
             for dx in [0, 1]:
                 for dy in [0, 1]: self.blocks[(cx+dx, cy+dy, 0)] = {"type": "bedrock", "tex": TEX_CACHE["bedrock"]}
         else:
-            # ИСПРАВЛЕНИЕ: Снижен радиус генерации старта для уменьшения лагов (с 2 до 1)
             self.load_chunks_around(0, 0, radius=1)
 
         self.rebuild_mesh()
@@ -544,11 +543,21 @@ def get_st(uid):
     s_id = user_server_map.get(uid)
     return SERVERS[s_id].players.get(uid) if s_id else None
 
-def get_ground_z(x, y, srv):
+# ИСПРАВЛЕНИЕ: Новый, умный алгоритм поиска земли, чтобы можно было прыгать и ходить под потолком
+def get_ground_z(x, y, srv, pz=None):
     tz = -32 if srv.type == "survival" else -64
-    for bz in range(20, tz-1, -1):
-        if (int(x), int(y), bz) in srv.blocks:
-            tz = bz + 1; break
+    ix, iy = int(math.floor(x)), int(math.floor(y))
+    
+    start_z = 20
+    # Если мы знаем Z игрока, проверяем блоки только начиная от уровня его ног/головы
+    if pz is not None:
+        start_z = min(20, int(math.floor(pz)) + 1)
+        
+    for bz in range(start_z, tz-1, -1):
+        if (ix, iy, bz) in srv.blocks:
+            b = srv.blocks[(ix, iy, bz)]
+            if b.get("type") != "torch":
+                return bz + 1
     return tz
 
 def is_blocked(srv, x, y, z):
@@ -817,7 +826,6 @@ def render_scene(px, py, pz, pa, pt, uid, s_id):
     sky_col, global_light = get_environment_light(s_id)
     img = Image.new("RGBA", (img_w, img_h), sky_col)
 
-    # ИСПРАВЛЕНИЕ 1: Сначала растягиваем фон, а ПОТОМ рисуем инвентарь (чтобы не было крашей/пустоты)
     if st.get("inv_open"):
         if img_w != out_w or img_h != out_h:
             img = img.resize((out_w, out_h), Image.Resampling.NEAREST)
@@ -1070,7 +1078,8 @@ async def h_reset(m):
         for p in SERVERS[s_id].players.values():
             if s_id == 1: p["x"], p["y"] = SERVERS[s_id].size/2, SERVERS[s_id].size/2
             else: p["x"], p["y"] = 0.5, 0.5
-            p["z"] = get_ground_z(p["x"], p["y"], SERVERS[s_id])
+            # Передаем текущий z в функцию поиска земли
+            p["z"] = get_ground_z(p["x"], p["y"], SERVERS[s_id], p.get("z"))
             p["hp"] = 10
             p["inv"].clear()
         await bot.send_message(m.chat.id, f"Сервер {s_id} сброшен (сгенерирован новый мир)!")
@@ -1161,7 +1170,6 @@ async def h_cb(c):
     st = get_st(uid)
     st["last_action"] = time.time()
 
-    # ИСПРАВЛЕНИЕ 2: Строгая блокировка от спама (чтобы не было краша dict changed size)
     if st.get("action_lock"): 
         try: await bot.answer_callback_query(c.id, "⏳")
         except: pass
@@ -1301,10 +1309,9 @@ async def h_cb(c):
                 nx, ny = clamp(nx, 0.5, srv.size-0.5), clamp(ny, 0.5, srv.size-0.5)
                 
             if srv.type == "survival":
-                # ИСПРАВЛЕНИЕ 3: Радиус 1 вместо 2 спасает от сильных лагов (генерация 9 чанков вместо 25)
                 srv.load_chunks_around(nx, ny, radius=1)
                 
-            tz = get_ground_z(nx, ny, srv)
+            tz = get_ground_z(nx, ny, srv, st["z"])
                 
             if is_blocked(srv, st["x"], st["y"], st["z"]):
                 st["z"] += 1.0 
@@ -1446,7 +1453,7 @@ async def h_cb(c):
                     tasks.append(send_view(p_uid, p_uid))
         await asyncio.gather(*tasks, return_exceptions=True)
     finally:
-        st["action_lock"] = False # Снимаем строгую блокировку
+        st["action_lock"] = False
 
 async def main():
     print("Bot is starting! Loading data...")
