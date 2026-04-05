@@ -69,8 +69,7 @@ FONT = load_font()
 # --- КОНСТАНТЫ И НАСТРОЙКИ ---
 CAMERA_HEIGHT_OFFSET = 1.6
 MOVE_STEP = 1.0
-TURN_ANGLE = math.radians(15)
-TILT_STEP = 0.15
+
 MAX_TILT = 1.5   
 MIN_TILT = -1.5  
 
@@ -181,7 +180,6 @@ def draw_torch_side(d):
     d.rectangle((48, 0, 80, 48), fill=(255, 200, 0, 255))
     d.rectangle((56, 16, 72, 32), fill=(255, 255, 200, 255))
 
-# Новые текстуры для печи и слитков
 def draw_pech_front(d):
     d.rectangle((0,0,128,128), fill=(100,100,100)); d.rectangle((32,32,96,96), fill=(20,20,20))
 def draw_pech_lit(d):
@@ -361,6 +359,7 @@ class Server:
         if changed: self.rebuild_mesh()
 
     def generate_chunk(self, cx, cy):
+        # 1. Генерация базового ландшафта и пещер
         for x in range(cx * 16, cx * 16 + 16):
             for y in range(cy * 16, cy * 16 + 16):
                 h = int(math.sin(x/10.0 + self.seed)*4 + math.cos(y/10.0 - self.seed)*4 + math.sin((x+y)/5.0)*2)
@@ -373,12 +372,7 @@ class Server:
                         cave_val = math.sin((x+self.seed)/4.0) + math.sin((y-self.seed)/4.0) + math.sin((z+self.seed)/3.0)
                         if cave_val > 1.2: continue
                         
-                    rand_val = abs(math.sin(x*12.98 + y*78.23 + z*37.71 + self.seed))
-                    if rand_val < 0.02 and z < -5: btype = "coal_ore"
-                    elif 0.02 <= rand_val < 0.035 and z < -12: btype = "iron_ore"
-                    else: btype = "stone"
-                        
-                    self.blocks[(x, y, z)] = {"type": btype}
+                    self.blocks[(x, y, z)] = {"type": "stone"}
                     
                 self.blocks[(x, y, -32)] = {"type": "bedrock"}
                 
@@ -389,6 +383,29 @@ class Server:
                             for dz in [4,5]:
                                 if dx==0 and dy==0 and dz==4: continue
                                 self.blocks[(x+dx, y+dy, h+dz)] = {"type": "leaves"}
+
+        # 2. Генерация жил руд (3-5 блоков)
+        # Уголь
+        for _ in range(18):
+            vx, vy, vz = random.randint(cx*16, cx*16+15), random.randint(cy*16, cy*16+15), random.randint(-31, -6)
+            vein_size = random.randint(3, 5)
+            for _ in range(vein_size):
+                if (vx, vy, vz) in self.blocks and self.blocks[(vx, vy, vz)]["type"] == "stone":
+                    self.blocks[(vx, vy, vz)] = {"type": "coal_ore"}
+                vx += random.choice([-1, 0, 1])
+                vy += random.choice([-1, 0, 1])
+                vz += random.choice([-1, 0, 1])
+
+        # Железо
+        for _ in range(12):
+            vx, vy, vz = random.randint(cx*16, cx*16+15), random.randint(cy*16, cy*16+15), random.randint(-31, -12)
+            vein_size = random.randint(3, 5)
+            for _ in range(vein_size):
+                if (vx, vy, vz) in self.blocks and self.blocks[(vx, vy, vz)]["type"] == "stone":
+                    self.blocks[(vx, vy, vz)] = {"type": "iron_ore"}
+                vx += random.choice([-1, 0, 1])
+                vy += random.choice([-1, 0, 1])
+                vz += random.choice([-1, 0, 1])
 
     def rebuild_mesh(self):
         new_faces = []
@@ -556,7 +573,6 @@ async def auto_saver():
         await asyncio.sleep(30)
         save_all_data()
 
-# --- СИСТЕМА ПЕЧКИ (Тикер) ---
 async def furnace_ticker():
     while True:
         await asyncio.sleep(1.0)
@@ -651,7 +667,6 @@ def get_ground_z(x, y, srv, pz=None):
 
 def is_blocked(srv, x, y, z):
     ix, iy = int(math.floor(x)), int(math.floor(y))
-    # ИСПРАВЛЕНИЕ: Идеально вмещаемся в 2 блока, проверяем z+0.1 и z+1.6
     for bz in [int(math.floor(z + 0.1)), int(math.floor(z + 1.6))]:
         b = srv.blocks.get((ix, iy, bz))
         if b and b.get("type") != "torch":
@@ -714,13 +729,22 @@ def make_keyboard(uid):
         InlineKeyboardButton("⬇️", callback_data="move_b"),
         InlineKeyboardButton("↘️", callback_data="move_br")
     )
+    # ИСПРАВЛЕНИЕ: Новая система поворотов
     kb.add(
-        InlineKeyboardButton("🌀⬅️", callback_data="turn_left"),
-        InlineKeyboardButton("🌀➡️", callback_data="turn_right")
+        InlineKeyboardButton("🌀⬅️ 15°", callback_data="turn_l_15"),
+        InlineKeyboardButton("🌀➡️ 15°", callback_data="turn_r_15")
     )
     kb.add(
-        InlineKeyboardButton("👀⬆️", callback_data="look_up"),
-        InlineKeyboardButton("👀⬇️", callback_data="look_down")
+        InlineKeyboardButton("⏪ 90°", callback_data="turn_l_90"),
+        InlineKeyboardButton("◀️ 30°", callback_data="turn_l_30"),
+        InlineKeyboardButton("▶️ 30°", callback_data="turn_r_30"),
+        InlineKeyboardButton("⏩ 90°", callback_data="turn_r_90")
+    )
+    kb.add(
+        InlineKeyboardButton("⏫ 30°", callback_data="look_up_30"),
+        InlineKeyboardButton("🔼 15°", callback_data="look_up_15"),
+        InlineKeyboardButton("🔽 15°", callback_data="look_down_15"),
+        InlineKeyboardButton("⏬ 30°", callback_data="look_down_30")
     )
     kb.add(
         InlineKeyboardButton("🔨 Строй", callback_data="build"),
@@ -830,9 +854,9 @@ def draw_inv(img, d, w, h, st, srv=None):
         d.line((cx+125, cy+50, cx+135, cy+50), fill=(255,255,255), width=2)
     elif mode == "furnace":
         cx, cy = w//2 - 40, h//2 - 120
-        slots[50] = (cx, cy) # Input
-        slots[51] = (cx, cy + 60) # Fuel
-        slots[52] = (cx + 80, cy + 30) # Output
+        slots[50] = (cx, cy) 
+        slots[51] = (cx, cy + 60) 
+        slots[52] = (cx + 80, cy + 30) 
         d.text((cx, cy-15), "Furnace", fill=(255,255,255))
         if srv and st["furnace_pos"] in srv.blocks:
             b = srv.blocks[st["furnace_pos"]]
@@ -912,7 +936,6 @@ def update_crafting(st):
     elif sg == [["stick", "coal"]] or sg == [["coal", "stick"]]: 
         res = {"type": "torch", "count": 4}
     
-    # Calculate max possible operations
     if res:
         min_ops = 999
         for r in grid:
@@ -1493,10 +1516,24 @@ async def h_cb(c):
             
         elif d == "refresh": 
             st["angle"] = normalize_angle(st["angle"] + math.pi); ev = True
-        elif d == "turn_left": st["angle"] = normalize_angle(st["angle"] - TURN_ANGLE); ev = True
-        elif d == "turn_right": st["angle"] = normalize_angle(st["angle"] + TURN_ANGLE); ev = True
-        elif d == "look_up": st["tilt"] = max(st["tilt"] - TILT_STEP, MIN_TILT); ev = True
-        elif d == "look_down": st["tilt"] = min(st["tilt"] + TILT_STEP, MAX_TILT); ev = True
+        
+        # ИСПРАВЛЕНИЕ: Новый механизм обработки любых углов поворота
+        elif d.startswith("turn_"):
+            parts = d.split("_")
+            direction = parts[1]
+            angle = math.radians(int(parts[2]))
+            if direction == "l": st["angle"] = normalize_angle(st["angle"] - angle)
+            else: st["angle"] = normalize_angle(st["angle"] + angle)
+            ev = True
+            
+        elif d.startswith("look_"):
+            parts = d.split("_")
+            direction = parts[1]
+            angle = math.radians(int(parts[2]))
+            if direction == "up": st["tilt"] = max(st["tilt"] - angle, MIN_TILT)
+            else: st["tilt"] = min(st["tilt"] + angle, MAX_TILT)
+            ev = True
+
         elif d == "toggle_jump": st["jump"] = not st["jump"]
         elif d == "cycle_view": st["view_radius"] = 16 if st["view_radius"]==8 else 32 if st["view_radius"]==16 else 8
         elif d == "cycle_res": st["res_level"] = st["res_level"]+1 if st["res_level"]<4 else 1
@@ -1559,8 +1596,9 @@ async def h_cb(c):
                     elif srv.type == "survival":
                         btype = srv.blocks[pb[1]].get("type", "stone")
                         
+                        # ИСПРАВЛЕНИЕ: Баланс кирок. Железная ломает камень за 6 хитов.
                         if btype in ("stone", "cobblestone", "coal_ore", "iron_ore", "furnace"):
-                            mhp = 4 if is_iron_pick else 6 if is_stone_pick else 9 if is_wood_pick else 12
+                            mhp = 6 if is_iron_pick else 9 if is_stone_pick else 12 if is_wood_pick else 15
                         elif btype in ("planks", "workbench"):
                             mhp = 5
                         else:
@@ -1569,7 +1607,6 @@ async def h_cb(c):
                         srv.block_damage[pb[1]] = srv.block_damage.get(pb[1], 0) + 1
                         
                         if srv.block_damage[pb[1]] >= mhp:
-                            # Выбрасываем инвентарь печи если она сломана
                             if btype == "furnace":
                                 f_inv = srv.blocks[pb[1]].get("inv", {})
                                 for itm in f_inv.values():
