@@ -71,7 +71,7 @@ BLOCK_FACES_DATA = [
     ("front", [0, 1, 5, 4], (0, -1, 0)),
     ("back", [2, 3, 7, 6], (0, 1, 0)),
     ("right", [1, 2, 6, 5], (1, 0, 0)),
-    ("left", [0, 4, 7, 3], (-1, 0, 0)),
+    ("left", [3, 0, 4, 7], (-1, 0, 0)), # Исправлен порядок для левой стороны (текстуры теперь ровные)
 ]
 PLAYER_FACES = [
     ("bottom", [0, 3, 2, 1], lambda c: c),
@@ -115,7 +115,7 @@ def draw_grass_top(d):
 
 def draw_grass_side(d):
     d.rectangle((0, 0, 128, 128), fill=(139, 94, 52))
-    d.rectangle((0, 0, 128, 32), fill=(100, 220, 100)) # Трава сверху (Y от 0 до 32)
+    d.rectangle((0, 0, 128, 32), fill=(100, 220, 100))
     for i in range(15):
         x = random.randint(0, 120)
         d.polygon([(x, 32), (x+4, 48), (x+8, 32)], fill=(100, 220, 100))
@@ -287,7 +287,7 @@ def load_all_data():
             with open(DATA_DIR / "srv1.pkl", "rb") as f:
                 data = pickle.load(f)
                 SERVERS[1].players = data.get("players", {})
-                for p_uid in list(SERVERS[1].players.keys()): user_server_map[p_uid] = 1
+                for p_uid, p_data in SERVERS[1].players.items(): p_data["online"] = False
                 for pos, bd in data.get("blocks", {}).items():
                     SERVERS[1].blocks[pos] = {"color": bd["color"]}
                     if "tex_bytes" in bd:
@@ -298,7 +298,7 @@ def load_all_data():
             with open(DATA_DIR / "srv2.pkl", "rb") as f:
                 data = pickle.load(f)
                 SERVERS[2].players = data.get("players", {})
-                for p_uid in list(SERVERS[2].players.keys()): user_server_map[p_uid] = 2
+                for p_uid, p_data in SERVERS[2].players.items(): p_data["online"] = False
                 SERVERS[2].blocks = data.get("blocks", {})
                 SERVERS[2].block_damage = data.get("damage", {})
             SERVERS[2].rebuild_mesh()
@@ -330,8 +330,11 @@ def init_player(uid, s_id, name):
             "angle": 0.0, "tilt": 0.0, "jump": False,
             "name": name, "msg_id": None, "view_radius": 8, "res_level": 2, "hp": 10, "flash_time": 0,
             "inv": {0: {"type": "wood", "count": 10}}, "inv_open": False, "inv_cursor": 0, "drag_item": None,
-            "cache_hash": None, "cache_img": None, "is_busy": False
+            "cache_hash": None, "cache_img": None, "is_busy": False, "online": True
         }
+    else:
+        srv.players[uid]["online"] = True
+        srv.players[uid]["msg_id"] = None
     return srv.players[uid]
 
 def make_keyboard(uid):
@@ -508,17 +511,25 @@ def update_crafting(st):
 def render_scene(px, py, pz, pa, pt, uid, s_id):
     srv = SERVERS[s_id]
     st = srv.players[uid]
-    vr = st["view_radius"]
     rl = st["res_level"]
     img_w, img_h, scale = RESOLUTIONS[rl]["w"], RESOLUTIONS[rl]["h"], RESOLUTIONS[rl]["scale"]
-    horiz_y = img_h // 2
     
     img = Image.new("RGBA", (img_w, img_h), SKY_COLOR)
-    pix = img.load()
-    zbuf = [[float("inf")] * img_w for _ in range(img_h)]
     d = ImageDraw.Draw(img)
 
+    # ОПТИМИЗАЦИЯ: Если инвентарь открыт, мы НЕ рендерим мир, чтобы игра не зависала
+    if st.get("inv_open"):
+        draw_inv(d, img_w, img_h, st)
+        bio = io.BytesIO()
+        img.convert("RGB").save(bio, "PNG")
+        return bio.getvalue()
+
+    horiz_y = img_h // 2
+    pix = img.load()
+    zbuf = [[float("inf")] * img_w for _ in range(img_h)]
+
     fwd_x, fwd_y = math.sin(pa), math.cos(pa)
+    vr = st["view_radius"]
     
     for face in srv.faces:
         if abs(face["cx"] - px) > vr or abs(face["cy"] - py) > vr: continue
@@ -540,7 +551,7 @@ def render_scene(px, py, pz, pa, pt, uid, s_id):
         else: draw_poly_color(pix, zbuf, proj, face["sc"])
 
     for pid, ps in srv.players.items():
-        if pid == uid: continue
+        if pid == uid or not ps.get("online", True): continue
         ox, oy, oa = ps["x"], ps["y"], ps["angle"]
         oz = ps.get("z", 1.0)
         d_sq = (ox-px)**2 + (oy-py)**2
@@ -568,7 +579,8 @@ def render_scene(px, py, pz, pa, pt, uid, s_id):
     d.line((img_w/2, img_h/2-5, img_w/2, img_h/2+5), fill=(255,255,255))
 
     d.rectangle((5,5, 150,25), fill=(0,0,0,150))
-    d.text((10,8), f"X:{px:.1f} Y:{py:.1f} Z:{pz-1.6:.1f}", fill=(255,255,255))
+    # Координата Z теперь располагается между X и Y
+    d.text((10,8), f"X:{px:.1f} Z:{pz-1.6:.1f} Y:{py:.1f}", fill=(255,255,255))
 
     for i in range(5):
         hx, hy = img_w - 90 + i*16, 10
@@ -579,13 +591,11 @@ def render_scene(px, py, pz, pa, pt, uid, s_id):
     if srv.type == "survival":
         hx = img_w//2 - 100
         for i in range(5):
-            d.rectangle((hx+i*40, img_h-45, hx+i*40+36, img_h-9), fill=(100,100,100,150), outline=(255,255,255) if i==st["inv_cursor"] and not st["inv_open"] else None)
+            d.rectangle((hx+i*40, img_h-45, hx+i*40+36, img_h-9), fill=(100,100,100,150), outline=(255,255,255) if i==st["inv_cursor"] else None)
             item = st["inv"].get(i)
             if item:
                 d.text((hx+i*40+2, img_h-43), item["type"][:3], fill=(255,255,255))
                 d.text((hx+i*40+20, img_h-25), str(item["count"]), fill=(255,255,0))
-
-    if st["inv_open"]: draw_inv(d, img_w, img_h, st)
 
     bio = io.BytesIO()
     img.convert("RGB").save(bio, "PNG")
@@ -598,7 +608,7 @@ def ray_pick(px, py, pz, pa, pt, s_id, ignore_uid=None):
     while t <= RAY_MAX_DIST:
         wx, wy, wz = px+dx*t, py+dy*t, pz+dz*t
         for pid, ps in srv.players.items():
-            if pid == ignore_uid: continue
+            if pid == ignore_uid or not ps.get("online", True): continue
             if abs(wx-ps["x"])<0.3 and abs(wy-ps["y"])<0.3 and ps["z"]<=wz<=ps["z"]+2.0:
                 return ("player", pid, t)
         cb = (int(math.floor(wx)), int(math.floor(wy)), int(math.floor(wz)))
@@ -610,7 +620,7 @@ async def broadcast_chat(s_id, txt):
     SERVERS[s_id].broadcast(txt)
     cap = "\n".join(SERVERS[s_id].chat)
     for uid, st in SERVERS[s_id].players.items():
-        if st.get("msg_id"):
+        if st.get("msg_id") and st.get("online"):
             try: await bot.edit_message_caption(caption=cap, chat_id=uid, message_id=st["msg_id"], reply_markup=make_keyboard(uid))
             except: pass
 
@@ -624,7 +634,7 @@ async def send_view(cid, uid):
     
     try:
         kb = make_keyboard(uid)
-        if st["inv_open"]:
+        if st.get("inv_open"):
             kb = InlineKeyboardMarkup(row_width=3)
             kb.add(InlineKeyboardButton("Вверх ⬆️", callback_data="inv_u"))
             kb.add(InlineKeyboardButton("Влево ⬅️", callback_data="inv_l"), InlineKeyboardButton("Взять/Класть ✋", callback_data="inv_click"), InlineKeyboardButton("Вправо ➡️", callback_data="inv_r"))
@@ -643,9 +653,13 @@ async def send_view(cid, uid):
                 await bot.edit_message_media(chat_id=cid, message_id=st["msg_id"], media=InputMediaPhoto(bio, caption=cap), reply_markup=kb)
                 st["is_busy"] = False
                 return
-            except: pass
+            except: 
+                pass # Если редактирование сфейлилось, переотправим сообщением (но bio уже может быть закрыто!)
 
-        bio.seek(0)
+        # ИСПРАВЛЕНИЕ "I/O operation on closed file": 
+        # Телебот иногда закрывает bio после неудачного edit_message_media
+        bio = io.BytesIO(img_bytes)
+        bio.name = "s.png"
         msg = await bot.send_photo(cid, bio, caption=cap, reply_markup=kb)
         st["msg_id"] = msg.message_id
     finally:
@@ -653,8 +667,8 @@ async def send_view(cid, uid):
 
 def server_menu():
     kb = InlineKeyboardMarkup()
-    kb.add(InlineKeyboardButton(f"🌈 Классика [{len(SERVERS[1].players)} чел]", callback_data="join_1"))
-    kb.add(InlineKeyboardButton(f"🌲 Выживание [{len(SERVERS[2].players)} чел]", callback_data="join_2"))
+    kb.add(InlineKeyboardButton(f"🌈 Классика [{sum(1 for p in SERVERS[1].players.values() if p.get('online'))} чел]", callback_data="join_1"))
+    kb.add(InlineKeyboardButton(f"🌲 Выживание [{sum(1 for p in SERVERS[2].players.values() if p.get('online'))} чел]", callback_data="join_2"))
     return kb
 
 @bot.message_handler(commands=["start", "leave"])
@@ -672,7 +686,10 @@ async def h_start(m):
         
     old_s = user_server_map.get(uid)
     if old_s and old_s in SERVERS:
-        if uid in SERVERS[old_s].players: del SERVERS[old_s].players[uid]
+        # ИСПРАВЛЕНИЕ СОХРАНЕНИЯ: Теперь мы не удаляем игрока из словаря игроков при выходе, 
+        # чтобы его вещи и позиция сохранились. Мы просто отмечаем его как оффлайн.
+        if uid in SERVERS[old_s].players: 
+            SERVERS[old_s].players[uid]["online"] = False
         user_server_map.pop(uid, None)
         save_all_data()
         
@@ -691,7 +708,8 @@ async def h_reset(m):
             p["hp"] = 10
             p["inv"].clear()
         await bot.send_message(m.chat.id, f"Сервер {s_id} сброшен!")
-        for uid in SERVERS[s_id].players: await send_view(uid, uid)
+        for uid, p in SERVERS[s_id].players.items(): 
+            if p.get("online"): await send_view(uid, uid)
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("join_"))
 async def cb_join(c):
@@ -737,7 +755,8 @@ async def h_photo(m):
     try:
         fi = await bot.get_file(m.photo[-1].file_id)
         down_file = await bot.download_file(fi.file_path)
-        im = Image.open(io.BytesIO(down_file)).convert("RGB")
+        # ИСПРАВЛЕНИЕ: convert("RGBA") вместо "RGB". Предотвращает ошибку "tuple index out of range"
+        im = Image.open(io.BytesIO(down_file)).convert("RGBA") 
         tex = ImageOps.fit(im, (128, 128), Image.Resampling.LANCZOS)
         
         mode = pending_skin_mode.get(uid)
@@ -750,6 +769,7 @@ async def h_photo(m):
             
             bx, by = mode[1][0], mode[1][1]
             for p_uid, ps in SERVERS[1].players.items():
+                if not ps.get("online"): continue
                 vr = ps.get("view_radius", 8)
                 if p_uid == uid or (ps["x"] - bx)**2 + (ps["y"] - by)**2 <= vr**2:
                     tasks.append(send_view(p_uid, p_uid))
@@ -760,6 +780,7 @@ async def h_photo(m):
             await broadcast_chat(s_id, f"👕 {un} установил новый скин!")
             
             for p_uid, ps in SERVERS[s_id].players.items():
+                if not ps.get("online"): continue
                 vr = ps.get("view_radius", 8)
                 if p_uid == uid or (ps["x"] - st["x"])**2 + (ps["y"] - st["y"])**2 <= vr**2:
                     tasks.append(send_view(p_uid, p_uid))
@@ -783,19 +804,23 @@ async def h_cb(c):
     d = c.data
     ev = False
     
-    if st["inv_open"]:
+    if st.get("inv_open"):
         c_idx = st["inv_cursor"]
+        # ИСПРАВЛЕНИЕ ПЕРЕМЕЩЕНИЯ В ИНВЕНТАРЕ: Теперь курсор легко и плавно заходит в ячейки 20-23 (крафт)
         if d == "inv_u":
-            if 0<=c_idx<=4: st["inv_cursor"]+=15
-            elif 5<=c_idx<=19: st["inv_cursor"] = 20 if c_idx-5 < 5 else c_idx-5
+            if 0 <= c_idx <= 4: st["inv_cursor"] += 15
+            elif 5 <= c_idx <= 9: st["inv_cursor"] = 20 + min(c_idx - 5, 3) 
+            elif 10 <= c_idx <= 19: st["inv_cursor"] -= 5
         elif d == "inv_d":
-            if 20<=c_idx<=24: st["inv_cursor"]=5
-            elif 5<=c_idx<=14: st["inv_cursor"]+=5
-            elif 15<=c_idx<=19: st["inv_cursor"]-=15
+            if 20 <= c_idx <= 24: st["inv_cursor"] = c_idx - 15 if c_idx < 24 else 9
+            elif 5 <= c_idx <= 14: st["inv_cursor"] += 5
+            elif 15 <= c_idx <= 19: st["inv_cursor"] -= 15
         elif d == "inv_l":
-            if c_idx not in [0,5,10,15,20]: st["inv_cursor"]-=1
+            if c_idx not in [0, 5, 10, 15, 20, 22, 24]: st["inv_cursor"] -= 1
+            elif c_idx == 24: st["inv_cursor"] = 21
         elif d == "inv_r":
-            if c_idx not in [4,9,14,19,23,24]: st["inv_cursor"]+=1
+            if c_idx not in [4, 9, 14, 19, 21, 23, 24]: st["inv_cursor"] += 1
+            elif c_idx in [21, 23]: st["inv_cursor"] = 24
         elif d == "inv_click":
             c_id = st["inv_cursor"]
             if c_id == 24 and st.get("drag_item") is None and 24 in st["inv"]:
@@ -819,6 +844,7 @@ async def h_cb(c):
                         del st["inv"][c_id]
             update_crafting(st)
         elif d == "inv_close": st["inv_open"] = False
+        
         await send_view(c.message.chat.id, uid)
         try: await bot.answer_callback_query(c.id)
         except: pass
@@ -923,7 +949,7 @@ async def h_cb(c):
     tasks = [send_view(c.message.chat.id, uid)]
     if ev:
         for p_uid, ps in srv.players.items():
-            if p_uid != uid and abs(ps["x"]-st["x"])<ps["view_radius"] and abs(ps["y"]-st["y"])<ps["view_radius"]:
+            if p_uid != uid and ps.get("online", True) and abs(ps["x"]-st["x"])<ps.get("view_radius", 8) and abs(ps["y"]-st["y"])<ps.get("view_radius", 8):
                 tasks.append(send_view(p_uid, p_uid))
     await asyncio.gather(*tasks)
 
