@@ -154,9 +154,12 @@ def draw_dirt(d):
     for _ in range(400): d.point((random.randint(0,127), random.randint(0,127)), fill=(100, 70, 40))
 def draw_stick(d):
     d.line((32, 96, 96, 32), fill=(139, 69, 19, 255), width=10)
-def draw_pickaxe(d):
+def draw_wood_pickaxe(d):
     d.line((32, 96, 96, 32), fill=(139, 69, 19, 255), width=8) 
     d.polygon([(64, 16), (112, 32), (96, 64)], fill=(180, 140, 80, 255)) 
+def draw_stone_pickaxe(d):
+    d.line((32, 96, 96, 32), fill=(139, 69, 19, 255), width=8) 
+    d.polygon([(64, 16), (112, 32), (96, 64)], fill=(100, 100, 100, 255)) 
 def draw_cobble(d):
     d.rectangle((0,0,128,128), fill=(100,100,100))
     for _ in range(50):
@@ -176,7 +179,8 @@ create_fallback_tex("verstak.png", (200, 100, 50))
 create_fallback_tex("verstak_bok.png", (180, 90, 40))
 create_fallback_tex("buliga.png", (100, 100, 100), draw_cobble)
 create_fallback_tex("palka.png", (0, 0, 0, 0), draw_stick, rgba=True)
-create_fallback_tex("der_kirka.png", (0, 0, 0, 0), draw_pickaxe, rgba=True)
+create_fallback_tex("der_kirka.png", (0, 0, 0, 0), draw_wood_pickaxe, rgba=True)
+create_fallback_tex("kam_kirka.png", (0, 0, 0, 0), draw_stone_pickaxe, rgba=True)
 
 def load_tex(name, fallback_color=(255,0,255)):
     p = TEX_DIR / name
@@ -197,10 +201,10 @@ TEX_CACHE = {
     "workbench_side": load_tex("verstak_bok.png", (180, 90, 40)),
     "stick": load_tex("palka.png", (139, 69, 19)),
     "wood_pickaxe": load_tex("der_kirka.png", (180, 140, 80)),
+    "stone_pickaxe": load_tex("kam_kirka.png", (100, 100, 100)),
     "cobblestone": load_tex("buliga.png", (100, 100, 100))
 }
 
-# --- ИКОНКИ ДЛЯ ИНВЕНТАРЯ (32x32) ---
 INV_ICONS = {}
 def get_inv_icon(itype):
     if itype not in INV_ICONS:
@@ -234,7 +238,6 @@ def bake_face(tex):
 
 DEFAULT_FACE_TEX = bake_face(Image.new("RGB", (128, 128), (255, 220, 100)))
 
-# ИСПРАВЛЕНИЕ: Вернул массив BLOCK_STATS
 BLOCK_STATS = {"dirt": 3, "grass": 3, "wood": 6, "leaves": 2, "stone": 12, "planks": 4, "workbench": 6, "bedrock": 9999, "cobblestone": 12}
 
 class Server:
@@ -313,7 +316,7 @@ class Server:
                 
                 dmg = self.block_damage.get((gx,gy,gz), 0)
                 if dmg > 0 and self.type == "survival" and bdata["type"] != "bedrock":
-                    mhp = 12 if bdata["type"] == "stone" else 3
+                    mhp = 12 if bdata["type"] in ("stone", "cobblestone") else BLOCK_STATS.get(bdata["type"], 3)
                     stage = min(4, int((dmg / mhp) * 5))
                     if face_info.get("tex"):
                         combined = face_info["tex"].copy()
@@ -532,7 +535,6 @@ def draw_poly_tex(pix, zb, v2d, tex, lf):
                     c = t_dat[ty*tw + tx]
                     if c[3]>100: pix[x,y] = apply_light(c[:3], lf)
 
-# ИСПРАВЛЕНИЕ: Теперь картинки предметов рендерятся визуально в ячейках
 def draw_inv(img, d, w, h, st):
     d.rectangle((0,0, w, h), fill=(0,0,0, 200))
     slots = {}
@@ -569,7 +571,8 @@ def draw_inv(img, d, w, h, st):
             if item.get("durability") is None:
                 d.text((sx+20, sy+20), str(item["count"]), fill=(255,255,0))
             if "durability" in item:
-                dur_pct = max(0, item["durability"] / 30.0)
+                max_dur = 66 if item["type"] == "stone_pickaxe" else 30
+                dur_pct = max(0, item["durability"] / max_dur)
                 d.rectangle((sx+4, sy+32, sx+32, sy+34), fill=(50,50,50))
                 d.rectangle((sx+4, sy+32, sx+4+28*dur_pct, sy+34), fill=(0,255,0) if dur_pct>0.3 else (255,0,0))
             
@@ -587,6 +590,7 @@ def update_crafting(st):
     woods = [i["count"] for i in c_slots if i and i["type"] == "wood"]
     planks = [i["count"] for i in c_slots if i and i["type"] == "planks"]
     sticks = [i["count"] for i in c_slots if i and i["type"] == "stick"]
+    cobbles = [i["count"] for i in c_slots if i and i["type"] == "cobblestone"]
     total = sum(1 for i in c_slots if i)
     
     if len(woods) == 1 and total == 1: 
@@ -600,6 +604,8 @@ def update_crafting(st):
         res = {"type": "stick", "count": op * 4, "ops": op}
     elif len(planks) == 3 and len(sticks) == 2 and total == 5:
         res = {"type": "wood_pickaxe", "count": 1, "ops": 1, "durability": 30}
+    elif len(cobbles) == 3 and len(sticks) == 2 and total == 5:
+        res = {"type": "stone_pickaxe", "count": 1, "ops": 1, "durability": 66}
     
     if res: st["inv"][out_idx] = res
     elif out_idx in st["inv"]: del st["inv"][out_idx]
@@ -717,7 +723,8 @@ def render_scene(px, py, pz, pa, pt, uid, s_id):
                 if item.get("durability") is None:
                     d.text((hx+i*40+20, img_h-25), str(item["count"]), fill=(255,255,0))
                 if "durability" in item:
-                    dur_pct = max(0, item["durability"] / 30.0)
+                    max_dur = 66 if item["type"] == "stone_pickaxe" else 30
+                    dur_pct = max(0, item["durability"] / max_dur)
                     d.rectangle((hx+i*40+4, img_h-13, hx+i*40+32, img_h-11), fill=(50,50,50))
                     d.rectangle((hx+i*40+4, img_h-13, hx+i*40+4+28*dur_pct, img_h-11), fill=(0,255,0) if dur_pct>0.3 else (255,0,0))
 
@@ -773,19 +780,30 @@ async def send_view(cid, uid):
             
         cap = "\n".join(SERVERS[s_id].chat) if SERVERS[s_id].chat else "🎮 Приятной игры!"
         
+        bio = io.BytesIO(img_bytes)
+        bio.name = "s.png"
+
         if st.get("msg_id"):
             try:
-                await bot.edit_message_media(chat_id=cid, message_id=st["msg_id"], media=InputMediaPhoto(io.BytesIO(img_bytes), caption=cap), reply_markup=kb)
+                await bot.edit_message_media(chat_id=cid, message_id=st["msg_id"], media=InputMediaPhoto(bio, caption=cap), reply_markup=kb)
                 st["is_busy"] = False
                 return
             except ApiTelegramException as e:
-                if "not modified" in str(e).lower():
+                err = str(e).lower()
+                if "not modified" in err:
                     st["is_busy"] = False
                     return
-            except: pass
+                elif "not found" in err or "can't be edited" in err:
+                    pass # Сообщение было удалено пользователем, отправим новое
+                else:
+                    st["is_busy"] = False
+                    return
+            except: 
+                st["is_busy"] = False
+                return
 
-        bio = io.BytesIO(img_bytes)
-        bio.name = "s.png"
+        # Если дошли сюда, значит старого сообщения нет — отправляем новое
+        bio.seek(0)
         msg = await bot.send_photo(cid, bio, caption=cap, reply_markup=kb)
         st["msg_id"] = msg.message_id
     finally:
@@ -844,26 +862,6 @@ async def cb_join(c):
     st = init_player(uid, s_id, c.from_user.first_name)
     await broadcast_chat(s_id, f"🎉 {st['name']} присоединился!")
     await send_view(c.message.chat.id, uid)
-
-@bot.message_handler(commands=["block"])
-async def h_block(m):
-    uid = m.from_user.id
-    try: await bot.delete_message(m.chat.id, m.message_id)
-    except: pass
-    
-    s_id = user_server_map.get(uid)
-    if not s_id or s_id != 1: return
-    
-    pb_data = last_target_block.get(uid)
-    if not pb_data or pb_data[0] != "block": return
-        
-    t = pb_data[1]
-    pending_skin_mode[uid] = ("block", t)
-    st = get_st(uid)
-    st["cache_hash"] = None
-    if st.get("msg_id"):
-        try: await bot.edit_message_reply_markup(m.chat.id, st["msg_id"], reply_markup=make_keyboard(uid))
-        except: pass
 
 @bot.message_handler(content_types=["photo"])
 async def h_photo(m):
@@ -1060,7 +1058,9 @@ async def h_cb(c):
                     st["x"], st["y"], st["z"], st["hp"] = srv.size/2, srv.size/2, get_ground_z(srv.size/2, srv.size/2, srv), 10
         st["jump"] = False
         
-    elif d == "refresh": st["angle"] = normalize_angle(st["angle"] + math.pi); ev = True
+    elif d == "refresh": 
+        st["angle"] = normalize_angle(st["angle"] + math.pi)
+        ev = True
     elif d == "turn_left": st["angle"] = normalize_angle(st["angle"] - TURN_ANGLE); ev = True
     elif d == "turn_right": st["angle"] = normalize_angle(st["angle"] + TURN_ANGLE); ev = True
     elif d == "look_up": st["tilt"] = max(st["tilt"] - TILT_STEP, MIN_TILT); ev = True
@@ -1080,17 +1080,17 @@ async def h_cb(c):
 
     elif d == "build":
         pb = ray_pick(st["x"], st["y"], st["z"]+1.6, st["angle"], st["tilt"], s_id, uid)
-        if pb and pb[0]=="block":
+        if pb and pb[0]=="block" and (srv.type == "classic" or pb[2] <= 5.0):
             if srv.type == "survival" and srv.blocks.get(pb[1], {}).get("type") == "workbench":
                 st["inv_open"] = True
                 st["inv_mode"] = "workbench"
                 st["inv_cursor"] = 34
                 ev = True
-            elif pb[2]:
+            elif pb[2] is not None:
                 nb = pb[2]
                 c_slot = st["inv_cursor"] if st["inv_cursor"] < 5 else 0
                 item = st["inv"].get(c_slot)
-                if item and item["type"] in ["wood_pickaxe", "stick"]:
+                if item and item["type"] in ["wood_pickaxe", "stone_pickaxe", "stick"]:
                     pass
                 elif item or srv.type == "classic":
                     btype = item["type"] if item else "planks"
@@ -1105,16 +1105,25 @@ async def h_cb(c):
     elif d == "break":
         c_slot = st["inv_cursor"] if st["inv_cursor"] < 5 else 0
         tool = st["inv"].get(c_slot)
-        is_pick = tool and tool["type"] == "wood_pickaxe"
+        is_wood_pick = tool and tool["type"] == "wood_pickaxe"
+        is_stone_pick = tool and tool["type"] == "stone_pickaxe"
+        is_pick = is_wood_pick or is_stone_pick
 
         pb = ray_pick(st["x"], st["y"], st["z"]+1.6, st["angle"], st["tilt"], s_id, uid)
-        if pb:
+        if pb and (srv.type == "classic" or pb[2] <= 5.0):
             if pb[0] == "block":
                 bx, by, bz = pb[1]
                 if srv.type == "survival":
                     if srv.blocks[pb[1]]["type"] != "bedrock":
                         btype = srv.blocks[pb[1]]["type"]
-                        mhp = 9 if btype == "stone" and is_pick else (12 if btype == "stone" else BLOCK_STATS.get(btype, 3))
+                        
+                        if btype in ("stone", "cobblestone"):
+                            if is_stone_pick: mhp = 6
+                            elif is_wood_pick: mhp = 9
+                            else: mhp = 12
+                        else:
+                            mhp = BLOCK_STATS.get(btype, 3)
+
                         srv.block_damage[pb[1]] = srv.block_damage.get(pb[1], 0) + 1
                         
                         if srv.block_damage[pb[1]] >= mhp:
@@ -1145,14 +1154,16 @@ async def h_cb(c):
                 ev = True
             elif pb[0] == "player":
                 tgt = srv.players[pb[1]]
-                if pb[2] <= 4.0:
-                    tgt["hp"] -= 2 if is_pick else 1
-                    tgt["flash_time"] = time.time()
-                    if tgt["hp"] <= 0:
-                        await broadcast_chat(s_id, f"💀 {tgt['name']} был убит игроком {st['name']}!")
-                        tgt["hp"], tgt["x"], tgt["y"], tgt["z"] = 10, srv.size/2, srv.size/2, get_ground_z(srv.size/2, srv.size/2, srv)
-                    ev = True
-                    await send_view(c.message.chat.id, pb[1])
+                damage = 1
+                if is_wood_pick: damage = 2
+                elif is_stone_pick: damage = 3
+                tgt["hp"] -= damage
+                tgt["flash_time"] = time.time()
+                if tgt["hp"] <= 0:
+                    await broadcast_chat(s_id, f"💀 {tgt['name']} был убит игроком {st['name']}!")
+                    tgt["hp"], tgt["x"], tgt["y"], tgt["z"] = 10, srv.size/2, srv.size/2, get_ground_z(srv.size/2, srv.size/2, srv)
+                ev = True
+                await send_view(c.message.chat.id, pb[1])
 
     try: await bot.answer_callback_query(c.id)
     except: pass
