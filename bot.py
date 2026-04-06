@@ -290,6 +290,21 @@ def get_inv_icon(itype):
             INV_ICONS[itype] = tex.resize((28, 28), Image.Resampling.NEAREST)
     return INV_ICONS[itype]
 
+HELD_ITEM_TEX_CACHE = {}
+def get_body_front_tex(color, item_type):
+    cache_key = (color, item_type)
+    if cache_key not in HELD_ITEM_TEX_CACHE:
+        img = Image.new("RGBA", (128, 128), color)
+        if item_type:
+            icon = get_inv_icon(item_type).copy().convert("RGBA")
+            w, h = icon.size
+            scale = 64.0 / max(w, h)
+            new_w, new_h = int(w * scale), int(h * scale)
+            icon = icon.resize((new_w, new_h), Image.Resampling.NEAREST)
+            img.paste(icon, (64 - new_w//2, 64 - new_h//2), icon)
+        HELD_ITEM_TEX_CACHE[cache_key] = img
+    return HELD_ITEM_TEX_CACHE[cache_key]
+
 CRACK_TEX = []
 for i in range(5):
     img = Image.new("RGBA", (128, 128), (0,0,0,0))
@@ -712,7 +727,7 @@ def init_player(uid, s_id, name):
             "angle": 0.0, "tilt": 0.0, "jump": False, "last_action": time.time(),
             "name": transliterate(name), "msg_id": None, "view_radius": 8, "res_level": 2, "hp": 10, "flash_time": 0,
             "inv": {0: {"type": "wood", "count": 10}}, "inv_open": False, "inv_mode": "normal", "inv_cursor": 0, "drag_item": None,
-            "furnace_pos": None, "half_step": False,
+            "furnace_pos": None, "step_size": 1.0,
             "is_busy": False, "online": True, "hit_time": 0, "last_state_hash": None, "action_lock": False
         }
     else:
@@ -731,7 +746,12 @@ def make_keyboard(uid):
     srv = SERVERS[s_id]
     
     jump_text = "🦘 Прыжок (Вкл)" if st.get("jump") else "🦘 Прыжок"
-    step_text = "👞 Шаг 0.5" if st.get("half_step") else "👟 Шаг 1.0"
+    
+    step_val = st.get("step_size", 1.0)
+    if step_val == 0.5: step_text = "👞 Шаг 0.5"
+    elif step_val == 1.0: step_text = "👟 Шаг 1.0"
+    else: step_text = "🚀 Шаг 2.0"
+    
     vr_text = f"👁 {st.get('view_radius', 8)}"
     res_text = f"🖥 {RESOLUTIONS[st.get('res_level', 2)]['out_w']}p"
     
@@ -996,6 +1016,8 @@ def close_inv(st):
         if free is not None: 
             st["inv"][free] = st["drag_item"]
             st["drag_item"] = None
+    if st.get("inv_cursor", 0) >= 20:
+        st["inv_cursor"] = 0
 
 def get_slot_item(st, srv, idx):
     if idx < 50: return st["inv"].get(idx)
@@ -1079,7 +1101,10 @@ def render_scene(px, py, pz, pa, pt, uid, s_id):
                 dist = math.sqrt((ox-tx)**2 + (oy-ty)**2 + (oz-tz)**2)
                 if dist < 4.0: ptl = max(ptl, 1.0 - (dist / 4.0))
 
-        for b_verts, col, tex_mode in [(bv, (255,50,50) if flash else PLAYER_BODY_COLOR, False), (hv, (255,50,50) if flash else PLAYER_HEAD_COLOR, True)]:
+        c_slot = ps.get("inv_cursor", 0) if ps.get("inv_cursor", 0) < 5 else 0
+        held_item = ps["inv"].get(c_slot)
+
+        for b_verts, col, is_head in [(bv, (255,50,50) if flash else PLAYER_BODY_COLOR, False), (hv, (255,50,50) if flash else PLAYER_HEAD_COLOR, True)]:
             for fn, idx, _ in PLAYER_FACES:
                 n = face_normal(b_verts, idx)
                 if vec_dot(n, (px-ox, py-oy, pz-(oz+1))) <= 0: continue
@@ -1087,16 +1112,19 @@ def render_scene(px, py, pz, pa, pt, uid, s_id):
                 
                 final_lf = clamp(lf * global_light + ptl, 0.15, 1.0)
                 
-                vc = clip_near([world_to_view(wx,wy,wz, px,py,pz, pa,pt) + ((FACE_UVS[k%4][0], FACE_UVS[k%4][1]) if tex_mode else ()) for k, (wx,wy,wz) in enumerate([b_verts[i] for i in idx])])
+                vc = clip_near([world_to_view(wx,wy,wz, px,py,pz, pa,pt) + (FACE_UVS[k%4][0], FACE_UVS[k%4][1]) for k, (wx,wy,wz) in enumerate([b_verts[i] for i in idx])])
                 if len(vc)<3: continue
                 proj = [(img_w/2 + (v[0]/v[1])*scale, horiz_y - (v[2]/v[1])*scale, v[1]) + (v[3:] if len(v)>3 else ()) for v in vc]
                 
-                if tex_mode and not flash:
+                if is_head and not flash:
                     skin_data = player_skins.get(pid)
                     if isinstance(skin_data, dict):
                         t = skin_data["face"] if fn == "front" else skin_data["base"]
                     else:
                         t = DEFAULT_FACE_TEX if fn == "front" else DEFAULT_BASE_TEX
+                    draw_poly_tex(pix, zbuf, proj, t, final_lf)
+                elif not is_head and fn == "front" and held_item and not flash:
+                    t = get_body_front_tex(col, held_item["type"])
                     draw_poly_tex(pix, zbuf, proj, t, final_lf)
                 else: 
                     draw_poly_color(pix, zbuf, proj, apply_light(col, final_lf))
@@ -1265,6 +1293,50 @@ async def h_start(m):
     msg = await bot.send_message(m.chat.id, "Выбери сервер:", reply_markup=server_menu())
     ACTIVE_MENUS[uid] = {"chat_id": m.chat.id, "msg_id": msg.message_id}
     if changed: await update_server_menus()
+
+@bot.message_handler(commands=["give"])
+async def h_give(m):
+    if m.from_user.id != ADMIN_ID: return
+    uid = m.from_user.id
+    s_id = user_server_map.get(uid)
+    if not s_id or s_id != 2:
+        await bot.send_message(m.chat.id, "Зайди на сервер Выживания для выдачи предметов.")
+        return
+    st = get_st(uid)
+    if not st: return
+    
+    parts = m.text.split()
+    if len(parts) < 2:
+        items_str = "grass, dirt, stone, bedrock, wood, leaves, planks, workbench, furnace, cobblestone, coal_ore, iron_ore, diamond_ore, stick, wood_pickaxe, stone_pickaxe, iron_pickaxe, diamond_pickaxe, coal, iron, diamond, iron_ingot, torch"
+        await bot.send_message(m.chat.id, f"Использование: /give <предмет> [кол-во]\n\nДоступные предметы:\n{items_str}")
+        return
+        
+    item_type = parts[1]
+    count = int(parts[2]) if len(parts) > 2 else 1
+    
+    added = False
+    for i in range(20):
+        if i in st["inv"] and st["inv"][i]["type"] == item_type and st["inv"][i].get("durability") is None:
+            st["inv"][i]["count"] += count
+            added = True
+            break
+
+    if not added:
+        for i in range(20):
+            if i not in st["inv"]:
+                st["inv"][i] = {"type": item_type, "count": count}
+                if "pickaxe" in item_type:
+                    max_dur = 120 if item_type == "diamond_pickaxe" else 90 if item_type == "iron_pickaxe" else 66 if item_type == "stone_pickaxe" else 30
+                    st["inv"][i]["durability"] = max_dur
+                added = True
+                break
+                
+    if added:
+        await bot.send_message(m.chat.id, f"✅ Выдано {count}x {item_type}")
+        st["last_state_hash"] = None
+        asyncio.create_task(send_view(m.chat.id, uid))
+    else:
+        await bot.send_message(m.chat.id, "❌ Инвентарь полон!")
 
 @bot.message_handler(commands=["reset"])
 async def h_reset(m):
@@ -1513,7 +1585,10 @@ async def h_cb(c):
             return
 
         elif d == "toggle_step":
-            st["half_step"] = not st.get("half_step", False)
+            cur = st.get("step_size", 1.0)
+            if cur == 1.0: st["step_size"] = 2.0
+            elif cur == 2.0: st["step_size"] = 0.5
+            else: st["step_size"] = 1.0
             ev = True
 
         if d in ["move_f", "move_b", "move_l", "move_r", "move_fl", "move_fr", "move_bl", "move_br"]:
@@ -1524,7 +1599,7 @@ async def h_cb(c):
             if "r" in d: s=1
             a = st["angle"]
             
-            step_size = 0.5 if st.get("half_step") else 1.0
+            step_size = st.get("step_size", 1.0)
             nx = st["x"] + (math.sin(a)*f + math.cos(a)*s) * step_size
             ny = st["y"] + (math.cos(a)*f - math.sin(a)*s) * step_size
             
