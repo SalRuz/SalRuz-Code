@@ -68,7 +68,6 @@ FONT = load_font()
 
 # --- КОНСТАНТЫ И НАСТРОЙКИ ---
 CAMERA_HEIGHT_OFFSET = 1.6
-
 MAX_TILT = 1.5   
 MIN_TILT = -1.5  
 
@@ -279,6 +278,7 @@ create_fallback_tex("buliga.png", (100, 100, 100), draw_cobble)
 create_fallback_tex("palka.png", (0, 0, 0, 0), draw_stick, rgba=True)
 
 create_fallback_tex("pesok.png", (238, 214, 175))
+create_fallback_tex("peschanik.png", (218, 194, 155))
 create_fallback_tex("steklo.png", (0,0,0,0), draw_glass, rgba=True)
 
 create_fallback_tex("der_kirka.png", (0, 0, 0, 0), draw_wood_pickaxe, rgba=True)
@@ -347,6 +347,7 @@ TEX_CACHE = {
     "workbench_side": load_tex("verstak_bok.png", (180, 90, 40)),
     "stick": load_tex("palka.png", (139, 69, 19)),
     "sand": load_tex("pesok.png", (238, 214, 175)),
+    "sandstone": load_tex("peschanik.png", (218, 194, 155)),
     "glass": load_tex("steklo.png", (0,0,0,0)),
     "wood_pickaxe": load_tex("der_kirka.png", (180, 140, 80)),
     "stone_pickaxe": load_tex("kam_kirka.png", (100, 100, 100)),
@@ -402,7 +403,10 @@ INV_ICONS = {}
 def get_inv_icon(itype):
     if itype not in INV_ICONS:
         tex_name = itype
-        if "slab" in itype or "stairs" in itype:
+        is_slab = "slab" in itype
+        is_stair = "stairs" in itype
+        
+        if is_slab or is_stair:
             tex_name = itype.replace("_slab", "").replace("_stairs", "")
         elif itype == "grass": tex_name = "trava_side"
         elif itype == "wood": tex_name = "wood_side"
@@ -414,7 +418,18 @@ def get_inv_icon(itype):
         
         tex = TEX_CACHE.get(tex_name, TEX_CACHE.get(itype, TEX_CACHE["zemlya"]))
         
-        if itype == "torch":
+        if is_slab:
+            base = tex.resize((28, 28), Image.Resampling.NEAREST)
+            icon = Image.new("RGBA", (28, 28), (0,0,0,0))
+            icon.paste(base.crop((0, 14, 28, 28)), (0, 14))
+            INV_ICONS[itype] = icon
+        elif is_stair:
+            base = tex.resize((28, 28), Image.Resampling.NEAREST)
+            icon = Image.new("RGBA", (28, 28), (0,0,0,0))
+            icon.paste(base.crop((0, 14, 28, 28)), (0, 14))
+            icon.paste(base.crop((0, 0, 14, 14)), (0, 0))
+            INV_ICONS[itype] = icon
+        elif itype == "torch":
             base = tex.resize((14, 28), Image.Resampling.NEAREST)
             icon = Image.new("RGBA", (28, 28), (0,0,0,0))
             icon.paste(base, (7, 0), base) 
@@ -430,11 +445,10 @@ def get_body_front_tex(color, item_type):
         img = Image.new("RGBA", (128, 128), color)
         if item_type:
             icon = get_inv_icon(item_type).copy().convert("RGBA")
-            new_w = 40
-            new_h = int(40 * (PLAYER_BODY_HEIGHT / PLAYER_BODY_SIZE))
-            icon = icon.resize((new_w, new_h), Image.Resampling.NEAREST)
-            # Изменено: теперь предмет рисуется только на груди (Y смещен вверх до 32)
-            img.paste(icon, (64 - new_w//2, 32 - new_h//2), icon)
+            new_size = 24
+            icon = icon.resize((new_size, new_size), Image.Resampling.NEAREST)
+            # Строго на верхней части тела по центру
+            img.paste(icon, (64 - new_size//2, 32 - new_size//2), icon)
         HELD_ITEM_TEX_CACHE[cache_key] = img
     return HELD_ITEM_TEX_CACHE[cache_key]
 
@@ -459,7 +473,7 @@ def bake_face(tex):
 DEFAULT_BASE_TEX = Image.new("RGBA", (128, 128), (255, 220, 100, 255))
 DEFAULT_FACE_TEX = bake_face(DEFAULT_BASE_TEX)
 
-BLOCK_STATS = {"dirt": 3, "grass": 3, "sand": 3, "wood": 6, "leaves": 2, "stone": 12, "planks": 5, "workbench": 5, "chest": 5, "furnace": 12, "bedrock": 9999, "cobblestone": 12, "coal_ore": 12, "iron_ore": 12, "diamond_ore": 12, "torch": 1, "glass": 2}
+BLOCK_STATS = {"dirt": 3, "grass": 3, "sand": 3, "sandstone": 4, "wood": 6, "leaves": 2, "stone": 12, "planks": 5, "workbench": 5, "chest": 5, "furnace": 12, "bedrock": 9999, "cobblestone": 12, "coal_ore": 12, "iron_ore": 12, "diamond_ore": 12, "torch": 1, "glass": 2}
 
 def get_environment_light(s_id):
     srv = SERVERS.get(s_id)
@@ -510,11 +524,11 @@ class Server:
             for dx in [0, 1]:
                 for dy in [0, 1]: self.blocks[(cx+dx, cy+dy, 0)] = {"type": "bedrock", "tex": TEX_CACHE["bedrock"]}
         else:
-            self.load_chunks_around(0, 0, radius=1)
+            self.load_chunks_around(0, 0, radius=2)
 
         self.rebuild_mesh()
 
-    def load_chunks_around(self, px, py, radius=1):
+    def load_chunks_around(self, px, py, radius=2):
         if self.type == "classic": return
         cx, cy = int(px // 16), int(py // 16)
         changed = False
@@ -528,7 +542,6 @@ class Server:
         if changed: self.rebuild_mesh()
 
     def generate_chunk(self, cx, cy):
-        # Генерация пустыни на основе сида
         is_desert = math.sin(cx*0.5 + self.seed) + math.cos(cy*0.5 - self.seed) > 0.8
         
         for x in range(cx * 16, cx * 16 + 16):
@@ -537,16 +550,17 @@ class Server:
                 
                 top_block = "sand" if is_desert else "grass"
                 mid_block = "sand" if is_desert else "dirt"
+                mid2_block = "sandstone" if is_desert else "dirt"
 
                 self.blocks[(x, y, h)] = {"type": top_block}
                 self.blocks[(x, y, h-1)] = {"type": mid_block}
-                self.blocks[(x, y, h-2)] = {"type": mid_block}
+                self.blocks[(x, y, h-2)] = {"type": mid2_block}
+                self.blocks[(x, y, h-3)] = {"type": "sandstone"} if is_desert else {"type": "stone"}
                 
-                for z in range(h-3, -34, -1):
+                for z in range(h-4, -34, -1):
                     if z < -5:
                         cave_val = math.sin((x+self.seed)/4.0) + math.sin((y-self.seed)/4.0) + math.sin((z+self.seed)/3.0)
                         if cave_val > 1.2: continue
-                        
                     self.blocks[(x, y, z)] = {"type": "stone"}
                     
                 self.blocks[(x, y, -34)] = {"type": "bedrock"}
@@ -688,7 +702,7 @@ class Server:
                                 if fn in ["top", "bottom"]: tex = TEX_CACHE["vn_sunduk"]
                                 elif fn == facing_val: tex = TEX_CACHE["sunduk"]
                                 else: tex = TEX_CACHE["sunduk_bok"]
-                            elif base_type in ["dirt", "stone", "leaves", "planks", "bedrock", "cobblestone", "coal_ore", "iron_ore", "diamond_ore", "sand", "glass"]:
+                            elif base_type in ["dirt", "stone", "leaves", "planks", "bedrock", "cobblestone", "coal_ore", "iron_ore", "diamond_ore", "sand", "sandstone", "glass"]:
                                 tex = TEX_CACHE.get(base_type, TEX_CACHE["zemlya"])
                             face_info["tex"] = tex
                         
@@ -715,6 +729,12 @@ user_server_map = {}
 player_skins = {}
 pending_skin_mode = {}
 ACTIVE_MENUS = {} 
+VIEW_LOCKS = {}
+
+def get_view_lock(uid):
+    if uid not in VIEW_LOCKS:
+        VIEW_LOCKS[uid] = asyncio.Lock()
+    return VIEW_LOCKS[uid]
 
 def save_all_data():
     try:
@@ -864,7 +884,6 @@ async def furnace_ticker():
                     if is_burning_before != is_burning_after:
                         mesh_needs_rebuild = True
                         
-                    # Обновление в реальном времени для игроков смотрящих в печку
                     if b.get("burn_time", 0) > 0 or b.get("smelt_time", 0) > 0 or is_burning_before != is_burning_after:
                         for p_uid, ps in srv.players.items():
                             if ps.get("online") and ps.get("inv_mode") == "furnace" and ps.get("furnace_pos") == pos:
@@ -1024,8 +1043,8 @@ def make_keyboard(uid):
     kb.row(
         InlineKeyboardButton("⏪90°", callback_data="turn_l_90"),
         InlineKeyboardButton("◀️30°", callback_data="turn_l_30"),
-        InlineKeyboardButton("🌀15°", callback_data="turn_l_15"),
-        InlineKeyboardButton("🌀15°", callback_data="turn_r_15"),
+        InlineKeyboardButton("↶15°", callback_data="turn_l_15"),
+        InlineKeyboardButton("↷15°", callback_data="turn_r_15"),
         InlineKeyboardButton("▶️30°", callback_data="turn_r_30"),
         InlineKeyboardButton("⏩90°", callback_data="turn_r_90")
     )
@@ -1272,8 +1291,11 @@ def update_crafting(st):
     elif sg == [["iron_ingot"], ["iron_ingot"], ["stick"]]: res = {"type": "iron_mech", "count": 1, "durability": 90}
     elif sg == [["diamond"], ["diamond"], ["stick"]]: res = {"type": "diamond_mech", "count": 1, "durability": 120}
 
-    # Torches (coal & d_ugol)
+    # Torches
     elif sg in ([["coal"], ["stick"]], [["d_ugol"], ["stick"]]): res = {"type": "torch", "count": 4}
+
+    # Sandstone
+    elif sg == [["sand", "sand"], ["sand", "sand"]]: res = {"type": "sandstone", "count": 1}
 
     # Полублоки
     elif sg == [["planks", "planks", "planks"]]: res = {"type": "planks_slab", "count": 6}
@@ -1500,6 +1522,35 @@ def render_scene(px, py, pz, pa, pt, uid, s_id):
     img.convert("RGB").save(bio, "JPEG", quality=90)
     return bio.getvalue()
 
+def get_block_aabbs(srv, pos):
+    bx, by, bz = pos
+    b = srv.blocks.get(pos)
+    if not b: return []
+    btype = b.get("type", "")
+    
+    if btype == "torch":
+        dx, dy, dz = b.get("attach", (0,0,1))
+        w, h = 0.1, 0.6
+        if dx == 1:   return [(bx+0.1-w, by+0.5-w, bz+0.25, bx+0.1+w, by+0.5+w, bz+0.25+h)]
+        elif dx == -1: return [(bx+0.9-w, by+0.5-w, bz+0.25, bx+0.9+w, by+0.5+w, bz+0.25+h)]
+        elif dy == 1:  return [(bx+0.5-w, by+0.1-w, bz+0.25, bx+0.5+w, by+0.1+w, bz+0.25+h)]
+        elif dy == -1: return [(bx+0.5-w, by+0.9-w, bz+0.25, bx+0.5+w, by+0.9+w, bz+0.25+h)]
+        else:          return [(bx+0.5-w, by+0.5-w, bz, bx+0.5+w, by+0.5+w, bz+h)]
+        
+    if "slab" in btype:
+        return [(bx, by, bz, bx+1.0, by+1.0, bz+0.5)]
+        
+    if "stairs" in btype:
+        aabbs = [(bx, by, bz, bx+1.0, by+1.0, bz+0.5)]
+        facing = b.get("facing", "front")
+        if facing == "front": aabbs.append((bx, by+0.5, bz+0.5, bx+1.0, by+1.0, bz+1.0))
+        elif facing == "back": aabbs.append((bx, by, bz+0.5, bx+1.0, by+0.5, bz+1.0))
+        elif facing == "right": aabbs.append((bx, by, bz+0.5, bx+0.5, by+1.0, bz+1.0))
+        elif facing == "left": aabbs.append((bx+0.5, by, bz+0.5, bx+1.0, by+1.0, bz+1.0))
+        return aabbs
+        
+    return [(bx, by, bz, bx+1.0, by+1.0, bz+1.0)]
+
 def ray_pick(px, py, pz, pa, pt, s_id, ignore_uid=None):
     srv = SERVERS[s_id]
     dx, dy, dz = math.sin(pa)*math.cos(pt), math.cos(pa)*math.cos(pt), -math.sin(pt)
@@ -1511,9 +1562,17 @@ def ray_pick(px, py, pz, pa, pt, s_id, ignore_uid=None):
             if pid == ignore_uid or not ps.get("online", True): continue
             if abs(wx-ps["x"])<0.3 and abs(wy-ps["y"])<0.3 and ps["z"]<=wz<=ps["z"]+2.0:
                 return ("player", pid, None, t)
+                
         cb = (int(math.floor(wx)), int(math.floor(wy)), int(math.floor(wz)))
-        if cb in srv.blocks: return ("block", cb, prev_cb, t)
-        prev_cb = cb
+        if cb in srv.blocks:
+            aabbs = get_block_aabbs(srv, cb)
+            for aabb in aabbs:
+                if aabb[0] <= wx <= aabb[3] and aabb[1] <= wy <= aabb[4] and aabb[2] <= wz <= aabb[5]:
+                    return ("block", cb, prev_cb, t)
+                    
+        if cb not in srv.blocks:
+            prev_cb = cb
+            
         t += RAY_STEP
     return None
 
@@ -1531,41 +1590,38 @@ async def send_view(cid, uid):
     st = get_st(uid)
     if not st: return
     
-    try:
-        kb = get_keyboard(uid)
+    async with get_view_lock(uid):
+        try:
+            kb = get_keyboard(uid)
 
-        async with RENDER_SEMAPHORE:
-            img_bytes = await asyncio.to_thread(render_scene, st["x"], st["y"], st["z"]+1.6, st["angle"], st["tilt"], uid, s_id)
+            async with RENDER_SEMAPHORE:
+                img_bytes = await asyncio.to_thread(render_scene, st["x"], st["y"], st["z"]+1.6, st["angle"], st["tilt"], uid, s_id)
+                
+            cap = "\n".join(SERVERS[s_id].chat) if SERVERS[s_id].chat else "🎮 Приятной игры!"
+            kb_str = kb.to_json()
             
-        cap = "\n".join(SERVERS[s_id].chat) if SERVERS[s_id].chat else "🎮 Приятной игры!"
-        kb_str = kb.to_json()
-        
-        img_hash = hashlib.md5(img_bytes).hexdigest()
-        current_state = f"{img_hash}_{kb_str}_{cap}"
-        
-        if st.get("last_state_hash") == current_state:
-            return 
+            img_hash = hashlib.md5(img_bytes).hexdigest()
+            current_state = f"{img_hash}_{kb_str}_{cap}"
             
-        st["last_state_hash"] = current_state
-        
-        if st.get("msg_id"):
-            try:
-                bio_edit = io.BytesIO(img_bytes)
-                bio_edit.name = "s.jpg" 
-                await bot.edit_message_media(chat_id=cid, message_id=st["msg_id"], media=InputMediaPhoto(bio_edit, caption=cap), reply_markup=kb)
-                return
-            except ApiTelegramException as e:
-                err = str(e).lower()
-                if "not modified" in err:
+            if st.get("last_state_hash") == current_state:
+                return 
+                
+            st["last_state_hash"] = current_state
+            
+            if st.get("msg_id"):
+                try:
+                    bio_edit = io.BytesIO(img_bytes)
+                    bio_edit.name = "s.jpg" 
+                    await bot.edit_message_media(chat_id=cid, message_id=st["msg_id"], media=InputMediaPhoto(bio_edit, caption=cap), reply_markup=kb)
                     return
-            except Exception: pass
+                except Exception:
+                    return
 
-        bio_send = io.BytesIO(img_bytes)
-        bio_send.name = "s.jpg"
-        msg = await bot.send_photo(cid, bio_send, caption=cap, reply_markup=kb)
-        st["msg_id"] = msg.message_id
-    finally:
-        pass
+            bio_send = io.BytesIO(img_bytes)
+            bio_send.name = "s.jpg"
+            msg = await bot.send_photo(cid, bio_send, caption=cap, reply_markup=kb)
+            st["msg_id"] = msg.message_id
+        except Exception: pass
 
 def server_menu():
     kb = InlineKeyboardMarkup()
@@ -1580,13 +1636,17 @@ async def h_creative(m):
     uid = m.from_user.id
     st = get_st(uid)
     if not st: return
+    s_id = user_server_map.get(uid)
     if len(parts) > 1:
         if parts[1].lower() == "on":
             st["creative"] = True
             await bot.send_message(m.chat.id, "Креатив включен! Вы можете летать (кнопка Прыжок: +1 блок к высоте, Прыжок и шаг 0.5: -1 блок к высоте).")
         elif parts[1].lower() == "off":
             st["creative"] = False
-            await bot.send_message(m.chat.id, "Креатив выключен!")
+            srv = SERVERS[s_id]
+            st["z"] = get_ground_z(st["x"], st["y"], srv, st["z"])
+            await bot.send_message(m.chat.id, "Креатив выключен! Вы упали на землю.")
+            asyncio.create_task(send_view(m.chat.id, uid))
 
 @bot.message_handler(commands=["start"])
 async def h_start(m):
@@ -1634,7 +1694,7 @@ async def h_give(m):
     
     parts = m.text.split()
     if len(parts) < 2:
-        items_str = "grass, dirt, sand, glass, stone, bedrock, wood, leaves, planks, workbench, chest, furnace, cobblestone, coal_ore, iron_ore, diamond_ore, stick, wood_pickaxe, stone_pickaxe, iron_pickaxe, diamond_pickaxe, wood_axe, stone_axe, iron_axe, diamond_axe, wood_lopata, stone_lopata, iron_lopata, diamond_lopata, wood_motiga, stone_motiga, iron_motiga, diamond_motiga, wood_mech, stone_mech, iron_mech, diamond_mech, coal, d_ugol, iron, diamond, iron_ingot, torch, planks_slab, cobblestone_slab, stone_slab, planks_stairs, cobblestone_stairs, stone_stairs"
+        items_str = "grass, dirt, sand, sandstone, glass, stone, bedrock, wood, leaves, planks, workbench, chest, furnace, cobblestone, coal_ore, iron_ore, diamond_ore, stick, wood_pickaxe, stone_pickaxe, iron_pickaxe, diamond_pickaxe, wood_axe, stone_axe, iron_axe, diamond_axe, wood_lopata, stone_lopata, iron_lopata, diamond_lopata, wood_motiga, stone_motiga, iron_motiga, diamond_motiga, wood_mech, stone_mech, iron_mech, diamond_mech, coal, d_ugol, iron, diamond, iron_ingot, torch, planks_slab, cobblestone_slab, stone_slab, planks_stairs, cobblestone_stairs, stone_stairs"
         await bot.send_message(m.chat.id, f"Использование: /give <предмет> [кол-во]\n\nДоступные предметы:\n{items_str}")
         return
         
@@ -1978,7 +2038,7 @@ async def h_cb(c):
                     nx, ny = clamp(nx, 0.5, srv.size-0.5), clamp(ny, 0.5, srv.size-0.5)
                     
                 if srv.type == "survival":
-                    srv.load_chunks_around(nx, ny, radius=1)
+                    srv.load_chunks_around(nx, ny, radius=2)
                     
                 tz = get_ground_z(nx, ny, srv, st["z"])
                     
@@ -1987,7 +2047,6 @@ async def h_cb(c):
                     ev = True
                 else:
                     diff = tz - st["z"]
-                    # Разрешаем шаг до 0.5 блоков без прыжка для полублоков и ступенек!
                     if diff <= 0.5 or (0 < diff <= 1.5 and st["jump"]):
                         if not is_blocked(srv, nx, ny, tz): 
                             st["x"], st["y"], st["z"] = nx, ny, tz
@@ -2142,7 +2201,7 @@ async def h_cb(c):
                         btype = srv.blocks[pb[1]].get("type", "stone")
                         base_type = btype.replace("_slab", "").replace("_stairs", "")
                         
-                        if base_type in ("stone", "cobblestone", "coal_ore", "iron_ore", "diamond_ore", "furnace"):
+                        if base_type in ("stone", "cobblestone", "coal_ore", "iron_ore", "diamond_ore", "furnace", "sandstone"):
                             if t_type == "diamond_pickaxe": mhp = 1
                             elif t_type == "iron_pickaxe": mhp = 3
                             elif t_type == "stone_pickaxe": mhp = 6
