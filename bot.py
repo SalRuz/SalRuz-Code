@@ -188,6 +188,32 @@ def get_sword_drawer(col):
         d.polygon([(48, 80), (112, 16), (80, 48)], fill=col)
     return f
 
+def get_heart_drawer(mode):
+    def f(d):
+        pixels = [
+            " 11 11 ",
+            "1221221",
+            "1222221",
+            " 12221 ",
+            "  121  ",
+            "   1   "
+        ]
+        w, h = 128, 128
+        pw, ph = w//7, h//7
+        for y, row in enumerate(pixels):
+            for x, char in enumerate(row):
+                if char == "1":
+                    d.rectangle((x*pw, y*ph, (x+1)*pw, (y+1)*ph), fill=(0,0,0))
+                elif char == "2":
+                    if mode == 2 or (mode == 1 and x < 3):
+                        d.rectangle((x*pw, y*ph, (x+1)*pw, (y+1)*ph), fill=(255,50,50))
+                    elif mode == 1 and x == 3:
+                        d.rectangle((x*pw, y*ph, x*pw + pw//2, (y+1)*ph), fill=(255,50,50))
+                        d.rectangle((x*pw + pw//2, y*ph, (x+1)*pw, (y+1)*ph), fill=(50,50,50))
+                    else:
+                        d.rectangle((x*pw, y*ph, (x+1)*pw, (y+1)*ph), fill=(50,50,50))
+    return f
+
 def draw_cobble(d):
     d.rectangle((0,0,128,128), fill=(100,100,100))
     for _ in range(50):
@@ -276,6 +302,7 @@ create_fallback_tex("ruda_ugol.png", (100, 100, 100), draw_coal_ore)
 create_fallback_tex("ruda_zhel.png", (100, 100, 100), draw_iron_ore)
 create_fallback_tex("alm_ruda.png", (100, 100, 100), draw_diamond_ore)
 create_fallback_tex("ugol.png", (0, 0, 0, 0), draw_coal, rgba=True)
+create_fallback_tex("d_ugol.png", (0, 0, 0, 0), draw_coal, rgba=True)
 create_fallback_tex("zhel.png", (0, 0, 0, 0), draw_iron, rgba=True)
 create_fallback_tex("almaz.png", (0, 0, 0, 0), draw_diamond, rgba=True)
 create_fallback_tex("fakel.png", (0, 0, 0, 0), draw_torch_top, rgba=True)
@@ -288,6 +315,10 @@ create_fallback_tex("zhel_slitok.png", (0, 0, 0, 0), draw_ingot, rgba=True)
 create_fallback_tex("sunduk.png", (150, 100, 50), draw_chest_front)
 create_fallback_tex("sunduk_bok.png", (150, 100, 50), draw_chest_side)
 create_fallback_tex("vn_sunduk.png", (120, 80, 40))
+
+create_fallback_tex("full_hp.png", (0,0,0,0), get_heart_drawer(2), True)
+create_fallback_tex("half_hp.png", (0,0,0,0), get_heart_drawer(1), True)
+create_fallback_tex("non_hp.png", (0,0,0,0), get_heart_drawer(0), True)
 
 def load_tex(name, fallback_color=(255,0,255)):
     p = TEX_DIR / name
@@ -332,6 +363,7 @@ TEX_CACHE = {
     "iron_ore": load_tex("ruda_zhel.png", (100, 100, 100)),
     "diamond_ore": load_tex("alm_ruda.png", (100, 100, 100)),
     "coal": load_tex("ugol.png", (0,0,0,0)),
+    "d_ugol": load_tex("d_ugol.png", (0,0,0,0)),
     "iron": load_tex("zhel.png", (0,0,0,0)),
     "diamond": load_tex("almaz.png", (0,0,0,0)),
     "iron_ingot": load_tex("zhel_slitok.png", (0,0,0,0)),
@@ -344,6 +376,9 @@ TEX_CACHE = {
     "sunduk": load_tex("sunduk.png", (150, 100, 50)),
     "sunduk_bok": load_tex("sunduk_bok.png", (150, 100, 50)),
     "vn_sunduk": load_tex("vn_sunduk.png", (120, 80, 40)),
+    "full_hp": load_tex("full_hp.png", (0,0,0,0)),
+    "half_hp": load_tex("half_hp.png", (0,0,0,0)),
+    "non_hp": load_tex("non_hp.png", (0,0,0,0)),
 }
 
 PICKAXES = ("wood_pickaxe", "stone_pickaxe", "iron_pickaxe", "diamond_pickaxe")
@@ -383,9 +418,8 @@ def get_body_front_tex(color, item_type):
         img = Image.new("RGBA", (128, 128), color)
         if item_type:
             icon = get_inv_icon(item_type).copy().convert("RGBA")
-            w, h = icon.size
-            scale = 64.0 / max(w, h)
-            new_w, new_h = int(w * scale), int(h * scale)
+            new_w = 40
+            new_h = int(40 * (PLAYER_BODY_HEIGHT / PLAYER_BODY_SIZE))
             icon = icon.resize((new_w, new_h), Image.Resampling.NEAREST)
             img.paste(icon, (64 - new_w//2, 64 - new_h//2), icon)
         HELD_ITEM_TEX_CACHE[cache_key] = img
@@ -600,7 +634,6 @@ class Server:
                         elif btype == "workbench": tex = TEX_CACHE["workbench_top"] if fn=="top" else TEX_CACHE["planks"] if fn=="bottom" else TEX_CACHE["workbench_side"]
                         elif btype == "furnace":
                             facing = bdata.get("facing", "front")
-                            opp = {"front":"back", "back":"front", "left":"right", "right":"left"}
                             is_lit = bdata.get("burn_time", 0) > 0
                             if fn == "top": tex = TEX_CACHE["v_pech"]
                             elif fn == "bottom": tex = TEX_CACHE["stone"]
@@ -720,12 +753,19 @@ async def furnace_ticker():
                     if b.get("burn_time", 0) > 0:
                         b["burn_time"] -= 1
 
-                    can_smelt = inv[0] and inv[0]["type"] == "iron" and (not inv[2] or (inv[2]["type"] == "iron_ingot" and inv[2]["count"] < 64))
+                    i_in = inv[0]["type"] if inv[0] else None
+                    out_type = None
+                    if i_in == "iron": out_type = "iron_ingot"
+                    elif i_in == "wood": out_type = "d_ugol"
+                    elif i_in == "cobblestone": out_type = "stone"
+
+                    can_smelt = inv[0] and out_type and (not inv[2] or (inv[2]["type"] == out_type and inv[2]["count"] < 64))
 
                     if can_smelt and b.get("burn_time", 0) <= 0 and inv[1]:
                         f_type = inv[1]["type"]
                         fuel_val = 0
                         if f_type == "coal": fuel_val = 40
+                        elif f_type == "d_ugol": fuel_val = 35
                         elif f_type == "wood": fuel_val = 10
                         elif f_type in ("planks", "workbench", "chest") or "wood_" in f_type: fuel_val = 5
                         elif f_type == "stick": fuel_val = 2.5
@@ -742,7 +782,7 @@ async def furnace_ticker():
                             inv[0]["count"] -= 1
                             if inv[0]["count"] <= 0: inv[0] = None
                             if inv[2]: inv[2]["count"] += 1
-                            else: inv[2] = {"type": "iron_ingot", "count": 1}
+                            else: inv[2] = {"type": out_type, "count": 1}
                     else:
                         b["smelt_time"] = 0
 
@@ -818,7 +858,7 @@ def init_player(uid, s_id, name):
             "name": transliterate(name), "msg_id": None, "view_radius": 8, "res_level": 2, "hp": 10, "flash_time": 0,
             "inv": {0: {"type": "wood", "count": 10}}, "inv_open": False, "inv_mode": "normal", "inv_cursor": 0, "drag_item": None,
             "furnace_pos": None, "chest_pos": None, "step_size": 1.0,
-            "is_busy": False, "online": True, "hit_time": 0, "last_state_hash": None, "action_lock": False
+            "is_busy": False, "online": True, "hit_time": 0, "last_state_hash": None, "action_lock": False, "creative": False
         }
     else:
         srv.players[uid]["online"] = True
@@ -828,6 +868,7 @@ def init_player(uid, s_id, name):
         srv.players[uid]["hit_time"] = 0
         srv.players[uid]["last_state_hash"] = None
         srv.players[uid]["action_lock"] = False
+        if "creative" not in srv.players[uid]: srv.players[uid]["creative"] = False
     return srv.players[uid]
 
 def make_keyboard(uid):
@@ -835,7 +876,7 @@ def make_keyboard(uid):
     s_id = user_server_map.get(uid)
     srv = SERVERS[s_id]
     
-    jump_text = "🦘 Прыжок (Вкл)" if st.get("jump") else "🦘 Прыжок"
+    jump_text = "🦘 Прыгай!" if st.get("jump") else "🦘 Прыжок"
     
     step_val = st.get("step_size", 1.0)
     if step_val == 0.5: step_text = "👞 Шаг 0.5"
@@ -902,6 +943,17 @@ def make_keyboard(uid):
         InlineKeyboardButton(res_text, callback_data="cycle_res")
     )
     return kb
+
+def get_keyboard(uid):
+    st = get_st(uid)
+    if not st: return InlineKeyboardMarkup()
+    if st.get("inv_open"):
+        kb = InlineKeyboardMarkup(row_width=3)
+        kb.add(InlineKeyboardButton("Вверх ⬆️", callback_data="inv_u"))
+        kb.add(InlineKeyboardButton("Влево ⬅️", callback_data="inv_l"), InlineKeyboardButton("Взять/Класть ✋", callback_data="inv_click"), InlineKeyboardButton("Вправо ➡️", callback_data="inv_r"))
+        kb.add(InlineKeyboardButton("Положить 1 шт. 🤏", callback_data="inv_click_1"), InlineKeyboardButton("Вниз ⬇️", callback_data="inv_d"), InlineKeyboardButton("❌ Закрыть", callback_data="inv_close"))
+        return kb
+    return make_keyboard(uid)
 
 def world_to_view(wx, wy, wz, px, py, pz, angle, tilt):
     dx, dy = wx-px, wy-py
@@ -1294,9 +1346,11 @@ def render_scene(px, py, pz, pa, pt, uid, s_id):
 
     for i in range(5):
         hx, hy = out_w - 90 + i*16, 10
-        d.rectangle((hx, hy, hx+12, hy+12), outline=(0,0,0))
-        if st["hp"] >= i*2+2: d.rectangle((hx+1, hy+1, hx+11, hy+11), fill=(255,50,50))
-        elif st["hp"] == i*2+1: d.rectangle((hx+1, hy+1, hx+6, hy+11), fill=(255,50,50))
+        if st["hp"] >= i*2+2: tex = TEX_CACHE["full_hp"]
+        elif st["hp"] == i*2+1: tex = TEX_CACHE["half_hp"]
+        else: tex = TEX_CACHE["non_hp"]
+        htex = tex.resize((14, 14), Image.Resampling.NEAREST)
+        img.paste(htex, (hx, hy), htex)
 
     if srv.type == "survival":
         hx = out_w//2 - 100
@@ -1340,7 +1394,7 @@ async def broadcast_chat(s_id, txt):
     cap = "\n".join(SERVERS[s_id].chat) if SERVERS[s_id].chat else "🎮 Приятной игры!"
     for uid, st in list(SERVERS[s_id].players.items()):
         if st.get("msg_id") and st.get("online"):
-            try: await bot.edit_message_caption(caption=cap, chat_id=uid, message_id=st["msg_id"], reply_markup=make_keyboard(uid))
+            try: await bot.edit_message_caption(caption=cap, chat_id=uid, message_id=st["msg_id"], reply_markup=get_keyboard(uid))
             except Exception: pass
 
 async def send_view(cid, uid):
@@ -1350,12 +1404,7 @@ async def send_view(cid, uid):
     if not st: return
     
     try:
-        kb = make_keyboard(uid)
-        if st.get("inv_open"):
-            kb = InlineKeyboardMarkup(row_width=3)
-            kb.add(InlineKeyboardButton("Вверх ⬆️", callback_data="inv_u"))
-            kb.add(InlineKeyboardButton("Влево ⬅️", callback_data="inv_l"), InlineKeyboardButton("Взять/Класть ✋", callback_data="inv_click"), InlineKeyboardButton("Вправо ➡️", callback_data="inv_r"))
-            kb.add(InlineKeyboardButton("Положить 1 шт. 🤏", callback_data="inv_click_1"), InlineKeyboardButton("Вниз ⬇️", callback_data="inv_d"), InlineKeyboardButton("❌ Закрыть", callback_data="inv_close"))
+        kb = get_keyboard(uid)
 
         async with RENDER_SEMAPHORE:
             img_bytes = await asyncio.to_thread(render_scene, st["x"], st["y"], st["z"]+1.6, st["angle"], st["tilt"], uid, s_id)
@@ -1395,6 +1444,21 @@ def server_menu():
     kb.add(InlineKeyboardButton(f"🌈 Классика [{sum(1 for p in SERVERS[1].players.values() if p.get('online'))} чел]", callback_data="join_1"))
     kb.add(InlineKeyboardButton(f"🌲 Выживание [{sum(1 for p in SERVERS[2].players.values() if p.get('online'))} чел]", callback_data="join_2"))
     return kb
+
+@bot.message_handler(commands=["creative"])
+async def h_creative(m):
+    if m.from_user.id != ADMIN_ID: return
+    parts = m.text.split()
+    uid = m.from_user.id
+    st = get_st(uid)
+    if not st: return
+    if len(parts) > 1:
+        if parts[1].lower() == "on":
+            st["creative"] = True
+            await bot.send_message(m.chat.id, "Креатив включен! Вы можете летать (кнопка Прыжок: +1 блок к высоте, Прыжок и шаг 0.5: -1 блок к высоте).")
+        elif parts[1].lower() == "off":
+            st["creative"] = False
+            await bot.send_message(m.chat.id, "Креатив выключен!")
 
 @bot.message_handler(commands=["start"])
 async def h_start(m):
@@ -1442,7 +1506,7 @@ async def h_give(m):
     
     parts = m.text.split()
     if len(parts) < 2:
-        items_str = "grass, dirt, stone, bedrock, wood, leaves, planks, workbench, chest, furnace, cobblestone, coal_ore, iron_ore, diamond_ore, stick, wood_pickaxe, stone_pickaxe, iron_pickaxe, diamond_pickaxe, wood_axe, stone_axe, iron_axe, diamond_axe, wood_lopata, stone_lopata, iron_lopata, diamond_lopata, wood_motiga, stone_motiga, iron_motiga, diamond_motiga, wood_mech, stone_mech, iron_mech, diamond_mech, coal, iron, diamond, iron_ingot, torch"
+        items_str = "grass, dirt, stone, bedrock, wood, leaves, planks, workbench, chest, furnace, cobblestone, coal_ore, iron_ore, diamond_ore, stick, wood_pickaxe, stone_pickaxe, iron_pickaxe, diamond_pickaxe, wood_axe, stone_axe, iron_axe, diamond_axe, wood_lopata, stone_lopata, iron_lopata, diamond_lopata, wood_motiga, stone_motiga, iron_motiga, diamond_motiga, wood_mech, stone_mech, iron_mech, diamond_mech, coal, d_ugol, iron, diamond, iron_ingot, torch"
         await bot.send_message(m.chat.id, f"Использование: /give <предмет> [кол-во]\n\nДоступные предметы:\n{items_str}")
         return
         
@@ -1735,6 +1799,15 @@ async def h_cb(c):
             elif d == "inv_close": 
                 close_inv(st)
             
+            if d in ("inv_click", "inv_click_1", "inv_u", "inv_d", "inv_l", "inv_r"):
+                if mode in ("chest", "furnace"):
+                    c_pos = st.get("chest_pos") if mode == "chest" else st.get("furnace_pos")
+                    for p_uid, ps in srv.players.items():
+                        if p_uid != uid and ps.get("online") and ps.get("inv_open") and ps.get("inv_mode") == mode:
+                            p_pos = ps.get("chest_pos") if mode == "chest" else ps.get("furnace_pos")
+                            if p_pos == c_pos:
+                                asyncio.create_task(send_view(p_uid, p_uid))
+
             await send_view(c.message.chat.id, uid)
             return
 
@@ -1766,29 +1839,36 @@ async def h_cb(c):
             nx = st["x"] + (math.sin(a)*f + math.cos(a)*s) * step_size
             ny = st["y"] + (math.cos(a)*f - math.sin(a)*s) * step_size
             
-            if srv.type == "classic":
-                nx, ny = clamp(nx, 0.5, srv.size-0.5), clamp(ny, 0.5, srv.size-0.5)
-                
-            if srv.type == "survival":
-                srv.load_chunks_around(nx, ny, radius=1)
-                
-            tz = get_ground_z(nx, ny, srv, st["z"])
-                
-            if is_blocked(srv, st["x"], st["y"], st["z"]):
-                st["z"] += 1.0 
+            if st.get("creative"):
+                st["x"], st["y"] = nx, ny
+                if st["jump"]:
+                    if step_size == 0.5: st["z"] -= 1.0
+                    else: st["z"] += 1.0
                 ev = True
             else:
-                diff = tz - st["z"]
-                if diff <= 0.1 or (0 < diff <= 1.5 and st["jump"]):
-                    if not is_blocked(srv, nx, ny, tz): 
-                        st["x"], st["y"], st["z"] = nx, ny, tz
-                        ev = True
-                        if diff <= -4:
-                            st["hp"] -= (1 + int(abs(diff)-4)//2)
-                            st["flash_time"] = time.time()
-                            if st["hp"]<=0:
-                                await broadcast_chat(s_id, f"💀 {st['name']} разбился!")
-                                st["x"], st["y"], st["z"], st["hp"] = 0.5, 0.5, get_ground_z(0.5, 0.5, srv), 10
+                if srv.type == "classic":
+                    nx, ny = clamp(nx, 0.5, srv.size-0.5), clamp(ny, 0.5, srv.size-0.5)
+                    
+                if srv.type == "survival":
+                    srv.load_chunks_around(nx, ny, radius=1)
+                    
+                tz = get_ground_z(nx, ny, srv, st["z"])
+                    
+                if is_blocked(srv, st["x"], st["y"], st["z"]):
+                    st["z"] += 1.0 
+                    ev = True
+                else:
+                    diff = tz - st["z"]
+                    if diff <= 0.1 or (0 < diff <= 1.5 and st["jump"]):
+                        if not is_blocked(srv, nx, ny, tz): 
+                            st["x"], st["y"], st["z"] = nx, ny, tz
+                            ev = True
+                            if diff <= -4:
+                                st["hp"] -= (1 + int(abs(diff)-4)//2)
+                                st["flash_time"] = time.time()
+                                if st["hp"]<=0:
+                                    await broadcast_chat(s_id, f"💀 {st['name']} разбился!")
+                                    st["x"], st["y"], st["z"], st["hp"] = 0.5, 0.5, get_ground_z(0.5, 0.5, srv), 10
             st["jump"] = False
             
         elif d == "refresh": 
@@ -1828,7 +1908,7 @@ async def h_cb(c):
         elif d == "build":
             pass_normal_build = True
             
-            if st.get("jump"):
+            if st.get("jump") and not st.get("creative"):
                 c_slot = st["inv_cursor"] if st["inv_cursor"] < 5 else 0
                 item = st["inv"].get(c_slot)
                 
@@ -1863,6 +1943,7 @@ async def h_cb(c):
                         pass_normal_build = False
 
             if pass_normal_build:
+                st["jump"] = False
                 pb = ray_pick(st["x"], st["y"], st["z"]+1.6, st["angle"], st["tilt"], s_id, uid)
                 if pb and pb[0]=="block" and (srv.type == "classic" or pb[3] <= 5.0):
                     target_block_type = srv.blocks.get(pb[1], {}).get("type")
@@ -1908,6 +1989,7 @@ async def h_cb(c):
                                 srv.rebuild_mesh(); ev = True
 
         elif d == "break":
+            st["jump"] = False
             c_slot = st["inv_cursor"] if st["inv_cursor"] < 5 else 0
             tool = st["inv"].get(c_slot)
             t_type = tool["type"] if tool else None
@@ -1934,9 +2016,12 @@ async def h_cb(c):
                             elif t_type == "wood_axe": mhp = 4
                             else: mhp = 6 if btype == "wood" else 5
                         elif btype in ("grass", "dirt"):
-                            mhp = 1 if t_type in ("iron_lopata", "diamond_lopata") else 2 if t_type in ("wood_lopata", "stone_lopata") else 3
+                            if t_type in ("iron_lopata", "diamond_lopata"): mhp = 1
+                            elif t_type in ("wood_lopata", "stone_lopata"): mhp = 2
+                            else: mhp = 3
                         elif btype == "leaves":
-                            mhp = 1 if t_type in HOES else 2
+                            if t_type in HOES: mhp = 1
+                            else: mhp = 2
                         else:
                             mhp = BLOCK_STATS.get(btype, 3)
 
@@ -1996,7 +2081,9 @@ async def h_cb(c):
                     if t_type == "diamond_mech": damage = 6
                     elif t_type == "iron_mech": damage = 5
                     elif t_type == "stone_mech": damage = 4
-                    elif t_type in ("wood_mech", "diamond_axe", "iron_axe"): damage = 4
+                    elif t_type == "wood_mech": damage = 3
+                    elif t_type == "diamond_axe": damage = 4
+                    elif t_type == "iron_axe": damage = 4
                     elif t_type in ("wood_axe", "stone_axe"): damage = 3
                     elif t_type == "diamond_pickaxe": damage = 5
                     elif t_type == "iron_pickaxe": damage = 4
@@ -2022,7 +2109,7 @@ async def h_cb(c):
                         p_st = get_st(p_uid)
                         if p_st and p_st.get("msg_id") == m_id:
                             p_st["last_state_hash"] = None
-                            try: await bot.edit_message_reply_markup(chat_id=cid, message_id=m_id, reply_markup=make_keyboard(p_uid))
+                            try: await bot.edit_message_reply_markup(chat_id=cid, message_id=m_id, reply_markup=get_keyboard(p_uid))
                             except: pass
 
                     if st.get("msg_id"): asyncio.create_task(reset_hit_btn(c.message.chat.id, uid, st["msg_id"]))
