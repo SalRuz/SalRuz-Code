@@ -609,6 +609,14 @@ def load_all_data():
             SERVERS[2].rebuild_mesh()
     except Exception as e: pass
 
+def server_menu():
+    kb = InlineKeyboardMarkup(row_width=2)
+    kb.add(
+        InlineKeyboardButton("🟢 Сервер 1 (Классик)", callback_data="join_1"),
+        InlineKeyboardButton("🔴 Сервер 2 (Выживание)", callback_data="join_2")
+    )
+    return kb
+
 async def update_server_menus():
     kb = server_menu()
     to_remove = []
@@ -642,7 +650,13 @@ async def furnace_ticker():
 
                     if can_smelt and b.get("burn_time", 0) <= 0 and inv[1]:
                         f_type = inv[1]["type"]
-                        fuel_val = 40 if f_type == "coal" else 10 if f_type == "wood" else 5 if f_type in ("planks", "workbench", "chest") or "wood_" in f_type else 2 if f_type == "stick" else 0
+                        # Время горения:
+                        # 1 уголь = 40 сек
+                        # 1 древесина = 10 сек
+                        # 1 доска, 1 верстак, 1 сундук, любой деревянный инструмент = 5 сек
+                        # 1 палка = 2.5 сек (следовательно 2 палки = 5 сек)
+                        fuel_val = 40 if f_type == "coal" else 10 if f_type == "wood" else 5 if f_type in ("planks", "workbench", "chest") or f_type.startswith("wood_") else 2.5 if f_type == "stick" else 0
+                        
                         if fuel_val > 0:
                             b["burn_time"] = fuel_val
                             inv[1]["count"] -= 1
@@ -1088,7 +1102,83 @@ def render_scene(px, py, pz, pa, pt, uid, s_id):
     bio = io.BytesIO(); img.convert("RGB").save(bio, "JPEG", quality=90)
     return bio.getvalue()
 
-@bot.message_handler(commands=["start", "leave"])
+async def send_view(chat_id, uid):
+    s_id = user_server_map.get(uid)
+    if not s_id: return
+    st = get_st(uid)
+    if not st or not st.get("online"): return
+    
+    async with RENDER_SEMAPHORE:
+        try:
+            img_bytes = render_scene(st["x"], st["y"], st["z"], st["angle"], st["tilt"], uid, s_id)
+            kb = make_keyboard(uid)
+            
+            state_hash = hashlib.md5(img_bytes).hexdigest()
+            if st.get("last_state_hash") == state_hash and st.get("msg_id"): return
+            st["last_state_hash"] = state_hash
+            
+            if st.get("msg_id"):
+                try:
+                    await bot.edit_message_media(chat_id=chat_id, message_id=st["msg_id"], media=InputMediaPhoto(img_bytes), reply_markup=kb)
+                    return
+                except Exception as e:
+                    if "not modified" not in str(e).lower(): st["msg_id"] = None
+                    
+            msg = await bot.send_photo(chat_id, img_bytes, reply_markup=kb)
+            st["msg_id"] = msg.message_id
+        except Exception: pass
+
+async def broadcast_chat(s_id, msg):
+    SERVERS[s_id].broadcast(msg)
+    tasks = [send_view(p_uid, p_uid) for p_uid, ps in SERVERS[s_id].players.items() if ps.get("online")]
+    if tasks: await asyncio.gather(*tasks, return_exceptions=True)
+
+def ray_pick(px, py, pz, pa, pt, s_id, uid):
+    srv = SERVERS[s_id]
+    fx, fy, fz = math.sin(pa) * math.cos(pt), math.cos(pa) * math.cos(pt), -math.sin(pt)
+    cx, cy, cz = px, py, pz
+    for _ in range(int(RAY_MAX_DIST / RAY_STEP)):
+        cx += fx * RAY_STEP
+        cy += fy * RAY_STEP
+        cz += fz * RAY_STEP
+        
+        ix, iy, iz = int(math.floor(cx)), int(math.floor(cy)), int(math.floor(cz))
+        if (ix, iy, iz) in srv.blocks and srv.blocks[(ix, iy, iz)].get("type") != "torch":
+            px_prev, py_prev, pz_prev = cx - fx*RAY_STEP, cy - fy*RAY_STEP, cz - fz*RAY_STEP
+            nb = (int(math.floor(px_prev)), int(math.floor(py_prev)), int(math.floor(pz_prev)))
+            return ("block", (ix, iy, iz), nb, math.sqrt((cx-px)**2 + (cy-py)**2 + (cz-pz)**2))
+            
+        for p_uid, ps in srv.players.items():
+            if p_uid == uid or not ps.get("online"): continue
+            dx, dy, dz = cx - ps["x"], cy - ps["y"], cz - ps.get("z", 1.0)
+            if abs(dx) < PLAYER_BODY_SIZE/2 and abs(dy) < PLAYER_BODY_SIZE/2 and 0 <= dz <= (PLAYER_BODY_HEIGHT + PLAYER_HEAD_SIZE):
+                return ("player", p_uid, None, math.sqrt((cx-px)**2 + (cy-py)**2 + (cz-pz)**2))
+    return None
+
+def get_slot_item(st, srv, sid):
+    if sid < 50: return st["inv"].get(sid)
+    if 50 <= sid <= 52 and srv and st.get("furnace_pos") in srv.blocks: return srv.blocks[st["furnace_pos"]].get("inv", {}).get(sid - 50)
+    if 60 <= sid <= 74 and srv and st.get("chest_pos") in srv.blocks: return srv.blocks[st["chest_pos"]].get("inv", {}).get(sid - 60)
+    return None
+
+def set_slot_item(st, srv, sid, item):
+    if sid < 50:
+        if item is None: st["inv"].pop(sid, None)
+        else: st["inv"][sid] = item
+    elif 50 <= sid <= 52 and srv and st.get("furnace_pos") in srv.blocks: srv.blocks[st["furnace_pos"]]["inv"][sid - 50] = item
+    elif 60 <= sid <= 74 and srv and st.get("chest_pos") in srv.blocks: srv.blocks[st["chest_pos"]]["inv"][sid - 60] = item
+
+def close_inv(st):
+    st["inv_open"], st["inv_mode"], st["furnace_pos"], st["chest_pos"] = False, "normal", None, None
+    if st["inv_cursor"] > 4: st["inv_cursor"] = 0
+    if st.get("drag_item"):
+        for i in range(20):
+            if i not in st["inv"]:
+                st["inv"][i] = st["drag_item"]
+                st["drag_item"] = None
+                break
+
+@bot.message_handler(commands=["start"])
 async def h_start(m):
     uid = m.from_user.id
     try: await bot.delete_message(m.chat.id, m.message_id)
