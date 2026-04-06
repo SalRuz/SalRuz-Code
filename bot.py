@@ -36,7 +36,6 @@ if not DB_PATH.exists():
 TEX_DIR = Path("textures")
 TEX_DIR.mkdir(exist_ok=True)
 
-# --- ТРАНСЛИТЕРАЦИЯ ---
 CYRILLIC_TO_LATIN = {
     'а': 'a', 'б': 'b', 'в': 'v', 'г': 'g', 'д': 'd', 'е': 'e', 'ё': 'yo', 'ж': 'zh',
     'з': 'z', 'и': 'i', 'й': 'y', 'к': 'k', 'л': 'l', 'м': 'm', 'н': 'n', 'о': 'o',
@@ -66,12 +65,9 @@ def load_font():
 
 FONT = load_font()
 
-# --- КОНСТАНТЫ И НАСТРОЙКИ ---
 CAMERA_HEIGHT_OFFSET = 1.6
-
 MAX_TILT = 1.5   
 MIN_TILT = -1.5  
-
 NEAR_CLIP = 0.05
 RAY_STEP = 0.02
 RAY_MAX_DIST = 24
@@ -124,7 +120,6 @@ def normalize_angle(a):
     while a >= 2*math.pi: a -= 2*math.pi
     return a
 
-# --- ТЕКСТУРЫ ---
 def create_fallback_tex(name, color, draw_func=None, rgba=False):
     p = TEX_DIR / name
     if not p.exists():
@@ -168,6 +163,24 @@ def draw_iron_axe(d):
 def draw_diamond_axe(d):
     d.line((32, 96, 96, 32), fill=(139, 69, 19, 255), width=8) 
     d.polygon([(48, 16), (96, 16), (96, 64), (64, 64)], fill=(0, 255, 255, 255))
+
+def get_shovel_drawer(col):
+    def f(d):
+        d.line((32, 96, 96, 32), fill=(139, 69, 19, 255), width=8)
+        d.polygon([(80, 16), (112, 16), (112, 48), (80, 48)], fill=col)
+    return f
+def get_hoe_drawer(col):
+    def f(d):
+        d.line((32, 96, 96, 32), fill=(139, 69, 19, 255), width=8)
+        d.polygon([(64, 16), (112, 16), (112, 32), (64, 32)], fill=col)
+    return f
+def get_sword_drawer(col):
+    def f(d):
+        d.line((16, 112, 48, 80), fill=(139, 69, 19, 255), width=6)
+        d.line((32, 96, 64, 64), fill=(100, 50, 20, 255), width=8)
+        d.polygon([(48, 80), (112, 16), (80, 48)], fill=col)
+    return f
+
 def draw_cobble(d):
     d.rectangle((0,0,128,128), fill=(100,100,100))
     for _ in range(50):
@@ -224,14 +237,18 @@ create_fallback_tex("verstak.png", (200, 100, 50))
 create_fallback_tex("verstak_bok.png", (180, 90, 40))
 create_fallback_tex("buliga.png", (100, 100, 100), draw_cobble)
 create_fallback_tex("palka.png", (0, 0, 0, 0), draw_stick, rgba=True)
-create_fallback_tex("der_kirka.png", (0, 0, 0, 0), draw_wood_pickaxe, rgba=True)
-create_fallback_tex("kam_kirka.png", (0, 0, 0, 0), draw_stone_pickaxe, rgba=True)
-create_fallback_tex("zhel_kirka.png", (0, 0, 0, 0), draw_iron_pickaxe, rgba=True)
-create_fallback_tex("alm_kirka.png", (0, 0, 0, 0), draw_diamond_pickaxe, rgba=True)
-create_fallback_tex("der_topor.png", (0, 0, 0, 0), draw_wood_axe, rgba=True)
-create_fallback_tex("kam_topor.png", (0, 0, 0, 0), draw_stone_axe, rgba=True)
-create_fallback_tex("zhel_topor.png", (0, 0, 0, 0), draw_iron_axe, rgba=True)
-create_fallback_tex("alm_topor.png", (0, 0, 0, 0), draw_diamond_axe, rgba=True)
+
+c_wood, c_stone, c_iron, c_diam = (180,140,80,255), (100,100,100,255), (220,220,220,255), (0,255,255,255)
+create_fallback_tex("der_kirka.png", (0,0,0,0), draw_wood_pickaxe, True); create_fallback_tex("der_topor.png", (0,0,0,0), draw_wood_axe, True)
+create_fallback_tex("kam_kirka.png", (0,0,0,0), draw_stone_pickaxe, True); create_fallback_tex("kam_topor.png", (0,0,0,0), draw_stone_axe, True)
+create_fallback_tex("zhel_kirka.png", (0,0,0,0), draw_iron_pickaxe, True); create_fallback_tex("zhel_topor.png", (0,0,0,0), draw_iron_axe, True)
+create_fallback_tex("alm_kirka.png", (0,0,0,0), draw_diamond_pickaxe, True); create_fallback_tex("alm_topor.png", (0,0,0,0), draw_diamond_axe, True)
+
+create_fallback_tex("der_lopata.png", (0,0,0,0), get_shovel_drawer(c_wood), True); create_fallback_tex("der_motiga.png", (0,0,0,0), get_hoe_drawer(c_wood), True); create_fallback_tex("der_mech.png", (0,0,0,0), get_sword_drawer(c_wood), True)
+create_fallback_tex("kam_lopata.png", (0,0,0,0), get_shovel_drawer(c_stone), True); create_fallback_tex("kam_motiga.png", (0,0,0,0), get_hoe_drawer(c_stone), True); create_fallback_tex("kam_mech.png", (0,0,0,0), get_sword_drawer(c_stone), True)
+create_fallback_tex("zhel_lopata.png", (0,0,0,0), get_shovel_drawer(c_iron), True); create_fallback_tex("zhel_motiga.png", (0,0,0,0), get_hoe_drawer(c_iron), True); create_fallback_tex("zhel_mech.png", (0,0,0,0), get_sword_drawer(c_iron), True)
+create_fallback_tex("alm_lopata.png", (0,0,0,0), get_shovel_drawer(c_diam), True); create_fallback_tex("alm_motiga.png", (0,0,0,0), get_hoe_drawer(c_diam), True); create_fallback_tex("alm_mech.png", (0,0,0,0), get_sword_drawer(c_diam), True)
+
 create_fallback_tex("ruda_ugol.png", (100, 100, 100), draw_coal_ore)
 create_fallback_tex("ruda_zhel.png", (100, 100, 100), draw_iron_ore)
 create_fallback_tex("alm_ruda.png", (100, 100, 100), draw_diamond_ore)
@@ -248,7 +265,6 @@ create_fallback_tex("zhel_slitok.png", (0, 0, 0, 0), draw_ingot, rgba=True)
 create_fallback_tex("sunduk.png", (150, 100, 50), draw_chest_front)
 create_fallback_tex("sunduk_bok.png", (150, 100, 50), draw_chest_side)
 create_fallback_tex("vn_sunduk.png", (120, 80, 40))
-create_fallback_tex("z_sunduk.png", (150, 100, 50))
 
 def load_tex(name, fallback_color=(255,0,255)):
     p = TEX_DIR / name
@@ -256,45 +272,33 @@ def load_tex(name, fallback_color=(255,0,255)):
     return Image.new("RGBA", (128, 128), fallback_color)
 
 TEX_CACHE = {
-    "trava_top": load_tex("trava.png", (100, 220, 100)),
-    "trava_side": load_tex("trava_bok.png", (120, 180, 80)),
-    "zemlya": load_tex("zemlya.png", (139, 94, 52)),
-    "stone": load_tex("kamen.png", (120, 120, 120)),
-    "wood_side": load_tex("drevesina.png", (110, 70, 30)),
-    "wood_top": load_tex("drevesina_vn.png", (150, 100, 50)),
-    "leaves": load_tex("listva.png", (50, 150, 50)),
-    "planks": load_tex("doska.png", (180, 140, 80)),
-    "bedrock": load_tex("bedrok.png", (40, 40, 40)),
-    "workbench_top": load_tex("verstak.png", (200, 100, 50)),
-    "workbench_side": load_tex("verstak_bok.png", (180, 90, 40)),
-    "stick": load_tex("palka.png", (139, 69, 19)),
-    "wood_pickaxe": load_tex("der_kirka.png", (180, 140, 80)),
-    "stone_pickaxe": load_tex("kam_kirka.png", (100, 100, 100)),
-    "iron_pickaxe": load_tex("zhel_kirka.png", (220, 220, 220)),
-    "diamond_pickaxe": load_tex("alm_kirka.png", (0, 255, 255)),
-    "wood_axe": load_tex("der_topor.png", (180, 140, 80)),
-    "stone_axe": load_tex("kam_topor.png", (100, 100, 100)),
-    "iron_axe": load_tex("zhel_topor.png", (220, 220, 220)),
-    "diamond_axe": load_tex("alm_topor.png", (0, 255, 255)),
-    "cobblestone": load_tex("buliga.png", (100, 100, 100)),
-    "coal_ore": load_tex("ruda_ugol.png", (100, 100, 100)),
-    "iron_ore": load_tex("ruda_zhel.png", (100, 100, 100)),
-    "diamond_ore": load_tex("alm_ruda.png", (100, 100, 100)),
-    "coal": load_tex("ugol.png", (0,0,0,0)),
-    "iron": load_tex("zhel.png", (0,0,0,0)),
-    "diamond": load_tex("almaz.png", (0,0,0,0)),
-    "iron_ingot": load_tex("zhel_slitok.png", (0,0,0,0)),
-    "torch_top": load_tex("fakel.png", (255,200,0)),
-    "torch_side": load_tex("fakel_bok.png", (255,200,0)),
-    "pech": load_tex("pech.png", (100,100,100)),
-    "pech_gorit": load_tex("pech_gorit.png", (150,100,50)),
-    "v_pech": load_tex("v_pech.png", (100,100,100)),
-    "pech_bok": load_tex("pech_bok.png", (100,100,100)),
-    "sunduk": load_tex("sunduk.png", (150, 100, 50)),
-    "sunduk_bok": load_tex("sunduk_bok.png", (150, 100, 50)),
-    "vn_sunduk": load_tex("vn_sunduk.png", (120, 80, 40)),
-    "z_sunduk": load_tex("z_sunduk.png", (150, 100, 50)),
+    "trava_top": load_tex("trava.png", (100, 220, 100)), "trava_side": load_tex("trava_bok.png", (120, 180, 80)),
+    "zemlya": load_tex("zemlya.png", (139, 94, 52)), "stone": load_tex("kamen.png", (120, 120, 120)),
+    "wood_side": load_tex("drevesina.png", (110, 70, 30)), "wood_top": load_tex("drevesina_vn.png", (150, 100, 50)),
+    "leaves": load_tex("listva.png", (50, 150, 50)), "planks": load_tex("doska.png", (180, 140, 80)),
+    "bedrock": load_tex("bedrok.png", (40, 40, 40)), "workbench_top": load_tex("verstak.png", (200, 100, 50)),
+    "workbench_side": load_tex("verstak_bok.png", (180, 90, 40)), "stick": load_tex("palka.png", (139, 69, 19)),
+    "wood_pickaxe": load_tex("der_kirka.png"), "stone_pickaxe": load_tex("kam_kirka.png"), "iron_pickaxe": load_tex("zhel_kirka.png"), "diamond_pickaxe": load_tex("alm_kirka.png"),
+    "wood_axe": load_tex("der_topor.png"), "stone_axe": load_tex("kam_topor.png"), "iron_axe": load_tex("zhel_topor.png"), "diamond_axe": load_tex("alm_topor.png"),
+    "wood_lopata": load_tex("der_lopata.png"), "stone_lopata": load_tex("kam_lopata.png"), "iron_lopata": load_tex("zhel_lopata.png"), "diamond_lopata": load_tex("alm_lopata.png"),
+    "wood_motiga": load_tex("der_motiga.png"), "stone_motiga": load_tex("kam_motiga.png"), "iron_motiga": load_tex("zhel_motiga.png"), "diamond_motiga": load_tex("alm_motiga.png"),
+    "wood_mech": load_tex("der_mech.png"), "stone_mech": load_tex("kam_mech.png"), "iron_mech": load_tex("zhel_mech.png"), "diamond_mech": load_tex("alm_mech.png"),
+    "cobblestone": load_tex("buliga.png", (100, 100, 100)), "coal_ore": load_tex("ruda_ugol.png", (100, 100, 100)),
+    "iron_ore": load_tex("ruda_zhel.png", (100, 100, 100)), "diamond_ore": load_tex("alm_ruda.png", (100, 100, 100)),
+    "coal": load_tex("ugol.png", (0,0,0,0)), "iron": load_tex("zhel.png", (0,0,0,0)), "diamond": load_tex("almaz.png", (0,0,0,0)),
+    "iron_ingot": load_tex("zhel_slitok.png", (0,0,0,0)), "torch_top": load_tex("fakel.png", (255,200,0)),
+    "torch_side": load_tex("fakel_bok.png", (255,200,0)), "pech": load_tex("pech.png", (100,100,100)),
+    "pech_gorit": load_tex("pech_gorit.png", (150,100,50)), "v_pech": load_tex("v_pech.png", (100,100,100)),
+    "pech_bok": load_tex("pech_bok.png", (100,100,100)), "sunduk": load_tex("sunduk.png", (150, 100, 50)),
+    "sunduk_bok": load_tex("sunduk_bok.png", (150, 100, 50)), "vn_sunduk": load_tex("vn_sunduk.png", (120, 80, 40))
 }
+
+PICKAXES = ("wood_pickaxe", "stone_pickaxe", "iron_pickaxe", "diamond_pickaxe")
+AXES = ("wood_axe", "stone_axe", "iron_axe", "diamond_axe")
+SHOVELS = ("wood_lopata", "stone_lopata", "iron_lopata", "diamond_lopata")
+HOES = ("wood_motiga", "stone_motiga", "iron_motiga", "diamond_motiga")
+SWORDS = ("wood_mech", "stone_mech", "iron_mech", "diamond_mech")
+TOOLS = PICKAXES + AXES + SHOVELS + HOES + SWORDS
 
 INV_ICONS = {}
 def get_inv_icon(itype):
@@ -435,7 +439,6 @@ class Server:
                     if z < -5:
                         cave_val = math.sin((x+self.seed)/4.0) + math.sin((y-self.seed)/4.0) + math.sin((z+self.seed)/3.0)
                         if cave_val > 1.2: continue
-                        
                     self.blocks[(x, y, z)] = {"type": "stone"}
                     
                 self.blocks[(x, y, -34)] = {"type": "bedrock"}
@@ -450,33 +453,24 @@ class Server:
 
         for _ in range(18):
             vx, vy, vz = random.randint(cx*16, cx*16+15), random.randint(cy*16, cy*16+15), random.randint(-33, -6)
-            vein_size = random.randint(3, 5)
-            for _ in range(vein_size):
+            for _ in range(random.randint(3, 5)):
                 if (vx, vy, vz) in self.blocks and self.blocks[(vx, vy, vz)]["type"] == "stone":
                     self.blocks[(vx, vy, vz)] = {"type": "coal_ore"}
-                vx += random.choice([-1, 0, 1])
-                vy += random.choice([-1, 0, 1])
-                vz += random.choice([-1, 0, 1])
+                vx += random.choice([-1, 0, 1]); vy += random.choice([-1, 0, 1]); vz += random.choice([-1, 0, 1])
 
         for _ in range(12):
             vx, vy, vz = random.randint(cx*16, cx*16+15), random.randint(cy*16, cy*16+15), random.randint(-33, -12)
-            vein_size = random.randint(3, 5)
-            for _ in range(vein_size):
+            for _ in range(random.randint(3, 5)):
                 if (vx, vy, vz) in self.blocks and self.blocks[(vx, vy, vz)]["type"] == "stone":
                     self.blocks[(vx, vy, vz)] = {"type": "iron_ore"}
-                vx += random.choice([-1, 0, 1])
-                vy += random.choice([-1, 0, 1])
-                vz += random.choice([-1, 0, 1])
+                vx += random.choice([-1, 0, 1]); vy += random.choice([-1, 0, 1]); vz += random.choice([-1, 0, 1])
 
         for _ in range(4):
             vx, vy, vz = random.randint(cx*16, cx*16+15), random.randint(cy*16, cy*16+15), random.randint(-33, -30)
-            vein_size = random.randint(1, 5)
-            for _ in range(vein_size):
+            for _ in range(random.randint(1, 5)):
                 if (vx, vy, vz) in self.blocks and self.blocks[(vx, vy, vz)]["type"] == "stone":
                     self.blocks[(vx, vy, vz)] = {"type": "diamond_ore"}
-                vx += random.choice([-1, 0, 1])
-                vy += random.choice([-1, 0, 1])
-                vz += random.choice([-1, 0, 1])
+                vx += random.choice([-1, 0, 1]); vy += random.choice([-1, 0, 1]); vz += random.choice([-1, 0, 1])
 
     def rebuild_mesh(self):
         new_faces = []
@@ -485,35 +479,26 @@ class Server:
         try:
             for pos, bdata in self.blocks.items():
                 gx, gy, gz = pos
-                
                 if bdata.get("type") == "torch":
                     dx, dy, dz = bdata.get("attach", (0,0,1))
                     w, h = 0.08, 0.5
-                    
-                    if dx == 1:   cx, cy, cz = gx+0.1, gy+0.5, gz+0.25; a_x, a_y = 0, 0.4
+                    if dx == 1: cx, cy, cz = gx+0.1, gy+0.5, gz+0.25; a_x, a_y = 0, 0.4
                     elif dx == -1: cx, cy, cz = gx+0.9, gy+0.5, gz+0.25; a_x, a_y = 0, -0.4
-                    elif dy == 1:  cx, cy, cz = gx+0.5, gy+0.1, gz+0.25; a_x, a_y = -0.4, 0
+                    elif dy == 1: cx, cy, cz = gx+0.5, gy+0.1, gz+0.25; a_x, a_y = -0.4, 0
                     elif dy == -1: cx, cy, cz = gx+0.5, gy+0.9, gz+0.25; a_x, a_y = 0.4, 0
-                    else:          cx, cy, cz = gx+0.5, gy+0.5, gz;     a_x, a_y = 0, 0
+                    else: cx, cy, cz = gx+0.5, gy+0.5, gz; a_x, a_y = 0, 0
 
                     vw = []
                     for vx, vy, vz in [(-w,-w,0), (w,-w,0), (w,w,0), (-w,w,0), (-w,-w,h), (w,-w,h), (w,w,h), (-w,w,h)]:
-                        rx = vx + vz * a_y
-                        ry = vy - vz * a_x
-                        vw.append((cx + rx, cy + ry, cz + vz))
+                        vw.append((cx + vx + vz*a_y, cy + vy - vz*a_x, cz + vz))
 
                     for fn, idx, offset in BLOCK_FACES_DATA:
                         n = face_normal(vw, idx)
-                        lf = calc_light(n)
                         tex = TEX_CACHE["torch_top"] if fn == "top" else TEX_CACHE["wood_top"] if fn == "bottom" else TEX_CACHE["torch_side"]
-                        face_info = {"cx": cx, "cy": cy, "cz": cz+h/2, "verts": [vw[i] for i in idx], "n": n, "lf": lf, "tl": 1.0, "tex": tex, "pos": pos}
-                        new_faces.append(face_info)
+                        new_faces.append({"cx": cx, "cy": cy, "cz": cz+h/2, "verts": [vw[i] for i in idx], "n": n, "lf": calc_light(n), "tl": 1.0, "tex": tex, "pos": pos})
                     continue
 
-                vw = [
-                    (gx, gy, gz), (gx+1, gy, gz), (gx+1, gy+1, gz), (gx, gy+1, gz),
-                    (gx, gy, gz+1), (gx+1, gy, gz+1), (gx+1, gy+1, gz+1), (gx, gy+1, gz+1)
-                ]
+                vw = [(gx, gy, gz), (gx+1, gy, gz), (gx+1, gy+1, gz), (gx, gy+1, gz), (gx, gy, gz+1), (gx+1, gy, gz+1), (gx+1, gy+1, gz+1), (gx, gy+1, gz+1)]
                 for fn, idx, offset in BLOCK_FACES_DATA:
                     nb = (gx + offset[0], gy + offset[1], gz + offset[2])
                     if nb in self.blocks and self.blocks[nb].get("type") != "torch": continue
@@ -548,14 +533,11 @@ class Server:
                             if fn == "top": tex = TEX_CACHE["v_pech"]
                             elif fn == "bottom": tex = TEX_CACHE["stone"]
                             elif fn == facing: tex = TEX_CACHE["pech_gorit"] if is_lit else TEX_CACHE["pech"]
-                            elif fn == opp.get(facing, "back"): tex = TEX_CACHE["pech_bok"]
                             else: tex = TEX_CACHE["pech_bok"]
                         elif btype == "chest":
                             facing = bdata.get("facing", "front")
-                            opp = {"front":"back", "back":"front", "left":"right", "right":"left"}
                             if fn in ["top", "bottom"]: tex = TEX_CACHE["vn_sunduk"]
                             elif fn == facing: tex = TEX_CACHE["sunduk"]
-                            elif fn == opp.get(facing, "back"): tex = TEX_CACHE["z_sunduk"]
                             else: tex = TEX_CACHE["sunduk_bok"]
                         elif btype in ["dirt", "stone", "leaves", "planks", "bedrock", "cobblestone", "coal_ore", "iron_ore", "diamond_ore"]:
                             tex = TEX_CACHE.get(btype, TEX_CACHE["zemlya"])
@@ -569,7 +551,6 @@ class Server:
                             combined = face_info["tex"].copy()
                             combined.alpha_composite(CRACK_TEX[stage])
                             face_info["tex"] = combined
-                    
                     new_faces.append(face_info)
             self.faces = new_faces
         except Exception as e: pass
@@ -607,9 +588,7 @@ def load_all_data():
                 data = pickle.load(f)
                 SERVERS[1].players = data.get("players", {})
                 for p_uid, p_data in SERVERS[1].players.items(): 
-                    p_data["online"] = False
-                    p_data["last_action"] = time.time()
-                    p_data["action_lock"] = False
+                    p_data["online"] = False; p_data["action_lock"] = False
                 for pos, bd in data.get("blocks", {}).items():
                     SERVERS[1].blocks[pos] = {"color": bd.get("color", (255,255,255)), "type": bd.get("type")}
                     if "tex_bytes" in bd:
@@ -622,9 +601,7 @@ def load_all_data():
                 data = pickle.load(f)
                 SERVERS[2].players = data.get("players", {})
                 for p_uid, p_data in SERVERS[2].players.items(): 
-                    p_data["online"] = False
-                    p_data["last_action"] = time.time()
-                    p_data["action_lock"] = False
+                    p_data["online"] = False; p_data["action_lock"] = False
                 SERVERS[2].blocks = data.get("blocks", {})
                 SERVERS[2].block_damage = data.get("damage", {})
                 SERVERS[2].seed = data.get("seed", random.randint(0, 999999))
@@ -636,14 +613,10 @@ async def update_server_menus():
     kb = server_menu()
     to_remove = []
     for uid, m_info in list(ACTIVE_MENUS.items()):
-        try:
-            await bot.edit_message_reply_markup(chat_id=m_info["chat_id"], message_id=m_info["msg_id"], reply_markup=kb)
+        try: await bot.edit_message_reply_markup(chat_id=m_info["chat_id"], message_id=m_info["msg_id"], reply_markup=kb)
         except ApiTelegramException as e:
-            err = str(e).lower()
-            if "not modified" in err: continue
-            to_remove.append(uid)
-        except Exception:
-            to_remove.append(uid)
+            if "not modified" not in str(e).lower(): to_remove.append(uid)
+        except Exception: to_remove.append(uid)
     for uid in to_remove: ACTIVE_MENUS.pop(uid, None)
 
 async def auto_saver():
@@ -663,19 +636,13 @@ async def furnace_ticker():
                     inv = b.get("inv", {0: None, 1: None, 2: None}) 
                     is_burning_before = b.get("burn_time", 0) > 0
 
-                    if b.get("burn_time", 0) > 0:
-                        b["burn_time"] -= 1
+                    if b.get("burn_time", 0) > 0: b["burn_time"] -= 1
 
                     can_smelt = inv[0] and inv[0]["type"] == "iron" and (not inv[2] or (inv[2]["type"] == "iron_ingot" and inv[2]["count"] < 64))
 
                     if can_smelt and b.get("burn_time", 0) <= 0 and inv[1]:
                         f_type = inv[1]["type"]
-                        fuel_val = 0
-                        if f_type == "coal": fuel_val = 80
-                        elif f_type == "wood": fuel_val = 20
-                        elif f_type in ("planks", "workbench", "chest", "wood_pickaxe", "wood_axe"): fuel_val = 10
-                        elif f_type == "stick": fuel_val = 5
-
+                        fuel_val = 40 if f_type == "coal" else 10 if f_type == "wood" else 5 if f_type in ("planks", "workbench", "chest") or "wood_" in f_type else 2 if f_type == "stick" else 0
                         if fuel_val > 0:
                             b["burn_time"] = fuel_val
                             inv[1]["count"] -= 1
@@ -683,18 +650,15 @@ async def furnace_ticker():
 
                     if can_smelt and b.get("burn_time", 0) > 0:
                         b["smelt_time"] = b.get("smelt_time", 0) + 1
-                        if b["smelt_time"] >= 10:
+                        if b["smelt_time"] >= 5:
                             b["smelt_time"] = 0
                             inv[0]["count"] -= 1
                             if inv[0]["count"] <= 0: inv[0] = None
                             if inv[2]: inv[2]["count"] += 1
                             else: inv[2] = {"type": "iron_ingot", "count": 1}
-                    else:
-                        b["smelt_time"] = 0
+                    else: b["smelt_time"] = 0
 
-                    is_burning_after = b.get("burn_time", 0) > 0
-                    if is_burning_before != is_burning_after:
-                        mesh_needs_rebuild = True
+                    if is_burning_before != (b.get("burn_time", 0) > 0): mesh_needs_rebuild = True
 
             if mesh_needs_rebuild:
                 srv.rebuild_mesh()
@@ -712,9 +676,7 @@ async def afk_checker():
         for s_id, srv in list(SERVERS.items()):
             for uid, ps in list(srv.players.items()):
                 if ps.get("online") and (now - ps.get("last_action", now) > 300):
-                    ps["online"] = False
-                    user_server_map.pop(uid, None)
-                    changed = True
+                    ps["online"] = False; user_server_map.pop(uid, None); changed = True
                     try:
                         msg = await bot.send_message(uid, "⏱ Вы были кикнуты с сервера за бездействие.", reply_markup=server_menu())
                         ACTIVE_MENUS[uid] = {"chat_id": uid, "msg_id": msg.message_id}
@@ -731,24 +693,15 @@ def get_st(uid):
 def get_ground_z(x, y, srv, pz=None):
     tz = -34 if srv.type == "survival" else -64
     ix, iy = int(math.floor(x)), int(math.floor(y))
-    
-    start_z = 20
-    if pz is not None:
-        start_z = min(20, int(math.floor(pz)) + 1)
-        
+    start_z = 20 if pz is None else min(20, int(math.floor(pz)) + 1)
     for bz in range(start_z, tz-1, -1):
-        if (ix, iy, bz) in srv.blocks:
-            b = srv.blocks[(ix, iy, bz)]
-            if b.get("type") != "torch":
-                return bz + 1
+        if (ix, iy, bz) in srv.blocks and srv.blocks[(ix, iy, bz)].get("type") != "torch": return bz + 1
     return tz
 
 def is_blocked(srv, x, y, z):
     ix, iy = int(math.floor(x)), int(math.floor(y))
     for bz in [int(math.floor(z + 0.1)), int(math.floor(z + 1.6))]:
-        b = srv.blocks.get((ix, iy, bz))
-        if b and b.get("type") != "torch":
-            return True
+        if (ix, iy, bz) in srv.blocks and srv.blocks[(ix, iy, bz)].get("type") != "torch": return True
     return False
 
 def init_player(uid, s_id, name):
@@ -767,13 +720,9 @@ def init_player(uid, s_id, name):
             "is_busy": False, "online": True, "hit_time": 0, "last_state_hash": None, "action_lock": False
         }
     else:
-        srv.players[uid]["online"] = True
-        srv.players[uid]["last_action"] = time.time()
-        srv.players[uid]["msg_id"] = None
-        srv.players[uid]["name"] = transliterate(name)
-        srv.players[uid]["hit_time"] = 0
-        srv.players[uid]["last_state_hash"] = None
-        srv.players[uid]["action_lock"] = False
+        p = srv.players[uid]
+        p["online"] = True; p["last_action"] = time.time(); p["msg_id"] = None
+        p["name"] = transliterate(name); p["hit_time"] = 0; p["last_state_hash"] = None; p["action_lock"] = False
     return srv.players[uid]
 
 def make_keyboard(uid):
@@ -782,7 +731,6 @@ def make_keyboard(uid):
     srv = SERVERS[s_id]
     
     jump_text = "🦘 Прыжок (Вкл)" if st.get("jump") else "🦘 Прыжок"
-    
     step_val = st.get("step_size", 1.0)
     if step_val == 0.5: step_text = "👞 Шаг 0.5"
     elif step_val == 1.0: step_text = "👟 Шаг 1.0"
@@ -793,60 +741,26 @@ def make_keyboard(uid):
     
     is_hit = st.get("hit_time", 0) > 0 and (time.time() - st["hit_time"]) < 1.0
     break_text = "💥 Ударил!" if is_hit else "⛏️ Ломай"
-    
-    if srv.type == "classic": paint_text = "📸 Жду фото..." if pending_skin_mode.get(uid) and pending_skin_mode[uid][0] == "block" else "🎨 Крась"
-    else: paint_text = "🎒 Инвентарь"
+    paint_text = "📸 Жду фото..." if srv.type == "classic" and pending_skin_mode.get(uid) and pending_skin_mode[uid][0] == "block" else "🎨 Крась" if srv.type == "classic" else "🎒 Инвентарь"
     
     kb = InlineKeyboardMarkup(row_width=3)
-    kb.add(
-        InlineKeyboardButton("↖️", callback_data="move_fl"),
-        InlineKeyboardButton("⬆️", callback_data="move_f"),
-        InlineKeyboardButton("↗️", callback_data="move_fr")
-    )
-    kb.add(
-        InlineKeyboardButton("⬅️", callback_data="move_l"),
-        InlineKeyboardButton("🔄", callback_data="refresh"),
-        InlineKeyboardButton("➡️", callback_data="move_r")
-    )
-    kb.add(
-        InlineKeyboardButton("↙️", callback_data="move_bl"),
-        InlineKeyboardButton("⬇️", callback_data="move_b"),
-        InlineKeyboardButton("↘️", callback_data="move_br")
-    )
-    kb.add(
-        InlineKeyboardButton("⬅️ Предмет", callback_data="hotbar_prev"),
-        InlineKeyboardButton("➡️ Предмет", callback_data="hotbar_next")
-    )
+    kb.add(InlineKeyboardButton("↖️", callback_data="move_fl"), InlineKeyboardButton("⬆️", callback_data="move_f"), InlineKeyboardButton("↗️", callback_data="move_fr"))
+    kb.add(InlineKeyboardButton("⬅️", callback_data="move_l"), InlineKeyboardButton("🔄", callback_data="refresh"), InlineKeyboardButton("➡️", callback_data="move_r"))
+    kb.add(InlineKeyboardButton("↙️", callback_data="move_bl"), InlineKeyboardButton("⬇️", callback_data="move_b"), InlineKeyboardButton("↘️", callback_data="move_br"))
+    kb.add(InlineKeyboardButton("⬅️ Предмет", callback_data="hotbar_prev"), InlineKeyboardButton("➡️ Предмет", callback_data="hotbar_next"))
     
     kb.row(
-        InlineKeyboardButton("⏪90°", callback_data="turn_l_90"),
-        InlineKeyboardButton("◀️30°", callback_data="turn_l_30"),
-        InlineKeyboardButton("🌀15°", callback_data="turn_l_15"),
-        InlineKeyboardButton("🌀15°", callback_data="turn_r_15"),
-        InlineKeyboardButton("▶️30°", callback_data="turn_r_30"),
-        InlineKeyboardButton("⏩90°", callback_data="turn_r_90")
+        InlineKeyboardButton("⏪90°", callback_data="turn_l_90"), InlineKeyboardButton("◀️30°", callback_data="turn_l_30"),
+        InlineKeyboardButton("🌀15°", callback_data="turn_l_15"), InlineKeyboardButton("🌀15°", callback_data="turn_r_15"),
+        InlineKeyboardButton("▶️30°", callback_data="turn_r_30"), InlineKeyboardButton("⏩90°", callback_data="turn_r_90")
     )
     kb.row(
-        InlineKeyboardButton("⏫90°", callback_data="look_up_90"),
-        InlineKeyboardButton("⏫30°", callback_data="look_up_30"),
-        InlineKeyboardButton("🔼15°", callback_data="look_up_15"),
-        InlineKeyboardButton("🔽15°", callback_data="look_down_15"),
-        InlineKeyboardButton("⏬30°", callback_data="look_down_30"),
-        InlineKeyboardButton("⏬90°", callback_data="look_down_90")
+        InlineKeyboardButton("⏫90°", callback_data="look_up_90"), InlineKeyboardButton("⏫30°", callback_data="look_up_30"),
+        InlineKeyboardButton("🔼15°", callback_data="look_up_15"), InlineKeyboardButton("🔽15°", callback_data="look_down_15"),
+        InlineKeyboardButton("⏬30°", callback_data="look_down_30"), InlineKeyboardButton("⏬90°", callback_data="look_down_90")
     )
-    
-    kb.add(
-        InlineKeyboardButton("🔨 Строй", callback_data="build"),
-        InlineKeyboardButton(paint_text, callback_data="paint"),
-        InlineKeyboardButton(break_text, callback_data="break")
-    )
-    
-    kb.row(
-        InlineKeyboardButton(jump_text, callback_data="toggle_jump"),
-        InlineKeyboardButton(step_text, callback_data="toggle_step"),
-        InlineKeyboardButton(vr_text, callback_data="cycle_view"),
-        InlineKeyboardButton(res_text, callback_data="cycle_res")
-    )
+    kb.add(InlineKeyboardButton("🔨 Строй", callback_data="build"), InlineKeyboardButton(paint_text, callback_data="paint"), InlineKeyboardButton(break_text, callback_data="break"))
+    kb.row(InlineKeyboardButton(jump_text, callback_data="toggle_jump"), InlineKeyboardButton(step_text, callback_data="toggle_step"), InlineKeyboardButton(vr_text, callback_data="cycle_view"), InlineKeyboardButton(res_text, callback_data="cycle_res"))
     return kb
 
 def world_to_view(wx, wy, wz, px, py, pz, angle, tilt):
@@ -911,10 +825,7 @@ def draw_poly_tex(pix, zb, v2d, tex, lf):
             a, b = v2d[i], v2d[(i+1)%len(v2d)]
             if (a[1]<=py<b[1]) or (b[1]<=py<a[1]):
                 t = (py-a[1])/(b[1]-a[1])
-                iz = 1.0/a[2] + (1.0/b[2]-1.0/a[2])*t
-                iu = a[3]/a[2] + (b[3]/b[2]-a[3]/a[2])*t
-                iv = a[4]/a[2] + (b[4]/b[2]-a[4]/a[2])*t
-                inter.append((a[0]+(b[0]-a[0])*t, iz, iu, iv))
+                inter.append((a[0]+(b[0]-a[0])*t, 1.0/a[2] + (1.0/b[2]-1.0/a[2])*t, a[3]/a[2] + (b[3]/b[2]-a[3]/a[2])*t, a[4]/a[2] + (b[4]/b[2]-a[4]/a[2])*t))
         inter.sort(key=lambda q:q[0])
         for i in range(0, len(inter)-1, 2):
             x1, z1, u1, v1 = inter[i]; x2, z2, u2, v2 = inter[i+1]
@@ -945,17 +856,14 @@ def draw_inv(img, d, w, h, st, srv=None):
         d.line((cx+125, cy+50, cx+135, cy+50), fill=(255,255,255), width=2)
     elif mode == "furnace":
         cx, cy = w//2 - 40, h//2 - 120
-        slots[50] = (cx, cy) 
-        slots[51] = (cx, cy + 60) 
-        slots[52] = (cx + 80, cy + 30) 
+        slots[50] = (cx, cy); slots[51] = (cx, cy + 60); slots[52] = (cx + 80, cy + 30) 
         d.text((cx, cy-15), "Furnace", fill=(255,255,255))
         if srv and st["furnace_pos"] in srv.blocks:
             b = srv.blocks[st["furnace_pos"]]
-            pct = b.get("smelt_time", 0) / 10.0
+            pct = b.get("smelt_time", 0) / 5.0
             d.rectangle((cx + 40, cy + 35, cx + 70, cy + 45), outline=(255,255,255))
             if pct > 0: d.rectangle((cx + 40, cy + 35, cx + 40 + 30*pct, cy + 45), fill=(255,255,255))
-            if b.get("burn_time", 0) > 0:
-                d.text((cx + 10, cy + 42), "🔥", fill=(255,100,0))
+            if b.get("burn_time", 0) > 0: d.text((cx + 10, cy + 42), "🔥", fill=(255,100,0))
     elif mode == "chest":
         cx, cy = w//2 - 100, h//2 - 140
         for r in range(3):
@@ -981,35 +889,27 @@ def draw_inv(img, d, w, h, st, srv=None):
         
         item = None
         if sid < 50: item = st["inv"].get(sid)
-        elif 50 <= sid <= 52 and srv and st["furnace_pos"] in srv.blocks:
-            item = srv.blocks[st["furnace_pos"]].get("inv", {}).get(sid - 50)
-        elif 60 <= sid <= 74 and srv and st.get("chest_pos") in srv.blocks:
-            item = srv.blocks[st["chest_pos"]].get("inv", {}).get(sid - 60)
+        elif 50 <= sid <= 52 and srv and st["furnace_pos"] in srv.blocks: item = srv.blocks[st["furnace_pos"]].get("inv", {}).get(sid - 50)
+        elif 60 <= sid <= 74 and srv and st.get("chest_pos") in srv.blocks: item = srv.blocks[st["chest_pos"]].get("inv", {}).get(sid - 60)
 
         if item:
             icon = get_inv_icon(item["type"])
             img.paste(icon, (sx+4, sy+4), icon)
-            if item.get("durability") is None:
-                d.text((sx+20, sy+20), str(item["count"]), fill=(255,255,0))
+            if item.get("durability") is None: d.text((sx+20, sy+20), str(item["count"]), fill=(255,255,0))
             if "durability" in item:
-                max_dur = 120 if "diamond" in item["type"] else 90 if "iron" in item["type"] else 66 if "stone" in item["type"] else 30
+                max_dur = 120 if "diamond" in item["type"] or "alm_" in item["type"] else 90 if "iron" in item["type"] or "zhel_" in item["type"] else 66 if "stone" in item["type"] or "kam_" in item["type"] else 30
                 dur_pct = max(0, item["durability"] / max_dur)
                 d.rectangle((sx+4, sy+32, sx+32, sy+34), fill=(50,50,50))
                 d.rectangle((sx+4, sy+32, sx+4+28*dur_pct, sy+34), fill=(0,255,0) if dur_pct>0.3 else (255,0,0))
             
-    if st["drag_item"]:
-        d.text((10, 10), f"Dragging: {st['drag_item']['count']}x {st['drag_item']['type']}", fill=(0,255,0))
+    if st["drag_item"]: d.text((10, 10), f"Dragging: {st['drag_item']['count']}x {st['drag_item']['type']}", fill=(0,255,0))
 
 def update_crafting(st):
     mode = st.get("inv_mode", "normal")
     if mode in ("furnace", "chest"): return
     
-    if mode == "workbench":
-        grid = [[st["inv"].get(30+r*3+c) for c in range(3)] for r in range(3)]
-        out_idx = 39
-    else:
-        grid = [[st["inv"].get(20+r*2+c) for c in range(2)] for r in range(2)]
-        out_idx = 24
+    if mode == "workbench": grid = [[st["inv"].get(30+r*3+c) for c in range(3)] for r in range(3)]; out_idx = 39
+    else: grid = [[st["inv"].get(20+r*2+c) for c in range(2)] for r in range(2)]; out_idx = 24
 
     def shrink(g):
         rows = [r for r in g if any(x is not None for x in r)]
@@ -1023,10 +923,8 @@ def update_crafting(st):
     if sg == [["wood"]]: res = {"type": "planks", "count": 4}
     elif sg == [["planks"], ["planks"]]: res = {"type": "stick", "count": 4}
     elif sg == [["planks", "planks"], ["planks", "planks"]]: res = {"type": "workbench", "count": 1}
-    elif sg == [["cobblestone", "cobblestone", "cobblestone"], ["cobblestone", None, "cobblestone"], ["cobblestone", "cobblestone", "cobblestone"]]: 
-        res = {"type": "furnace", "count": 1}
-    elif sg == [["planks", "planks", "planks"], ["planks", None, "planks"], ["planks", "planks", "planks"]]: 
-        res = {"type": "chest", "count": 1}
+    elif sg == [["cobblestone", "cobblestone", "cobblestone"], ["cobblestone", None, "cobblestone"], ["cobblestone", "cobblestone", "cobblestone"]]: res = {"type": "furnace", "count": 1}
+    elif sg == [["planks", "planks", "planks"], ["planks", None, "planks"], ["planks", "planks", "planks"]]: res = {"type": "chest", "count": 1}
     # Pickaxes
     elif sg == [["planks", "planks", "planks"], [None, "stick", None], [None, "stick", None]]: res = {"type": "wood_pickaxe", "count": 1, "durability": 30}
     elif sg == [["cobblestone", "cobblestone", "cobblestone"], [None, "stick", None], [None, "stick", None]]: res = {"type": "stone_pickaxe", "count": 1, "durability": 66}
@@ -1037,6 +935,21 @@ def update_crafting(st):
     elif sg in ([[["cobblestone", "cobblestone"], ["cobblestone", "stick"], [None, "stick"]], [["cobblestone", "cobblestone"], ["stick", "cobblestone"], ["stick", None]]]): res = {"type": "stone_axe", "count": 1, "durability": 66}
     elif sg in ([[["iron_ingot", "iron_ingot"], ["iron_ingot", "stick"], [None, "stick"]], [["iron_ingot", "iron_ingot"], ["stick", "iron_ingot"], ["stick", None]]]): res = {"type": "iron_axe", "count": 1, "durability": 90}
     elif sg in ([[["diamond", "diamond"], ["diamond", "stick"], [None, "stick"]], [["diamond", "diamond"], ["stick", "diamond"], ["stick", None]]]): res = {"type": "diamond_axe", "count": 1, "durability": 120}
+    # Shovels
+    elif sg == [["planks"], ["stick"], ["stick"]]: res = {"type": "wood_lopata", "count": 1, "durability": 30}
+    elif sg == [["cobblestone"], ["stick"], ["stick"]]: res = {"type": "stone_lopata", "count": 1, "durability": 66}
+    elif sg == [["iron_ingot"], ["stick"], ["stick"]]: res = {"type": "iron_lopata", "count": 1, "durability": 90}
+    elif sg == [["diamond"], ["stick"], ["stick"]]: res = {"type": "diamond_lopata", "count": 1, "durability": 120}
+    # Hoes
+    elif sg in ([[["planks", "planks"], ["stick", None], ["stick", None]], [["planks", "planks"], [None, "stick"], [None, "stick"]]]): res = {"type": "wood_motiga", "count": 1, "durability": 30}
+    elif sg in ([[["cobblestone", "cobblestone"], ["stick", None], ["stick", None]], [["cobblestone", "cobblestone"], [None, "stick"], [None, "stick"]]]): res = {"type": "stone_motiga", "count": 1, "durability": 66}
+    elif sg in ([[["iron_ingot", "iron_ingot"], ["stick", None], ["stick", None]], [["iron_ingot", "iron_ingot"], [None, "stick"], [None, "stick"]]]): res = {"type": "iron_motiga", "count": 1, "durability": 90}
+    elif sg in ([[["diamond", "diamond"], ["stick", None], ["stick", None]], [["diamond", "diamond"], [None, "stick"], [None, "stick"]]]): res = {"type": "diamond_motiga", "count": 1, "durability": 120}
+    # Swords
+    elif sg == [["planks"], ["planks"], ["stick"]]: res = {"type": "wood_mech", "count": 1, "durability": 30}
+    elif sg == [["cobblestone"], ["cobblestone"], ["stick"]]: res = {"type": "stone_mech", "count": 1, "durability": 66}
+    elif sg == [["iron_ingot"], ["iron_ingot"], ["stick"]]: res = {"type": "iron_mech", "count": 1, "durability": 90}
+    elif sg == [["diamond"], ["diamond"], ["stick"]]: res = {"type": "diamond_mech", "count": 1, "durability": 120}
     
     elif sg == [["coal"], ["stick"]]: res = {"type": "torch", "count": 4}
     
@@ -1052,50 +965,6 @@ def update_crafting(st):
     else:
         if out_idx in st["inv"]: del st["inv"][out_idx]
 
-def close_inv(st):
-    st["inv_open"] = False
-    indices = list(range(20, 24)) + list(range(30, 39))
-    for i in indices:
-        if i in st["inv"]:
-            item = st["inv"].pop(i)
-            free = next((k for k in range(20) if k not in st["inv"]), None)
-            if free is not None: st["inv"][free] = item
-    if 24 in st["inv"]: del st["inv"][24]
-    if 39 in st["inv"]: del st["inv"][39]
-    if st.get("drag_item"):
-        free = next((k for k in range(20) if k not in st["inv"]), None)
-        if free is not None: 
-            st["inv"][free] = st["drag_item"]
-            st["drag_item"] = None
-            
-    if st.get("inv_cursor", 0) >= 5:
-        st["inv_cursor"] = 0
-
-def get_slot_item(st, srv, idx):
-    if idx < 50: return st["inv"].get(idx)
-    elif 50 <= idx <= 52:
-        b = srv.blocks.get(st.get("furnace_pos"))
-        if b and b.get("type") == "furnace": return b.get("inv", {}).get(idx-50)
-    elif 60 <= idx <= 74:
-        b = srv.blocks.get(st.get("chest_pos"))
-        if b and b.get("type") == "chest": return b.get("inv", {}).get(idx-60)
-    return None
-
-def set_slot_item(st, srv, idx, item):
-    if idx < 50:
-        if item: st["inv"][idx] = item
-        elif idx in st["inv"]: del st["inv"][idx]
-    elif 50 <= idx <= 52:
-        b = srv.blocks.get(st.get("furnace_pos"))
-        if b and b.get("type") == "furnace":
-            if "inv" not in b: b["inv"] = {0:None, 1:None, 2:None}
-            b["inv"][idx-50] = item
-    elif 60 <= idx <= 74:
-        b = srv.blocks.get(st.get("chest_pos"))
-        if b and b.get("type") == "chest":
-            if "inv" not in b: b["inv"] = {i:None for i in range(15)}
-            b["inv"][idx-60] = item
-
 def render_scene(px, py, pz, pa, pt, uid, s_id):
     srv = SERVERS[s_id]
     st = srv.players[uid]
@@ -1108,8 +977,7 @@ def render_scene(px, py, pz, pa, pt, uid, s_id):
     img = Image.new("RGBA", (img_w, img_h), sky_col)
 
     if st.get("inv_open"):
-        if img_w != out_w or img_h != out_h:
-            img = img.resize((out_w, out_h), Image.Resampling.NEAREST)
+        if img_w != out_w or img_h != out_h: img = img.resize((out_w, out_h), Image.Resampling.NEAREST)
         d = ImageDraw.Draw(img)
         draw_inv(img, d, out_w, out_h, st, srv)
         bio = io.BytesIO()
@@ -1134,12 +1002,7 @@ def render_scene(px, py, pz, pa, pt, uid, s_id):
             
         v_clip = clip_near([world_to_view(wx,wy,wz, px,py,pz, pa,pt) + ((FACE_UVS[k%4][0], FACE_UVS[k%4][1]) if face.get("tex") else ()) for k, (wx,wy,wz) in enumerate(face["verts"])])
         if len(v_clip)<3: continue
-        proj = []
-        for v in v_clip:
-            py_p = horiz_y - (v[2]/v[1])*scale
-            px_p = img_w/2 + (v[0]/v[1])*scale
-            proj.append((px_p, py_p, v[1]) + (v[3:] if len(v)>3 else ()))
-        
+        proj = [(img_w/2 + (v[0]/v[1])*scale, horiz_y - (v[2]/v[1])*scale, v[1]) + (v[3:] if len(v)>3 else ()) for v in v_clip]
         final_lf = clamp(face["lf"] * global_light + face.get("tl", 0.0), 0.15, 1.0)
         
         if face.get("tex"): draw_poly_tex(pix, zbuf, proj, face["tex"], final_lf)
@@ -1170,7 +1033,6 @@ def render_scene(px, py, pz, pa, pt, uid, s_id):
                 n = face_normal(b_verts, idx)
                 if vec_dot(n, (px-ox, py-oy, pz-(oz+1))) <= 0: continue
                 lf = calc_light(n)
-                
                 final_lf = clamp(lf * global_light + ptl, 0.15, 1.0)
                 
                 vc = clip_near([world_to_view(wx,wy,wz, px,py,pz, pa,pt) + (FACE_UVS[k%4][0], FACE_UVS[k%4][1]) for k, (wx,wy,wz) in enumerate([b_verts[i] for i in idx])])
@@ -1179,44 +1041,29 @@ def render_scene(px, py, pz, pa, pt, uid, s_id):
                 
                 if is_head and not flash:
                     skin_data = player_skins.get(pid)
-                    if isinstance(skin_data, dict):
-                        t = skin_data["face"] if fn == "front" else skin_data["base"]
-                    else:
-                        t = DEFAULT_FACE_TEX if fn == "front" else DEFAULT_BASE_TEX
+                    if isinstance(skin_data, dict): t = skin_data["face"] if fn == "front" else skin_data["base"]
+                    else: t = DEFAULT_FACE_TEX if fn == "front" else DEFAULT_BASE_TEX
                     draw_poly_tex(pix, zbuf, proj, t, final_lf)
                 elif not is_head and fn == "front" and held_item and not flash:
-                    t = get_body_front_tex(col, held_item["type"])
-                    draw_poly_tex(pix, zbuf, proj, t, final_lf)
+                    draw_poly_tex(pix, zbuf, proj, get_body_front_tex(col, held_item["type"]), final_lf)
                 else: 
                     draw_poly_color(pix, zbuf, proj, apply_light(col, final_lf))
 
         nv = world_to_view(ox, oy, oz + 2.4, px, py, pz, pa, pt)
         if nv[1] >= NEAR_CLIP:
-            px_n = img_w/2 + (nv[0]/nv[1])*scale
-            py_n = horiz_y - (nv[2]/nv[1])*scale
-            px_out = px_n * (out_w / img_w)
-            py_out = py_n * (out_h / img_h)
-            names_to_draw.append((px_out, py_out, ps["name"]))
+            names_to_draw.append((img_w/2 + (nv[0]/nv[1])*scale * (out_w/img_w), horiz_y - (nv[2]/nv[1])*scale * (out_h/img_h), ps["name"]))
 
-    if img_w != out_w or img_h != out_h:
-        img = img.resize((out_w, out_h), Image.Resampling.NEAREST)
-
+    if img_w != out_w or img_h != out_h: img = img.resize((out_w, out_h), Image.Resampling.NEAREST)
     d = ImageDraw.Draw(img)
 
     for px_out, py_out, name_text in names_to_draw:
-        try:
-            bbox = d.textbbox((0, 0), name_text, font=FONT)
-            tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
-        except:
-            tw, th = len(name_text)*6, 12
+        try: bbox = d.textbbox((0, 0), name_text, font=FONT); tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
+        except: tw, th = len(name_text)*6, 12
         d.rectangle((px_out - tw/2 - 2, py_out - th/2 - 2, px_out + tw/2 + 2, py_out + th/2 + 2), fill=(0,0,0,128))
         d.text((px_out - tw/2, py_out - th/2), name_text, font=FONT, fill=(255,255,255))
 
-    d.line((out_w/2-5, out_h/2, out_w/2+5, out_h/2), fill=(255,255,255))
-    d.line((out_w/2, out_h/2-5, out_w/2, out_h/2+5), fill=(255,255,255))
-
-    d.rectangle((5,5, 150,25), fill=(0,0,0,150))
-    d.text((10,8), f"X:{px:.1f} Z:{pz-1.6:.1f} Y:{py:.1f}", fill=(255,255,255))
+    d.line((out_w/2-5, out_h/2, out_w/2+5, out_h/2), fill=(255,255,255)); d.line((out_w/2, out_h/2-5, out_w/2, out_h/2+5), fill=(255,255,255))
+    d.rectangle((5,5, 150,25), fill=(0,0,0,150)); d.text((10,8), f"X:{px:.1f} Z:{pz-1.6:.1f} Y:{py:.1f}", fill=(255,255,255))
 
     for i in range(5):
         hx, hy = out_w - 90 + i*16, 10
@@ -1230,127 +1077,36 @@ def render_scene(px, py, pz, pa, pt, uid, s_id):
             d.rectangle((hx+i*40, out_h-45, hx+i*40+36, out_h-9), fill=(100,100,100,150), outline=(255,255,255) if i==st["inv_cursor"] and not st.get("inv_open") else None)
             item = st["inv"].get(i)
             if item:
-                icon = get_inv_icon(item["type"])
-                img.paste(icon, (hx+i*40+4, out_h-41), icon)
-                if item.get("durability") is None:
-                    d.text((hx+i*40+20, out_h-25), str(item["count"]), fill=(255,255,0))
+                icon = get_inv_icon(item["type"]); img.paste(icon, (hx+i*40+4, out_h-41), icon)
+                if item.get("durability") is None: d.text((hx+i*40+20, out_h-25), str(item["count"]), fill=(255,255,0))
                 if "durability" in item:
                     max_dur = 120 if "diamond" in item["type"] else 90 if "iron" in item["type"] else 66 if "stone" in item["type"] else 30
                     dur_pct = max(0, item["durability"] / max_dur)
                     d.rectangle((hx+i*40+4, out_h-13, hx+i*40+32, out_h-11), fill=(50,50,50))
                     d.rectangle((hx+i*40+4, out_h-13, hx+i*40+4+28*dur_pct, out_h-11), fill=(0,255,0) if dur_pct>0.3 else (255,0,0))
 
-    bio = io.BytesIO()
-    img.convert("RGB").save(bio, "JPEG", quality=90)
+    bio = io.BytesIO(); img.convert("RGB").save(bio, "JPEG", quality=90)
     return bio.getvalue()
-
-def ray_pick(px, py, pz, pa, pt, s_id, ignore_uid=None):
-    srv = SERVERS[s_id]
-    dx, dy, dz = math.sin(pa)*math.cos(pt), math.cos(pa)*math.cos(pt), -math.sin(pt)
-    t = 0.0
-    prev_cb = None
-    while t <= RAY_MAX_DIST:
-        wx, wy, wz = px+dx*t, py+dy*t, pz+dz*t
-        for pid, ps in srv.players.items():
-            if pid == ignore_uid or not ps.get("online", True): continue
-            if abs(wx-ps["x"])<0.3 and abs(wy-ps["y"])<0.3 and ps["z"]<=wz<=ps["z"]+2.0:
-                return ("player", pid, None, t)
-        cb = (int(math.floor(wx)), int(math.floor(wy)), int(math.floor(wz)))
-        if cb in srv.blocks: return ("block", cb, prev_cb, t)
-        prev_cb = cb
-        t += RAY_STEP
-    return None
-
-async def broadcast_chat(s_id, txt):
-    if txt: SERVERS[s_id].broadcast(txt)
-    cap = "\n".join(SERVERS[s_id].chat) if SERVERS[s_id].chat else "🎮 Приятной игры!"
-    for uid, st in list(SERVERS[s_id].players.items()):
-        if st.get("msg_id") and st.get("online"):
-            try: await bot.edit_message_caption(caption=cap, chat_id=uid, message_id=st["msg_id"], reply_markup=make_keyboard(uid))
-            except Exception: pass
-
-async def send_view(cid, uid):
-    s_id = user_server_map.get(uid)
-    if not s_id: return
-    st = get_st(uid)
-    if not st: return
-    
-    try:
-        kb = make_keyboard(uid)
-        if st.get("inv_open"):
-            kb = InlineKeyboardMarkup(row_width=3)
-            kb.add(InlineKeyboardButton("Вверх ⬆️", callback_data="inv_u"))
-            kb.add(InlineKeyboardButton("Влево ⬅️", callback_data="inv_l"), InlineKeyboardButton("Взять/Класть ✋", callback_data="inv_click"), InlineKeyboardButton("Вправо ➡️", callback_data="inv_r"))
-            kb.add(InlineKeyboardButton("Положить 1 шт. 🤏", callback_data="inv_click_1"), InlineKeyboardButton("Вниз ⬇️", callback_data="inv_d"), InlineKeyboardButton("❌ Закрыть", callback_data="inv_close"))
-
-        async with RENDER_SEMAPHORE:
-            img_bytes = await asyncio.to_thread(render_scene, st["x"], st["y"], st["z"]+1.6, st["angle"], st["tilt"], uid, s_id)
-            
-        cap = "\n".join(SERVERS[s_id].chat) if SERVERS[s_id].chat else "🎮 Приятной игры!"
-        kb_str = kb.to_json()
-        
-        img_hash = hashlib.md5(img_bytes).hexdigest()
-        current_state = f"{img_hash}_{kb_str}_{cap}"
-        
-        if st.get("last_state_hash") == current_state:
-            return 
-            
-        st["last_state_hash"] = current_state
-        
-        if st.get("msg_id"):
-            try:
-                bio_edit = io.BytesIO(img_bytes)
-                bio_edit.name = "s.jpg" 
-                await bot.edit_message_media(chat_id=cid, message_id=st["msg_id"], media=InputMediaPhoto(bio_edit, caption=cap), reply_markup=kb)
-                return
-            except ApiTelegramException as e:
-                err = str(e).lower()
-                if "not modified" in err:
-                    return
-            except Exception: pass
-
-        bio_send = io.BytesIO(img_bytes)
-        bio_send.name = "s.jpg"
-        msg = await bot.send_photo(cid, bio_send, caption=cap, reply_markup=kb)
-        st["msg_id"] = msg.message_id
-    finally:
-        pass
-
-def server_menu():
-    kb = InlineKeyboardMarkup()
-    kb.add(InlineKeyboardButton(f"🌈 Классика [{sum(1 for p in SERVERS[1].players.values() if p.get('online'))} чел]", callback_data="join_1"))
-    kb.add(InlineKeyboardButton(f"🌲 Выживание [{sum(1 for p in SERVERS[2].players.values() if p.get('online'))} чел]", callback_data="join_2"))
-    return kb
 
 @bot.message_handler(commands=["start", "leave"])
 async def h_start(m):
     uid = m.from_user.id
     try: await bot.delete_message(m.chat.id, m.message_id)
     except: pass
-    
     if m.text.startswith("/start"):
         try:
-            conn = sqlite3.connect(str(DB_PATH))
-            conn.execute("INSERT OR IGNORE INTO users (id, username) VALUES (?, ?)", (uid, m.from_user.first_name))
+            conn = sqlite3.connect(str(DB_PATH)); conn.execute("INSERT OR IGNORE INTO users (id, username) VALUES (?, ?)", (uid, m.from_user.first_name))
             conn.commit(); conn.close()
         except: pass
-        
-    old_s = user_server_map.get(uid)
-    changed = False
-    
+    old_s = user_server_map.get(uid); changed = False
     if old_s and old_s in SERVERS:
         if uid in SERVERS[old_s].players:
             ps = SERVERS[old_s].players[uid]
             if ps["online"]:
-                ps["online"] = False
-                changed = True
-                SERVERS[old_s].broadcast(f"💨 {ps['name']} вышел")
+                ps["online"] = False; changed = True; SERVERS[old_s].broadcast(f"💨 {ps['name']} вышел")
                 tasks = [send_view(p_uid, p_uid) for p_uid, p_st in SERVERS[old_s].players.items() if p_uid != uid and p_st.get("online")]
                 if tasks: await asyncio.gather(*tasks, return_exceptions=True)
-                    
-        user_server_map.pop(uid, None)
-        save_all_data()
-        
+        user_server_map.pop(uid, None); save_all_data()
     msg = await bot.send_message(m.chat.id, "Выбери сервер:", reply_markup=server_menu())
     ACTIVE_MENUS[uid] = {"chat_id": m.chat.id, "msg_id": msg.message_id}
     if changed: await update_server_menus()
@@ -1360,147 +1116,91 @@ async def h_give(m):
     if m.from_user.id != ADMIN_ID: return
     uid = m.from_user.id
     s_id = user_server_map.get(uid)
-    if not s_id or s_id != 2:
-        await bot.send_message(m.chat.id, "Зайди на сервер Выживания для выдачи предметов.")
-        return
+    if not s_id or s_id != 2: return await bot.send_message(m.chat.id, "Зайди на сервер Выживания.")
     st = get_st(uid)
     if not st: return
-    
     parts = m.text.split()
     if len(parts) < 2:
-        items_str = "grass, dirt, stone, bedrock, wood, leaves, planks, workbench, chest, furnace, cobblestone, coal_ore, iron_ore, diamond_ore, stick, wood_pickaxe, stone_pickaxe, iron_pickaxe, diamond_pickaxe, wood_axe, stone_axe, iron_axe, diamond_axe, coal, iron, diamond, iron_ingot, torch"
-        await bot.send_message(m.chat.id, f"Использование: /give <предмет> [кол-во]\n\nДоступные предметы:\n{items_str}")
-        return
+        items_str = "grass, dirt, stone, bedrock, wood, leaves, planks, workbench, chest, furnace, cobblestone, coal_ore, iron_ore, diamond_ore, stick, coal, iron, diamond, iron_ingot, torch\n" + ", ".join(TOOLS)
+        return await bot.send_message(m.chat.id, f"Использование: /give <предмет> [кол-во]\n\nДоступные предметы:\n{items_str}")
         
-    item_type = parts[1]
-    count = int(parts[2]) if len(parts) > 2 else 1
-    
+    item_type, count = parts[1], int(parts[2]) if len(parts) > 2 else 1
     added = False
     for i in range(20):
         if i in st["inv"] and st["inv"][i]["type"] == item_type and st["inv"][i].get("durability") is None:
-            st["inv"][i]["count"] += count
-            added = True
-            break
+            st["inv"][i]["count"] += count; added = True; break
 
     if not added:
         for i in range(20):
             if i not in st["inv"]:
                 st["inv"][i] = {"type": item_type, "count": count}
-                if "pickaxe" in item_type or "axe" in item_type:
-                    max_dur = 120 if "diamond" in item_type else 90 if "iron" in item_type else 66 if "stone" in item_type else 30
-                    st["inv"][i]["durability"] = max_dur
-                added = True
-                break
+                if item_type in TOOLS: st["inv"][i]["durability"] = 120 if "diamond" in item_type else 90 if "iron" in item_type else 66 if "stone" in item_type else 30
+                added = True; break
                 
     if added:
         await bot.send_message(m.chat.id, f"✅ Выдано {count}x {item_type}")
-        st["last_state_hash"] = None
-        asyncio.create_task(send_view(m.chat.id, uid))
-    else:
-        await bot.send_message(m.chat.id, "❌ Инвентарь полон!")
+        st["last_state_hash"] = None; asyncio.create_task(send_view(m.chat.id, uid))
+    else: await bot.send_message(m.chat.id, "❌ Инвентарь полон!")
 
-@bot.message_handler(commands=["reset"])
-async def h_reset(m):
+@bot.message_handler(commands=["reset", "block"])
+async def admin_cmds(m):
     if m.from_user.id != ADMIN_ID: return
-    parts = m.text.split()
-    if len(parts)==3 and parts[2] in ["1","2"]:
-        s_id = int(parts[2])
-        SERVERS[s_id].generate()
-        for p in SERVERS[s_id].players.values():
-            if s_id == 1: p["x"], p["y"] = SERVERS[s_id].size/2, SERVERS[s_id].size/2
-            else: p["x"], p["y"] = 0.5, 0.5
-            p["z"] = get_ground_z(p["x"], p["y"], SERVERS[s_id], p.get("z"))
-            p["hp"] = 10
-            p["inv"].clear()
-            p["furnace_pos"] = None
-            p["chest_pos"] = None
-        await bot.send_message(m.chat.id, f"Сервер {s_id} сброшен (сгенерирован новый мир)!")
-        for uid, p in SERVERS[s_id].players.items(): 
-            if p.get("online"): await send_view(uid, uid)
-
-@bot.message_handler(commands=["block"])
-async def h_block(m):
     try: await bot.delete_message(m.chat.id, m.message_id)
     except: pass
+    if m.text.startswith("/reset"):
+        parts = m.text.split()
+        if len(parts)==3 and parts[2] in ["1","2"]:
+            s_id = int(parts[2]); SERVERS[s_id].generate()
+            for p in SERVERS[s_id].players.values():
+                p["x"], p["y"] = (SERVERS[s_id].size/2, SERVERS[s_id].size/2) if s_id==1 else (0.5, 0.5)
+                p["z"] = get_ground_z(p["x"], p["y"], SERVERS[s_id], p.get("z")); p["hp"] = 10; p["inv"].clear(); p["furnace_pos"] = None; p["chest_pos"] = None
+            await bot.send_message(m.chat.id, f"Сервер {s_id} сброшен!")
+            for uid, p in SERVERS[s_id].players.items(): 
+                if p.get("online"): await send_view(uid, uid)
 
-@bot.message_handler(content_types=["text"])
-async def h_text(m):
-    uid = m.from_user.id
-    if m.text.startswith("/"): return
+@bot.message_handler(content_types=["text", "photo"])
+async def h_text_photo(m):
+    uid = m.from_user.id; st = get_st(uid); s_id = user_server_map.get(uid)
+    if m.content_type == "text" and m.text.startswith("/"): return
     try: await bot.delete_message(m.chat.id, m.message_id)
     except: pass
-
-    s_id = user_server_map.get(uid)
-    if not s_id: return
-    st = get_st(uid)
-    if not st or not st.get("online"): return
-
+    if not s_id or not st or not st.get("online"): return
     st["last_action"] = time.time()
-    await broadcast_chat(s_id, f"💬 {st['name']}: {m.text[:100]}")
+    
+    if m.content_type == "text": await broadcast_chat(s_id, f"💬 {st['name']}: {m.text[:100]}")
+    elif m.content_type == "photo":
+        try:
+            fi = await bot.get_file(m.photo[-1].file_id); down_file = await bot.download_file(fi.file_path)
+            tex = ImageOps.fit(Image.open(io.BytesIO(down_file)).convert("RGBA"), (128, 128), Image.Resampling.LANCZOS)
+            mode = pending_skin_mode.get(uid); tasks = []
+            if mode and mode[0] == "block" and s_id == 1:
+                SERVERS[1].blocks[mode[1]]["tex"] = tex; del pending_skin_mode[uid]; SERVERS[1].rebuild_mesh()
+                bx, by = mode[1][0], mode[1][1]
+                for p_uid, ps in SERVERS[1].players.items():
+                    if ps.get("online") and (p_uid == uid or (ps["x"] - bx)**2 + (ps["y"] - by)**2 <= ps.get("view_radius", 8)**2): tasks.append(send_view(p_uid, p_uid))
+            elif m.caption and "/skin" in m.caption.lower():
+                player_skins[uid] = {"base": tex.copy(), "face": bake_face(tex)}; await broadcast_chat(s_id, f"👕 {st['name']} установил новый скин!")
+                for p_uid, ps in SERVERS[s_id].players.items():
+                    if ps.get("online") and (p_uid == uid or (ps["x"] - st["x"])**2 + (ps["y"] - st["y"])**2 <= ps.get("view_radius", 8)**2): tasks.append(send_view(p_uid, p_uid))
+            if tasks: await asyncio.gather(*tasks, return_exceptions=True)
+        except Exception: pass
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("join_"))
 async def cb_join(c):
-    s_id = int(c.data.split("_")[1])
-    uid = c.from_user.id
+    s_id = int(c.data.split("_")[1]); uid = c.from_user.id
     ACTIVE_MENUS.pop(uid, None)
     try: await bot.delete_message(c.message.chat.id, c.message.message_id)
     except: pass
-    
-    st = init_player(uid, s_id, c.from_user.first_name)
-    SERVERS[s_id].broadcast(f"🎉 {st['name']} присоединился!")
-    
+    st = init_player(uid, s_id, c.from_user.first_name); SERVERS[s_id].broadcast(f"🎉 {st['name']} присоединился!")
     tasks = [send_view(p_uid, p_uid) for p_uid, ps in SERVERS[s_id].players.items() if ps.get("online")]
     if tasks: await asyncio.gather(*tasks, return_exceptions=True)
     await update_server_menus()
 
-@bot.message_handler(content_types=["photo"])
-async def h_photo(m):
-    uid = m.from_user.id
-    st = get_st(uid)
-    if not st: return
-    st["last_action"] = time.time()
-    s_id = user_server_map.get(uid)
-    un = st["name"]
-    try: await bot.delete_message(m.chat.id, m.message_id)
-    except: pass
-    
-    try:
-        fi = await bot.get_file(m.photo[-1].file_id)
-        down_file = await bot.download_file(fi.file_path)
-        im = Image.open(io.BytesIO(down_file)).convert("RGBA") 
-        tex = ImageOps.fit(im, (128, 128), Image.Resampling.LANCZOS)
-        
-        mode = pending_skin_mode.get(uid)
-        tasks = []
-        
-        if mode and mode[0] == "block" and s_id == 1:
-            SERVERS[1].blocks[mode[1]]["tex"] = tex
-            del pending_skin_mode[uid]
-            SERVERS[1].rebuild_mesh()
-            bx, by = mode[1][0], mode[1][1]
-            for p_uid, ps in SERVERS[1].players.items():
-                if not ps.get("online"): continue
-                if p_uid == uid or (ps["x"] - bx)**2 + (ps["y"] - by)**2 <= ps.get("view_radius", 8)**2:
-                    tasks.append(send_view(p_uid, p_uid))
-            
-        elif m.caption and "/skin" in m.caption.lower():
-            player_skins[uid] = {"base": tex.copy(), "face": bake_face(tex)}
-            await broadcast_chat(s_id, f"👕 {un} установил новый скин!")
-            for p_uid, ps in SERVERS[s_id].players.items():
-                if not ps.get("online"): continue
-                if p_uid == uid or (ps["x"] - st["x"])**2 + (ps["y"] - st["y"])**2 <= ps.get("view_radius", 8)**2:
-                    tasks.append(send_view(p_uid, p_uid))
-
-        if tasks: await asyncio.gather(*tasks, return_exceptions=True)
-    except Exception as e: pass
-
 @bot.callback_query_handler(func=lambda c: True)
 async def h_cb(c):
-    uid = c.from_user.id
-    s_id = user_server_map.get(uid)
+    uid = c.from_user.id; s_id = user_server_map.get(uid)
     if not s_id: return
-    st = get_st(uid)
-    st["last_action"] = time.time()
+    st = get_st(uid); st["last_action"] = time.time()
 
     if st.get("action_lock"): 
         try: await bot.answer_callback_query(c.id, "⏳")
@@ -1508,26 +1208,18 @@ async def h_cb(c):
         return
         
     st["action_lock"] = True
-    
     try:
         try: await bot.answer_callback_query(c.id)
         except: pass
-            
-        srv = SERVERS[s_id]
-        d = c.data
-        ev = False
+        srv = SERVERS[s_id]; d = c.data; ev = False
         
         if st.get("inv_open"):
-            c_idx = st["inv_cursor"]
-            mode = st.get("inv_mode", "normal")
+            c_idx = st["inv_cursor"]; mode = st.get("inv_mode", "normal")
             
             if d == "inv_u":
                 if mode == "workbench":
                     if 0 <= c_idx <= 4: c_idx += 15
-                    elif 5 <= c_idx <= 9:
-                        if c_idx in (5, 6): c_idx = 36
-                        elif c_idx in (7, 8): c_idx = 38
-                        elif c_idx == 9: c_idx = 39
+                    elif 5 <= c_idx <= 9: c_idx = 36 if c_idx in (5, 6) else 38 if c_idx in (7, 8) else 39
                     elif 10 <= c_idx <= 19: c_idx -= 5
                     elif 33 <= c_idx <= 38: c_idx -= 3
                 elif mode == "furnace":
@@ -1542,10 +1234,7 @@ async def h_cb(c):
                     elif 65 <= c_idx <= 74: c_idx -= 5
                 else: 
                     if 0 <= c_idx <= 4: c_idx += 15
-                    elif 5 <= c_idx <= 9:
-                        if c_idx in (5, 6): c_idx = 22
-                        elif c_idx in (7, 8): c_idx = 23
-                        elif c_idx == 9: c_idx = 24
+                    elif 5 <= c_idx <= 9: c_idx = 22 if c_idx in (5, 6) else 23 if c_idx in (7, 8) else 24
                     elif 10 <= c_idx <= 19: c_idx -= 5
                     elif c_idx in (22, 23): c_idx -= 2
 
@@ -1603,8 +1292,7 @@ async def h_cb(c):
                     elif c_idx in (21, 23): c_idx = 24
                     elif c_idx not in (4, 9, 14, 19, 24): c_idx += 1
                     
-            st["inv_cursor"] = c_idx
-            out_idx = 39 if mode == "workbench" else 24
+            st["inv_cursor"] = c_idx; out_idx = 39 if mode == "workbench" else 24
 
             if d == "inv_click_1":
                 c_id = st["inv_cursor"]
@@ -1615,8 +1303,7 @@ async def h_cb(c):
                         st["drag_item"]["count"] -= 1
                         if st["drag_item"]["count"] <= 0: st["drag_item"] = None
                     elif tmp["type"] == st["drag_item"]["type"] and tmp.get("durability") is None:
-                        tmp["count"] += 1
-                        st["drag_item"]["count"] -= 1
+                        tmp["count"] += 1; st["drag_item"]["count"] -= 1
                         if st["drag_item"]["count"] <= 0: st["drag_item"] = None
                 update_crafting(st)
                 
@@ -1625,60 +1312,33 @@ async def h_cb(c):
                 if c_id == out_idx and out_idx in st["inv"]:
                     if st.get("drag_item"):
                         free_slot = next((i for i in range(20) if i not in st["inv"]), None)
-                        if free_slot is not None:
-                            st["inv"][free_slot] = st["drag_item"]
-                            st["drag_item"] = None
-
+                        if free_slot is not None: st["inv"][free_slot] = st["drag_item"]; st["drag_item"] = None
                     if st.get("drag_item") is None:
-                        crafted = st["inv"].pop(out_idx)
-                        ops = crafted.pop("ops", 1)
-                        st["drag_item"] = crafted
-                        c_indices = range(30, 39) if mode == "workbench" else range(20, 24)
-                        for i in c_indices:
+                        crafted = st["inv"].pop(out_idx); ops = crafted.pop("ops", 1); st["drag_item"] = crafted
+                        for i in (range(30, 39) if mode == "workbench" else range(20, 24)):
                             if i in st["inv"]:
                                 st["inv"][i]["count"] -= ops
                                 if st["inv"][i]["count"] <= 0: del st["inv"][i]
                 elif c_id == 52: 
-                    tmp = get_slot_item(st, srv, 52)
-                    drag = st.get("drag_item")
-                    if tmp and not drag:
-                        st["drag_item"] = tmp
-                        set_slot_item(st, srv, 52, None)
-                    elif tmp and drag and tmp["type"] == drag["type"]:
-                        st["drag_item"]["count"] += tmp["count"]
-                        set_slot_item(st, srv, 52, None)
+                    tmp = get_slot_item(st, srv, 52); drag = st.get("drag_item")
+                    if tmp and not drag: st["drag_item"] = tmp; set_slot_item(st, srv, 52, None)
+                    elif tmp and drag and tmp["type"] == drag["type"]: st["drag_item"]["count"] += tmp["count"]; set_slot_item(st, srv, 52, None)
                 else:
-                    tmp = get_slot_item(st, srv, c_id)
-                    drag = st.get("drag_item")
+                    tmp = get_slot_item(st, srv, c_id); drag = st.get("drag_item")
                     if drag and tmp and tmp["type"] == drag["type"] and tmp.get("durability") is None:
-                        tmp["count"] += drag["count"]
-                        st["drag_item"] = None
-                    else:
-                        set_slot_item(st, srv, c_id, drag)
-                        st["drag_item"] = tmp
+                        tmp["count"] += drag["count"]; st["drag_item"] = None
+                    else: set_slot_item(st, srv, c_id, drag); st["drag_item"] = tmp
                 update_crafting(st)
-                
-            elif d == "inv_close": 
-                close_inv(st)
-            
-            await send_view(c.message.chat.id, uid)
-            return
+            elif d == "inv_close": close_inv(st)
+            await send_view(c.message.chat.id, uid); return
 
         elif d == "hotbar_prev":
-            if st.get("inv_cursor", 0) > 4: st["inv_cursor"] = 4
-            else: st["inv_cursor"] = (st["inv_cursor"] - 1) % 5
-            ev = True
+            st["inv_cursor"] = 4 if st.get("inv_cursor", 0) > 4 else (st["inv_cursor"] - 1) % 5; ev = True
         elif d == "hotbar_next":
-            if st.get("inv_cursor", 0) > 4: st["inv_cursor"] = 0
-            else: st["inv_cursor"] = (st["inv_cursor"] + 1) % 5
-            ev = True
-
+            st["inv_cursor"] = 0 if st.get("inv_cursor", 0) > 4 else (st["inv_cursor"] + 1) % 5; ev = True
         elif d == "toggle_step":
             cur = st.get("step_size", 1.0)
-            if cur == 1.0: st["step_size"] = 2.0
-            elif cur == 2.0: st["step_size"] = 0.5
-            else: st["step_size"] = 1.0
-            ev = True
+            st["step_size"] = 2.0 if cur == 1.0 else 0.5 if cur == 2.0 else 1.0; ev = True
 
         if d in ["move_f", "move_b", "move_l", "move_r", "move_fl", "move_fr", "move_bl", "move_br"]:
             f, s = 0, 0
@@ -1686,120 +1346,107 @@ async def h_cb(c):
             if "b" in d: f=-1
             if "l" in d: s=-1
             if "r" in d: s=1
-            a = st["angle"]
-            
-            step_size = st.get("step_size", 1.0)
+            a = st["angle"]; step_size = st.get("step_size", 1.0)
             nx = st["x"] + (math.sin(a)*f + math.cos(a)*s) * step_size
             ny = st["y"] + (math.cos(a)*f - math.sin(a)*s) * step_size
             
-            if srv.type == "classic":
-                nx, ny = clamp(nx, 0.5, srv.size-0.5), clamp(ny, 0.5, srv.size-0.5)
-                
-            if srv.type == "survival":
-                srv.load_chunks_around(nx, ny, radius=1)
-                
+            if srv.type == "classic": nx, ny = clamp(nx, 0.5, srv.size-0.5), clamp(ny, 0.5, srv.size-0.5)
+            if srv.type == "survival": srv.load_chunks_around(nx, ny, radius=1)
             tz = get_ground_z(nx, ny, srv, st["z"])
                 
-            if is_blocked(srv, st["x"], st["y"], st["z"]):
-                st["z"] += 1.0 
-                ev = True
+            if is_blocked(srv, st["x"], st["y"], st["z"]): st["z"] += 1.0; ev = True
             else:
                 diff = tz - st["z"]
                 if diff <= 0.1 or (0 < diff <= 1.5 and st["jump"]):
                     if not is_blocked(srv, nx, ny, tz): 
-                        st["x"], st["y"], st["z"] = nx, ny, tz
-                        ev = True
+                        st["x"], st["y"], st["z"] = nx, ny, tz; ev = True
                         if diff <= -4:
-                            st["hp"] -= (1 + int(abs(diff)-4)//2)
-                            st["flash_time"] = time.time()
+                            st["hp"] -= (1 + int(abs(diff)-4)//2); st["flash_time"] = time.time()
                             if st["hp"]<=0:
                                 await broadcast_chat(s_id, f"💀 {st['name']} разбился!")
                                 st["x"], st["y"], st["z"], st["hp"] = 0.5, 0.5, get_ground_z(0.5, 0.5, srv), 10
             st["jump"] = False
             
-        elif d == "refresh": 
-            st["angle"] = normalize_angle(st["angle"] + math.pi); ev = True
-            
+        elif d == "refresh": st["angle"] = normalize_angle(st["angle"] + math.pi); ev = True
         elif d.startswith("turn_"):
-            parts = d.split("_")
-            direction = parts[1]
-            angle = math.radians(int(parts[2]))
-            if direction == "l": st["angle"] = normalize_angle(st["angle"] - angle)
-            else: st["angle"] = normalize_angle(st["angle"] + angle)
+            parts = d.split("_"); direction, angle = parts[1], math.radians(int(parts[2]))
+            st["angle"] = normalize_angle(st["angle"] - angle) if direction == "l" else normalize_angle(st["angle"] + angle)
             ev = True
-            
         elif d.startswith("look_"):
-            parts = d.split("_")
-            direction = parts[1]
-            angle = math.radians(int(parts[2]))
-            if direction == "up": st["tilt"] = max(st["tilt"] - angle, MIN_TILT)
-            else: st["tilt"] = min(st["tilt"] + angle, MAX_TILT)
+            parts = d.split("_"); direction, angle = parts[1], math.radians(int(parts[2]))
+            st["tilt"] = max(st["tilt"] - angle, MIN_TILT) if direction == "up" else min(st["tilt"] + angle, MAX_TILT)
             ev = True
-
-        elif d == "toggle_jump": st["jump"] = not st["jump"]
-        elif d == "cycle_view": st["view_radius"] = 16 if st["view_radius"]==8 else 32 if st["view_radius"]==16 else 8
-        elif d == "cycle_res": st["res_level"] = st["res_level"]+1 if st["res_level"]<4 else 1
+        elif d == "toggle_jump": st["jump"] = not st["jump"]; ev = True
+        elif d == "cycle_view": st["view_radius"] = 16 if st["view_radius"]==8 else 32 if st["view_radius"]==16 else 8; ev = True
+        elif d == "cycle_res": st["res_level"] = st["res_level"]+1 if st["res_level"]<4 else 1; ev = True
         elif d == "paint":
             if srv.type == "classic":
                 pb = ray_pick(st["x"], st["y"], st["z"]+1.6, st["angle"], st["tilt"], s_id, uid)
                 if pb and pb[0]=="block": pending_skin_mode[uid] = ("block", pb[1])
                 try: await bot.edit_message_reply_markup(c.message.chat.id, c.message.message_id, reply_markup=make_keyboard(uid))
                 except: pass
-            else: 
-                st["inv_open"] = True; st["inv_mode"] = "normal"
+            else: st["inv_open"] = True; st["inv_mode"] = "normal"; ev = True
 
         elif d == "build":
-            pb = ray_pick(st["x"], st["y"], st["z"]+1.6, st["angle"], st["tilt"], s_id, uid)
-            if pb and pb[0]=="block" and (srv.type == "classic" or pb[3] <= 5.0):
-                target_block_type = srv.blocks.get(pb[1], {}).get("type")
-                is_sneak = (st.get("step_size", 1.0) == 0.5)
-                
-                if srv.type == "survival" and not is_sneak:
-                    if target_block_type == "workbench":
-                        st["inv_open"] = True; st["inv_mode"] = "workbench"; st["inv_cursor"] = 34; ev = True
-                    elif target_block_type == "furnace":
-                        st["inv_open"] = True; st["inv_mode"] = "furnace"; st["inv_cursor"] = 50; st["furnace_pos"] = pb[1]; ev = True
-                    elif target_block_type == "chest":
-                        bx, by, bz = pb[1]
-                        if (bx, by, bz+1) in srv.blocks and srv.blocks[(bx, by, bz+1)].get("type") != "torch":
-                            pass
-                        else:
-                            st["inv_open"] = True; st["inv_mode"] = "chest"; st["inv_cursor"] = 60; st["chest_pos"] = pb[1]; ev = True
-                
-                if not st.get("inv_open") and pb[2] is not None:
-                    nb = pb[2] 
-                    target_b = pb[1] 
+            pass_normal_build = True
+            if st.get("jump"):
+                c_slot = st["inv_cursor"] if st["inv_cursor"] < 5 else 0
+                item = st["inv"].get(c_slot)
+                if item and item["type"] not in TOOLS and srv.type == "survival":
+                    ix, iy, iz = int(math.floor(st["x"])), int(math.floor(st["y"])), int(math.floor(st["z"]))
+                    if not is_blocked(srv, st["x"], st["y"], st["z"] + 1) and not is_blocked(srv, st["x"], st["y"], st["z"] + 2):
+                        srv.blocks[(ix, iy, iz)] = {"type": item["type"]}; st["z"] += 1.0; item["count"] -= 1
+                        if item["count"] <= 0: del st["inv"][c_slot]
+                        srv.rebuild_mesh(); st["jump"] = False; ev = True; pass_normal_build = False
+                    else: st["jump"] = False; ev = True; pass_normal_build = False
+                elif srv.type == "classic":
+                    ix, iy, iz = int(math.floor(st["x"])), int(math.floor(st["y"])), int(math.floor(st["z"]))
+                    if not is_blocked(srv, st["x"], st["y"], st["z"] + 1) and not is_blocked(srv, st["x"], st["y"], st["z"] + 2):
+                        srv.blocks[(ix, iy, iz)] = {"color": (255,255,255)}; st["z"] += 1.0; srv.rebuild_mesh()
+                        st["jump"] = False; ev = True; pass_normal_build = False
+                    else: st["jump"] = False; ev = True; pass_normal_build = False
+
+            if pass_normal_build:
+                pb = ray_pick(st["x"], st["y"], st["z"]+1.6, st["angle"], st["tilt"], s_id, uid)
+                if pb and pb[0]=="block" and (srv.type == "classic" or pb[3] <= 5.0):
+                    target_block_type = srv.blocks.get(pb[1], {}).get("type")
+                    is_sneak = (st.get("step_size", 1.0) == 0.5)
                     
-                    c_slot = st["inv_cursor"] if st["inv_cursor"] < 5 else 0
-                    item = st["inv"].get(c_slot)
-                    if item and item["type"] in ["wood_pickaxe", "stone_pickaxe", "iron_pickaxe", "diamond_pickaxe", "wood_axe", "stone_axe", "iron_axe", "diamond_axe", "stick", "iron_ingot", "diamond"]: pass
-                    elif item or srv.type == "classic":
-                        btype = item["type"] if item else "planks"
-                        if nb not in srv.blocks:
-                            if btype == "torch":
-                                dx, dy, dz = nb[0]-target_b[0], nb[1]-target_b[1], nb[2]-target_b[2]
-                                srv.blocks[nb] = {"type": "torch", "attach": (dx, dy, dz)}
-                            elif btype in ("furnace", "chest"):
-                                dx, dy = st["x"] - nb[0], st["y"] - nb[1]
-                                if abs(dx) > abs(dy): facing = "right" if dx > 0 else "left"
-                                else: facing = "back" if dy > 0 else "front"
-                                if btype == "furnace": srv.blocks[nb] = {"type": "furnace", "facing": facing, "inv": {0:None, 1:None, 2:None}, "burn_time": 0, "smelt_time": 0}
-                                else: srv.blocks[nb] = {"type": "chest", "facing": facing, "inv": {i:None for i in range(15)}}
-                            else:
-                                srv.blocks[nb] = {"type": btype} if srv.type=="survival" else {"color":(255,255,255)}
-                                
-                            if item:
-                                item["count"] -= 1
-                                if item["count"] <= 0: del st["inv"][c_slot]
-                            srv.rebuild_mesh(); ev = True
+                    if srv.type == "survival" and not is_sneak:
+                        if target_block_type == "workbench": st["inv_open"] = True; st["inv_mode"] = "workbench"; st["inv_cursor"] = 34; ev = True
+                        elif target_block_type == "furnace": st["inv_open"] = True; st["inv_mode"] = "furnace"; st["inv_cursor"] = 50; st["furnace_pos"] = pb[1]; ev = True
+                        elif target_block_type == "chest":
+                            bx, by, bz = pb[1]
+                            if not ((bx, by, bz+1) in srv.blocks and srv.blocks[(bx, by, bz+1)].get("type") != "torch"):
+                                st["inv_open"] = True; st["inv_mode"] = "chest"; st["inv_cursor"] = 60; st["chest_pos"] = pb[1]; ev = True
+                    
+                    if not st.get("inv_open") and pb[2] is not None:
+                        nb, target_b = pb[2], pb[1]
+                        c_slot = st["inv_cursor"] if st["inv_cursor"] < 5 else 0
+                        item = st["inv"].get(c_slot)
+                        if item and item["type"] in TOOLS: pass
+                        elif item or srv.type == "classic":
+                            btype = item["type"] if item else "planks"
+                            if nb not in srv.blocks:
+                                if btype == "torch":
+                                    dx, dy, dz = nb[0]-target_b[0], nb[1]-target_b[1], nb[2]-target_b[2]
+                                    srv.blocks[nb] = {"type": "torch", "attach": (dx, dy, dz)}
+                                elif btype in ("furnace", "chest"):
+                                    dx, dy = st["x"] - nb[0], st["y"] - nb[1]
+                                    facing = "right" if dx > 0 else "left" if abs(dx) > abs(dy) else "back" if dy > 0 else "front"
+                                    if btype == "furnace": srv.blocks[nb] = {"type": "furnace", "facing": facing, "inv": {0:None, 1:None, 2:None}, "burn_time": 0, "smelt_time": 0}
+                                    else: srv.blocks[nb] = {"type": "chest", "facing": facing, "inv": {i:None for i in range(15)}}
+                                else: srv.blocks[nb] = {"type": btype} if srv.type=="survival" else {"color":(255,255,255)}
+                                    
+                                if item:
+                                    item["count"] -= 1
+                                    if item["count"] <= 0: del st["inv"][c_slot]
+                                srv.rebuild_mesh(); ev = True
 
         elif d == "break":
             c_slot = st["inv_cursor"] if st["inv_cursor"] < 5 else 0
-            tool = st["inv"].get(c_slot)
-            t_type = tool["type"] if tool else None
-            
-            is_pick = t_type in ("wood_pickaxe", "stone_pickaxe", "iron_pickaxe", "diamond_pickaxe")
-            is_axe = t_type in ("wood_axe", "stone_axe", "iron_axe", "diamond_axe")
+            tool = st["inv"].get(c_slot); t_type = tool["type"] if tool else None
+            is_tool = t_type in TOOLS
 
             pb = ray_pick(st["x"], st["y"], st["z"]+1.6, st["angle"], st["tilt"], s_id, uid)
             if pb and (srv.type == "classic" or pb[3] <= 5.0):
@@ -1810,50 +1457,35 @@ async def h_cb(c):
                         btype = srv.blocks[pb[1]].get("type", "stone")
                         
                         if btype in ("stone", "cobblestone", "coal_ore", "iron_ore", "diamond_ore", "furnace"):
-                            if t_type == "diamond_pickaxe": mhp = 1
-                            elif t_type == "iron_pickaxe": mhp = 3
-                            elif t_type == "stone_pickaxe": mhp = 6
-                            elif t_type == "wood_pickaxe": mhp = 9
-                            else: mhp = 12
+                            mhp = 1 if t_type == "diamond_pickaxe" else 3 if t_type == "iron_pickaxe" else 6 if t_type == "stone_pickaxe" else 9 if t_type == "wood_pickaxe" else 12
                         elif btype in ("planks", "workbench", "wood", "chest"):
-                            if t_type == "diamond_axe": mhp = 1
-                            elif t_type == "iron_axe": mhp = 2
-                            elif t_type == "stone_axe": mhp = 3
-                            elif t_type == "wood_axe": mhp = 4
-                            else: mhp = 6 if btype == "wood" else 5
-                        else:
-                            mhp = BLOCK_STATS.get(btype, 3)
+                            mhp = 1 if t_type == "diamond_axe" else 2 if t_type == "iron_axe" else 3 if t_type == "stone_axe" else 4 if t_type == "wood_axe" else 6 if btype == "wood" else 5
+                        elif btype in ("grass", "dirt"):
+                            mhp = 1 if t_type in ("iron_lopata", "diamond_lopata") else 2 if t_type in ("wood_lopata", "stone_lopata") else 3
+                        elif btype == "leaves":
+                            mhp = 1 if t_type in HOES else 2
+                        else: mhp = BLOCK_STATS.get(btype, 3)
 
                         srv.block_damage[pb[1]] = srv.block_damage.get(pb[1], 0) + 1
-                        
+                        if is_tool:
+                            tool["durability"] -= 1
+                            if tool["durability"] <= 0: del st["inv"][c_slot]
+
                         if srv.block_damage[pb[1]] >= mhp:
                             if btype == "furnace":
-                                f_inv = srv.blocks[pb[1]].get("inv", {})
-                                for itm in f_inv.values():
+                                for itm in srv.blocks[pb[1]].get("inv", {}).values():
                                     if itm:
                                         for i in range(20):
-                                            if i not in st["inv"]:
-                                                st["inv"][i] = itm; break
+                                            if i not in st["inv"]: st["inv"][i] = itm; break
                             elif btype == "chest":
-                                c_inv = srv.blocks[pb[1]].get("inv", {})
-                                for itm in c_inv.values():
+                                for itm in srv.blocks[pb[1]].get("inv", {}).values():
                                     if itm:
                                         for i in range(20):
-                                            if i not in st["inv"]:
-                                                st["inv"][i] = itm; break
+                                            if i not in st["inv"]: st["inv"][i] = itm; break
 
-                            del srv.blocks[pb[1]]
-                            del srv.block_damage[pb[1]]
+                            del srv.blocks[pb[1]]; del srv.block_damage[pb[1]]
                             
-                            drop_t = btype
-                            if btype == "grass": drop_t = "dirt"
-                            elif btype == "leaves": drop_t = None
-                            elif btype == "stone": drop_t = "cobblestone"
-                            elif btype == "coal_ore": drop_t = "coal"
-                            elif btype == "iron_ore": drop_t = "iron"
-                            elif btype == "diamond_ore":
-                                if t_type in ("iron_pickaxe", "diamond_pickaxe"): drop_t = "diamond"
-                                else: drop_t = None
+                            drop_t = "dirt" if btype == "grass" else None if btype == "leaves" else "cobblestone" if btype == "stone" else "coal" if btype == "coal_ore" else "iron" if btype == "iron_ore" else "diamond" if btype == "diamond_ore" and t_type in ("iron_pickaxe", "diamond_pickaxe") else None if btype == "diamond_ore" else btype
 
                             if drop_t:
                                 for i in range(20):
@@ -1861,38 +1493,32 @@ async def h_cb(c):
                                         st["inv"][i]["count"] += 1; break
                                 else:
                                     for i in range(20):
-                                        if i not in st["inv"]:
-                                            st["inv"][i] = {"type": drop_t, "count": 1}; break
-                            
-                            if is_pick or is_axe:
-                                tool["durability"] -= 1
-                                if tool["durability"] <= 0: del st["inv"][c_slot]
+                                        if i not in st["inv"]: st["inv"][i] = {"type": drop_t, "count": 1}; break
                         srv.rebuild_mesh()
-                    else:
-                        del srv.blocks[pb[1]]
-                        srv.rebuild_mesh()
+                    else: del srv.blocks[pb[1]]; srv.rebuild_mesh()
                     ev = True
+
                 elif pb[0] == "player":
                     tgt = srv.players[pb[1]]
-                    
-                    if t_type == "diamond_axe": damage = 4
-                    elif t_type == "iron_axe": damage = 4
+                    if t_type == "diamond_sword": damage = 6
+                    elif t_type == "iron_sword": damage = 5
+                    elif t_type == "stone_sword": damage = 4
+                    elif t_type in ("wood_sword", "diamond_axe", "iron_axe"): damage = 4
                     elif t_type in ("wood_axe", "stone_axe"): damage = 3
                     elif t_type == "diamond_pickaxe": damage = 5
                     elif t_type == "iron_pickaxe": damage = 4
                     elif t_type == "stone_pickaxe": damage = 3
                     elif t_type == "wood_pickaxe": damage = 2
+                    elif t_type in SHOVELS + HOES: damage = 2
                     else: damage = 1
                         
-                    tgt["hp"] -= damage
-                    tgt["flash_time"] = time.time()
+                    tgt["hp"] -= damage; tgt["flash_time"] = time.time()
                     if tgt["hp"] <= 0:
                         await broadcast_chat(s_id, f"💀 {tgt['name']} был убит игроком {st['name']}!")
                         tgt["hp"], tgt["x"], tgt["y"], tgt["z"] = 10, 0.5, 0.5, get_ground_z(0.5, 0.5, srv)
-                    ev = True
-                    st["hit_time"] = time.time()
+                    ev = True; st["hit_time"] = time.time()
                     
-                    if is_pick or is_axe:
+                    if is_tool:
                         tool["durability"] -= 1
                         if tool["durability"] <= 0: del st["inv"][c_slot]
                         
