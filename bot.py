@@ -153,6 +153,9 @@ def draw_stone_pickaxe(d):
 def draw_iron_pickaxe(d):
     d.line((32, 96, 96, 32), fill=(139, 69, 19, 255), width=8) 
     d.polygon([(64, 16), (112, 32), (96, 64)], fill=(220, 220, 220, 255)) 
+def draw_diamond_pickaxe(d):
+    d.line((32, 96, 96, 32), fill=(139, 69, 19, 255), width=8) 
+    d.polygon([(64, 16), (112, 32), (96, 64)], fill=(0, 255, 255, 255)) 
 def draw_cobble(d):
     d.rectangle((0,0,128,128), fill=(100,100,100))
     for _ in range(50):
@@ -168,8 +171,14 @@ def draw_iron_ore(d):
     for _ in range(25):
         x, y = random.randint(0,116), random.randint(0,116)
         d.rectangle((x, y, x+12, y+12), fill=(210,180,140))
+def draw_diamond_ore(d):
+    d.rectangle((0,0,128,128), fill=(100,100,100))
+    for _ in range(25):
+        x, y = random.randint(0,116), random.randint(0,116)
+        d.rectangle((x, y, x+12, y+12), fill=(0,255,255))
 def draw_coal(d): d.ellipse((32,32, 96,96), fill=(20,20,20))
 def draw_iron(d): d.ellipse((32,32, 96,96), fill=(210,180,140))
+def draw_diamond(d): d.polygon([(64,16), (112,64), (64,112), (16,64)], fill=(0,255,255))
 def draw_torch_top(d):
     d.rectangle((0,0,128,128), fill=(255,255,255,0))
     d.rectangle((32,32,96,96), fill=(255, 200, 0, 255))
@@ -203,10 +212,13 @@ create_fallback_tex("palka.png", (0, 0, 0, 0), draw_stick, rgba=True)
 create_fallback_tex("der_kirka.png", (0, 0, 0, 0), draw_wood_pickaxe, rgba=True)
 create_fallback_tex("kam_kirka.png", (0, 0, 0, 0), draw_stone_pickaxe, rgba=True)
 create_fallback_tex("zhel_kirka.png", (0, 0, 0, 0), draw_iron_pickaxe, rgba=True)
+create_fallback_tex("alm_kirka.png", (0, 0, 0, 0), draw_diamond_pickaxe, rgba=True)
 create_fallback_tex("ruda_ugol.png", (100, 100, 100), draw_coal_ore)
 create_fallback_tex("ruda_zhel.png", (100, 100, 100), draw_iron_ore)
+create_fallback_tex("alm_ruda.png", (100, 100, 100), draw_diamond_ore)
 create_fallback_tex("ugol.png", (0, 0, 0, 0), draw_coal, rgba=True)
 create_fallback_tex("zhel.png", (0, 0, 0, 0), draw_iron, rgba=True)
+create_fallback_tex("almaz.png", (0, 0, 0, 0), draw_diamond, rgba=True)
 create_fallback_tex("fakel.png", (0, 0, 0, 0), draw_torch_top, rgba=True)
 create_fallback_tex("fakel_bok.png", (0, 0, 0, 0), draw_torch_side, rgba=True)
 
@@ -238,11 +250,14 @@ TEX_CACHE = {
     "wood_pickaxe": load_tex("der_kirka.png", (180, 140, 80)),
     "stone_pickaxe": load_tex("kam_kirka.png", (100, 100, 100)),
     "iron_pickaxe": load_tex("zhel_kirka.png", (220, 220, 220)),
+    "diamond_pickaxe": load_tex("alm_kirka.png", (0, 255, 255)),
     "cobblestone": load_tex("buliga.png", (100, 100, 100)),
     "coal_ore": load_tex("ruda_ugol.png", (100, 100, 100)),
     "iron_ore": load_tex("ruda_zhel.png", (100, 100, 100)),
+    "diamond_ore": load_tex("alm_ruda.png", (100, 100, 100)),
     "coal": load_tex("ugol.png", (0,0,0,0)),
     "iron": load_tex("zhel.png", (0,0,0,0)),
+    "diamond": load_tex("almaz.png", (0,0,0,0)),
     "iron_ingot": load_tex("zhel_slitok.png", (0,0,0,0)),
     "torch_top": load_tex("fakel.png", (255,200,0)),
     "torch_side": load_tex("fakel_bok.png", (255,200,0)),
@@ -265,7 +280,14 @@ def get_inv_icon(itype):
         elif itype == "torch": tex_name = "torch_side"
         
         tex = TEX_CACHE.get(tex_name, TEX_CACHE.get(itype, TEX_CACHE["zemlya"]))
-        INV_ICONS[itype] = tex.resize((28, 28), Image.Resampling.NEAREST)
+        
+        if itype == "torch":
+            base = tex.resize((14, 28), Image.Resampling.NEAREST)
+            icon = Image.new("RGBA", (28, 28), (0,0,0,0))
+            icon.paste(base, (7, 0))
+            INV_ICONS[itype] = icon
+        else:
+            INV_ICONS[itype] = tex.resize((28, 28), Image.Resampling.NEAREST)
     return INV_ICONS[itype]
 
 CRACK_TEX = []
@@ -289,7 +311,7 @@ def bake_face(tex):
 DEFAULT_BASE_TEX = Image.new("RGBA", (128, 128), (255, 220, 100, 255))
 DEFAULT_FACE_TEX = bake_face(DEFAULT_BASE_TEX)
 
-BLOCK_STATS = {"dirt": 3, "grass": 3, "wood": 6, "leaves": 2, "stone": 12, "planks": 5, "workbench": 5, "furnace": 12, "bedrock": 9999, "cobblestone": 12, "coal_ore": 12, "iron_ore": 15, "torch": 1}
+BLOCK_STATS = {"dirt": 3, "grass": 3, "wood": 6, "leaves": 2, "stone": 12, "planks": 5, "workbench": 5, "furnace": 12, "bedrock": 9999, "cobblestone": 12, "coal_ore": 12, "iron_ore": 12, "diamond_ore": 12, "torch": 1}
 
 def get_environment_light(s_id):
     srv = SERVERS.get(s_id)
@@ -365,14 +387,14 @@ class Server:
                 self.blocks[(x, y, h-1)] = {"type": "dirt"}
                 self.blocks[(x, y, h-2)] = {"type": "dirt"}
                 
-                for z in range(h-3, -32, -1):
+                for z in range(h-3, -34, -1):
                     if z < -5:
                         cave_val = math.sin((x+self.seed)/4.0) + math.sin((y-self.seed)/4.0) + math.sin((z+self.seed)/3.0)
                         if cave_val > 1.2: continue
                         
                     self.blocks[(x, y, z)] = {"type": "stone"}
                     
-                self.blocks[(x, y, -32)] = {"type": "bedrock"}
+                self.blocks[(x, y, -34)] = {"type": "bedrock"}
                 
                 if 2 < (x%16) < 14 and 2 < (y%16) < 14 and random.random() < 0.02:
                     for tz in range(1, 5): self.blocks[(x, y, h+tz)] = {"type": "wood"}
@@ -383,7 +405,7 @@ class Server:
                                 self.blocks[(x+dx, y+dy, h+dz)] = {"type": "leaves"}
 
         for _ in range(18):
-            vx, vy, vz = random.randint(cx*16, cx*16+15), random.randint(cy*16, cy*16+15), random.randint(-31, -6)
+            vx, vy, vz = random.randint(cx*16, cx*16+15), random.randint(cy*16, cy*16+15), random.randint(-33, -6)
             vein_size = random.randint(3, 5)
             for _ in range(vein_size):
                 if (vx, vy, vz) in self.blocks and self.blocks[(vx, vy, vz)]["type"] == "stone":
@@ -393,11 +415,21 @@ class Server:
                 vz += random.choice([-1, 0, 1])
 
         for _ in range(12):
-            vx, vy, vz = random.randint(cx*16, cx*16+15), random.randint(cy*16, cy*16+15), random.randint(-31, -12)
+            vx, vy, vz = random.randint(cx*16, cx*16+15), random.randint(cy*16, cy*16+15), random.randint(-33, -12)
             vein_size = random.randint(3, 5)
             for _ in range(vein_size):
                 if (vx, vy, vz) in self.blocks and self.blocks[(vx, vy, vz)]["type"] == "stone":
                     self.blocks[(vx, vy, vz)] = {"type": "iron_ore"}
+                vx += random.choice([-1, 0, 1])
+                vy += random.choice([-1, 0, 1])
+                vz += random.choice([-1, 0, 1])
+
+        for _ in range(4):
+            vx, vy, vz = random.randint(cx*16, cx*16+15), random.randint(cy*16, cy*16+15), random.randint(-33, -30)
+            vein_size = random.randint(1, 5)
+            for _ in range(vein_size):
+                if (vx, vy, vz) in self.blocks and self.blocks[(vx, vy, vz)]["type"] == "stone":
+                    self.blocks[(vx, vy, vz)] = {"type": "diamond_ore"}
                 vx += random.choice([-1, 0, 1])
                 vy += random.choice([-1, 0, 1])
                 vz += random.choice([-1, 0, 1])
@@ -474,13 +506,13 @@ class Server:
                             elif fn == facing: tex = TEX_CACHE["pech_gorit"] if is_lit else TEX_CACHE["pech"]
                             elif fn == opp.get(facing, "back"): tex = TEX_CACHE["z_pech"]
                             else: tex = TEX_CACHE["pech_bok"]
-                        elif btype in ["dirt", "stone", "leaves", "planks", "bedrock", "cobblestone", "coal_ore", "iron_ore"]:
+                        elif btype in ["dirt", "stone", "leaves", "planks", "bedrock", "cobblestone", "coal_ore", "iron_ore", "diamond_ore"]:
                             tex = TEX_CACHE.get(btype, TEX_CACHE["zemlya"])
                         face_info["tex"] = tex
                     
                     dmg = self.block_damage.get((gx,gy,gz), 0)
                     if dmg > 0 and self.type == "survival" and bdata.get("type") != "bedrock":
-                        mhp = 5 if bdata.get("type") in ("planks", "workbench") else 12 if bdata.get("type") in ("stone", "cobblestone", "coal_ore", "furnace") else 15 if bdata.get("type") == "iron_ore" else BLOCK_STATS.get(bdata.get("type", "dirt"), 3)
+                        mhp = 5 if bdata.get("type") in ("planks", "workbench") else 12 if bdata.get("type") in ("stone", "cobblestone", "coal_ore", "diamond_ore", "furnace", "iron_ore") else BLOCK_STATS.get(bdata.get("type", "dirt"), 3)
                         stage = min(4, int((dmg / mhp) * 5))
                         if face_info.get("tex"):
                             combined = face_info["tex"].copy()
@@ -646,7 +678,7 @@ def get_st(uid):
     return SERVERS[s_id].players.get(uid) if s_id else None
 
 def get_ground_z(x, y, srv, pz=None):
-    tz = -32 if srv.type == "survival" else -64
+    tz = -34 if srv.type == "survival" else -64
     ix, iy = int(math.floor(x)), int(math.floor(y))
     
     start_z = 20
@@ -721,7 +753,7 @@ def make_keyboard(uid):
         InlineKeyboardButton("➡️", callback_data="move_r")
     )
     kb.add(
-        InlineKeyboardButton("���️", callback_data="move_bl"),
+        InlineKeyboardButton("↙️", callback_data="move_bl"),
         InlineKeyboardButton("⬇️", callback_data="move_b"),
         InlineKeyboardButton("↘️", callback_data="move_br")
     )
@@ -730,7 +762,6 @@ def make_keyboard(uid):
         InlineKeyboardButton("🌀➡️ 15°", callback_data="turn_r_15")
     )
     
-    # ИСПРАВЛЕНИЕ: Форсируем 4 кнопки в один ряд с помощью kb.row()
     kb.row(
         InlineKeyboardButton("⏪ 90°", callback_data="turn_l_90"),
         InlineKeyboardButton("◀️ 30°", callback_data="turn_l_30"),
@@ -750,7 +781,6 @@ def make_keyboard(uid):
         InlineKeyboardButton(break_text, callback_data="break")
     )
     
-    # ИСПРАВЛЕНИЕ: Форсируем 4 кнопки настроек в один ряд
     kb.row(
         InlineKeyboardButton(jump_text, callback_data="toggle_jump"),
         InlineKeyboardButton(step_text, callback_data="toggle_step"),
@@ -895,7 +925,7 @@ def draw_inv(img, d, w, h, st, srv=None):
             if item.get("durability") is None:
                 d.text((sx+20, sy+20), str(item["count"]), fill=(255,255,0))
             if "durability" in item:
-                max_dur = 250 if item["type"] == "iron_pickaxe" else 66 if item["type"] == "stone_pickaxe" else 30
+                max_dur = 120 if item["type"] == "diamond_pickaxe" else 90 if item["type"] == "iron_pickaxe" else 66 if item["type"] == "stone_pickaxe" else 30
                 dur_pct = max(0, item["durability"] / max_dur)
                 d.rectangle((sx+4, sy+32, sx+32, sy+34), fill=(50,50,50))
                 d.rectangle((sx+4, sy+32, sx+4+28*dur_pct, sy+34), fill=(0,255,0) if dur_pct>0.3 else (255,0,0))
@@ -924,7 +954,7 @@ def update_crafting(st):
     res = None
     
     if sg == [["wood"]]: res = {"type": "planks", "count": 4}
-    elif sg == [["planks", "planks"]]: res = {"type": "stick", "count": 4}
+    elif sg == [["planks"], ["planks"]]: res = {"type": "stick", "count": 4}
     elif sg == [["planks", "planks"], ["planks", "planks"]]: res = {"type": "workbench", "count": 1}
     elif sg == [["cobblestone", "cobblestone", "cobblestone"], ["cobblestone", None, "cobblestone"], ["cobblestone", "cobblestone", "cobblestone"]]: 
         res = {"type": "furnace", "count": 1}
@@ -933,8 +963,10 @@ def update_crafting(st):
     elif sg == [["cobblestone", "cobblestone", "cobblestone"], [None, "stick", None], [None, "stick", None]]: 
         res = {"type": "stone_pickaxe", "count": 1, "durability": 66}
     elif sg == [["iron_ingot", "iron_ingot", "iron_ingot"], [None, "stick", None], [None, "stick", None]]: 
-        res = {"type": "iron_pickaxe", "count": 1, "durability": 250}
-    elif sg == [["stick", "coal"]] or sg == [["coal", "stick"]]: 
+        res = {"type": "iron_pickaxe", "count": 1, "durability": 90}
+    elif sg == [["diamond", "diamond", "diamond"], [None, "stick", None], [None, "stick", None]]: 
+        res = {"type": "diamond_pickaxe", "count": 1, "durability": 120}
+    elif sg == [["coal"], ["stick"]]: 
         res = {"type": "torch", "count": 4}
     
     if res:
@@ -1114,7 +1146,7 @@ def render_scene(px, py, pz, pa, pt, uid, s_id):
                 if item.get("durability") is None:
                     d.text((hx+i*40+20, out_h-25), str(item["count"]), fill=(255,255,0))
                 if "durability" in item:
-                    max_dur = 250 if item["type"] == "iron_pickaxe" else 66 if item["type"] == "stone_pickaxe" else 30
+                    max_dur = 120 if item["type"] == "diamond_pickaxe" else 90 if item["type"] == "iron_pickaxe" else 66 if item["type"] == "stone_pickaxe" else 30
                     dur_pct = max(0, item["durability"] / max_dur)
                     d.rectangle((hx+i*40+4, out_h-13, hx+i*40+32, out_h-11), fill=(50,50,50))
                     d.rectangle((hx+i*40+4, out_h-13, hx+i*40+4+28*dur_pct, out_h-11), fill=(0,255,0) if dur_pct>0.3 else (255,0,0))
@@ -1492,7 +1524,6 @@ async def h_cb(c):
             if "r" in d: s=1
             a = st["angle"]
             
-            # ИСПРАВЛЕНИЕ: Используем динамический шаг
             step_size = 0.5 if st.get("half_step") else 1.0
             nx = st["x"] + (math.sin(a)*f + math.cos(a)*s) * step_size
             ny = st["y"] + (math.cos(a)*f - math.sin(a)*s) * step_size
@@ -1567,7 +1598,7 @@ async def h_cb(c):
                     
                     c_slot = st["inv_cursor"] if st["inv_cursor"] < 5 else 0
                     item = st["inv"].get(c_slot)
-                    if item and item["type"] in ["wood_pickaxe", "stone_pickaxe", "iron_pickaxe", "stick", "iron_ingot"]: pass
+                    if item and item["type"] in ["wood_pickaxe", "stone_pickaxe", "iron_pickaxe", "diamond_pickaxe", "stick", "iron_ingot", "diamond"]: pass
                     elif item or srv.type == "classic":
                         btype = item["type"] if item else "planks"
                         if nb not in srv.blocks:
@@ -1593,7 +1624,8 @@ async def h_cb(c):
             is_wood_pick = tool and tool["type"] == "wood_pickaxe"
             is_stone_pick = tool and tool["type"] == "stone_pickaxe"
             is_iron_pick = tool and tool["type"] == "iron_pickaxe"
-            is_pick = is_wood_pick or is_stone_pick or is_iron_pick
+            is_diamond_pick = tool and tool["type"] == "diamond_pickaxe"
+            is_pick = is_wood_pick or is_stone_pick or is_iron_pick or is_diamond_pick
 
             pb = ray_pick(st["x"], st["y"], st["z"]+1.6, st["angle"], st["tilt"], s_id, uid)
             if pb and (srv.type == "classic" or pb[3] <= 5.0):
@@ -1603,8 +1635,12 @@ async def h_cb(c):
                     elif srv.type == "survival":
                         btype = srv.blocks[pb[1]].get("type", "stone")
                         
-                        if btype in ("stone", "cobblestone", "coal_ore", "iron_ore", "furnace"):
-                            mhp = 6 if is_iron_pick else 9 if is_stone_pick else 12 if is_wood_pick else 15
+                        if btype in ("stone", "cobblestone", "coal_ore", "iron_ore", "diamond_ore", "furnace"):
+                            if is_diamond_pick: mhp = 1
+                            elif is_iron_pick: mhp = 3
+                            elif is_stone_pick: mhp = 6
+                            elif is_wood_pick: mhp = 9
+                            else: mhp = 12
                         elif btype in ("planks", "workbench"):
                             mhp = 5
                         else:
@@ -1630,6 +1666,9 @@ async def h_cb(c):
                             elif btype == "stone": drop_t = "cobblestone"
                             elif btype == "coal_ore": drop_t = "coal"
                             elif btype == "iron_ore": drop_t = "iron"
+                            elif btype == "diamond_ore":
+                                if is_iron_pick or is_diamond_pick: drop_t = "diamond"
+                                else: drop_t = None
 
                             if drop_t:
                                 for i in range(20):
@@ -1650,7 +1689,7 @@ async def h_cb(c):
                     ev = True
                 elif pb[0] == "player":
                     tgt = srv.players[pb[1]]
-                    damage = 4 if is_iron_pick else 3 if is_stone_pick else 2 if is_wood_pick else 1
+                    damage = 5 if is_diamond_pick else 4 if is_iron_pick else 3 if is_stone_pick else 2 if is_wood_pick else 1
                     tgt["hp"] -= damage
                     tgt["flash_time"] = time.time()
                     if tgt["hp"] <= 0:
