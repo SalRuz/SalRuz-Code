@@ -208,6 +208,9 @@ def draw_pech_lit(d):
 def draw_pech_top(d): d.rectangle((0,0,128,128), fill=(100,100,100)); d.ellipse((32,32,96,96), fill=(50,50,50))
 def draw_ingot(d): d.polygon([(32,96), (96,96), (112,64), (48,64)], fill=(220,220,220,255))
 
+def draw_chest_front(d): d.rectangle((0,0,128,128), fill=(150,100,50)); d.rectangle((56,48,72,64), fill=(200,200,200))
+def draw_chest_side(d): d.rectangle((0,0,128,128), fill=(150,100,50))
+
 create_fallback_tex("trava.png", (100, 220, 100), draw_grass_top)
 create_fallback_tex("trava_bok.png", (139, 94, 52), draw_grass_side)
 create_fallback_tex("zemlya.png", (139, 94, 52), draw_dirt)
@@ -237,13 +240,15 @@ create_fallback_tex("zhel.png", (0, 0, 0, 0), draw_iron, rgba=True)
 create_fallback_tex("almaz.png", (0, 0, 0, 0), draw_diamond, rgba=True)
 create_fallback_tex("fakel.png", (0, 0, 0, 0), draw_torch_top, rgba=True)
 create_fallback_tex("fakel_bok.png", (0, 0, 0, 0), draw_torch_side, rgba=True)
-
 create_fallback_tex("pech.png", (100, 100, 100), draw_pech_front)
 create_fallback_tex("pech_gorit.png", (100, 100, 100), draw_pech_lit)
 create_fallback_tex("v_pech.png", (100, 100, 100), draw_pech_top)
-create_fallback_tex("z_pech.png", (100, 100, 100))
 create_fallback_tex("pech_bok.png", (100, 100, 100))
 create_fallback_tex("zhel_slitok.png", (0, 0, 0, 0), draw_ingot, rgba=True)
+create_fallback_tex("sunduk.png", (150, 100, 50), draw_chest_front)
+create_fallback_tex("sunduk_bok.png", (150, 100, 50), draw_chest_side)
+create_fallback_tex("vn_sunduk.png", (120, 80, 40))
+create_fallback_tex("z_sunduk.png", (150, 100, 50))
 
 def load_tex(name, fallback_color=(255,0,255)):
     p = TEX_DIR / name
@@ -284,8 +289,11 @@ TEX_CACHE = {
     "pech": load_tex("pech.png", (100,100,100)),
     "pech_gorit": load_tex("pech_gorit.png", (150,100,50)),
     "v_pech": load_tex("v_pech.png", (100,100,100)),
-    "z_pech": load_tex("z_pech.png", (100,100,100)),
     "pech_bok": load_tex("pech_bok.png", (100,100,100)),
+    "sunduk": load_tex("sunduk.png", (150, 100, 50)),
+    "sunduk_bok": load_tex("sunduk_bok.png", (150, 100, 50)),
+    "vn_sunduk": load_tex("vn_sunduk.png", (120, 80, 40)),
+    "z_sunduk": load_tex("z_sunduk.png", (150, 100, 50)),
 }
 
 INV_ICONS = {}
@@ -296,6 +304,7 @@ def get_inv_icon(itype):
         elif itype == "wood": tex_name = "wood_side"
         elif itype == "workbench": tex_name = "workbench_top"
         elif itype == "furnace": tex_name = "pech"
+        elif itype == "chest": tex_name = "sunduk"
         elif itype == "dirt": tex_name = "zemlya"
         elif itype == "torch": tex_name = "torch_side"
         
@@ -346,7 +355,7 @@ def bake_face(tex):
 DEFAULT_BASE_TEX = Image.new("RGBA", (128, 128), (255, 220, 100, 255))
 DEFAULT_FACE_TEX = bake_face(DEFAULT_BASE_TEX)
 
-BLOCK_STATS = {"dirt": 3, "grass": 3, "wood": 6, "leaves": 2, "stone": 12, "planks": 5, "workbench": 5, "furnace": 12, "bedrock": 9999, "cobblestone": 12, "coal_ore": 12, "iron_ore": 12, "diamond_ore": 12, "torch": 1}
+BLOCK_STATS = {"dirt": 3, "grass": 3, "wood": 6, "leaves": 2, "stone": 12, "planks": 5, "workbench": 5, "chest": 5, "furnace": 12, "bedrock": 9999, "cobblestone": 12, "coal_ore": 12, "iron_ore": 12, "diamond_ore": 12, "torch": 1}
 
 def get_environment_light(s_id):
     srv = SERVERS.get(s_id)
@@ -539,15 +548,22 @@ class Server:
                             if fn == "top": tex = TEX_CACHE["v_pech"]
                             elif fn == "bottom": tex = TEX_CACHE["stone"]
                             elif fn == facing: tex = TEX_CACHE["pech_gorit"] if is_lit else TEX_CACHE["pech"]
-                            elif fn == opp.get(facing, "back"): tex = TEX_CACHE["z_pech"]
+                            elif fn == opp.get(facing, "back"): tex = TEX_CACHE["pech_bok"]
                             else: tex = TEX_CACHE["pech_bok"]
+                        elif btype == "chest":
+                            facing = bdata.get("facing", "front")
+                            opp = {"front":"back", "back":"front", "left":"right", "right":"left"}
+                            if fn in ["top", "bottom"]: tex = TEX_CACHE["vn_sunduk"]
+                            elif fn == facing: tex = TEX_CACHE["sunduk"]
+                            elif fn == opp.get(facing, "back"): tex = TEX_CACHE["z_sunduk"]
+                            else: tex = TEX_CACHE["sunduk_bok"]
                         elif btype in ["dirt", "stone", "leaves", "planks", "bedrock", "cobblestone", "coal_ore", "iron_ore", "diamond_ore"]:
                             tex = TEX_CACHE.get(btype, TEX_CACHE["zemlya"])
                         face_info["tex"] = tex
                     
                     dmg = self.block_damage.get((gx,gy,gz), 0)
                     if dmg > 0 and self.type == "survival" and bdata.get("type") != "bedrock":
-                        mhp = 5 if bdata.get("type") in ("planks", "workbench") else 12 if bdata.get("type") in ("stone", "cobblestone", "coal_ore", "diamond_ore", "furnace", "iron_ore") else BLOCK_STATS.get(bdata.get("type", "dirt"), 3)
+                        mhp = 5 if bdata.get("type") in ("planks", "workbench", "chest") else 12 if bdata.get("type") in ("stone", "cobblestone", "coal_ore", "diamond_ore", "furnace", "iron_ore") else BLOCK_STATS.get(bdata.get("type", "dirt"), 3)
                         stage = min(4, int((dmg / mhp) * 5))
                         if face_info.get("tex"):
                             combined = face_info["tex"].copy()
@@ -657,7 +673,7 @@ async def furnace_ticker():
                         fuel_val = 0
                         if f_type == "coal": fuel_val = 80
                         elif f_type == "wood": fuel_val = 20
-                        elif f_type in ("planks", "workbench", "wood_pickaxe", "wood_axe"): fuel_val = 10
+                        elif f_type in ("planks", "workbench", "chest", "wood_pickaxe", "wood_axe"): fuel_val = 10
                         elif f_type == "stick": fuel_val = 5
 
                         if fuel_val > 0:
@@ -747,7 +763,7 @@ def init_player(uid, s_id, name):
             "angle": 0.0, "tilt": 0.0, "jump": False, "last_action": time.time(),
             "name": transliterate(name), "msg_id": None, "view_radius": 8, "res_level": 2, "hp": 10, "flash_time": 0,
             "inv": {0: {"type": "wood", "count": 10}}, "inv_open": False, "inv_mode": "normal", "inv_cursor": 0, "drag_item": None,
-            "furnace_pos": None, "step_size": 1.0,
+            "furnace_pos": None, "chest_pos": None, "step_size": 1.0,
             "is_busy": False, "online": True, "hit_time": 0, "last_state_hash": None, "action_lock": False
         }
     else:
@@ -811,10 +827,12 @@ def make_keyboard(uid):
         InlineKeyboardButton("⏩90°", callback_data="turn_r_90")
     )
     kb.row(
-        InlineKeyboardButton("⏫ 30°", callback_data="look_up_30"),
-        InlineKeyboardButton("🔼 15°", callback_data="look_up_15"),
-        InlineKeyboardButton("🔽 15°", callback_data="look_down_15"),
-        InlineKeyboardButton("⏬ 30°", callback_data="look_down_30")
+        InlineKeyboardButton("⏫90°", callback_data="look_up_90"),
+        InlineKeyboardButton("⏫30°", callback_data="look_up_30"),
+        InlineKeyboardButton("🔼15°", callback_data="look_up_15"),
+        InlineKeyboardButton("🔽15°", callback_data="look_down_15"),
+        InlineKeyboardButton("⏬30°", callback_data="look_down_30"),
+        InlineKeyboardButton("⏬90°", callback_data="look_down_90")
     )
     
     kb.add(
@@ -938,6 +956,11 @@ def draw_inv(img, d, w, h, st, srv=None):
             if pct > 0: d.rectangle((cx + 40, cy + 35, cx + 40 + 30*pct, cy + 45), fill=(255,255,255))
             if b.get("burn_time", 0) > 0:
                 d.text((cx + 10, cy + 42), "🔥", fill=(255,100,0))
+    elif mode == "chest":
+        cx, cy = w//2 - 100, h//2 - 140
+        for r in range(3):
+            for c in range(5): slots[60 + r*5 + c] = (cx+c*40, cy+r*40)
+        d.text((cx, cy-15), "Chest", fill=(255,255,255))
     else:
         cx, cy = w//2 - 60, h//2 - 120
         for i, (dx, dy) in enumerate([(0,0), (40,0), (0,40), (40,40)]): slots[20+i] = (cx+dx, cy+dy)
@@ -958,8 +981,10 @@ def draw_inv(img, d, w, h, st, srv=None):
         
         item = None
         if sid < 50: item = st["inv"].get(sid)
-        elif srv and st["furnace_pos"] in srv.blocks:
+        elif 50 <= sid <= 52 and srv and st["furnace_pos"] in srv.blocks:
             item = srv.blocks[st["furnace_pos"]].get("inv", {}).get(sid - 50)
+        elif 60 <= sid <= 74 and srv and st.get("chest_pos") in srv.blocks:
+            item = srv.blocks[st["chest_pos"]].get("inv", {}).get(sid - 60)
 
         if item:
             icon = get_inv_icon(item["type"])
@@ -977,7 +1002,7 @@ def draw_inv(img, d, w, h, st, srv=None):
 
 def update_crafting(st):
     mode = st.get("inv_mode", "normal")
-    if mode == "furnace": return
+    if mode in ("furnace", "chest"): return
     
     if mode == "workbench":
         grid = [[st["inv"].get(30+r*3+c) for c in range(3)] for r in range(3)]
@@ -1000,6 +1025,8 @@ def update_crafting(st):
     elif sg == [["planks", "planks"], ["planks", "planks"]]: res = {"type": "workbench", "count": 1}
     elif sg == [["cobblestone", "cobblestone", "cobblestone"], ["cobblestone", None, "cobblestone"], ["cobblestone", "cobblestone", "cobblestone"]]: 
         res = {"type": "furnace", "count": 1}
+    elif sg == [["planks", "planks", "planks"], ["planks", None, "planks"], ["planks", "planks", "planks"]]: 
+        res = {"type": "chest", "count": 1}
     # Pickaxes
     elif sg == [["planks", "planks", "planks"], [None, "stick", None], [None, "stick", None]]: res = {"type": "wood_pickaxe", "count": 1, "durability": 30}
     elif sg == [["cobblestone", "cobblestone", "cobblestone"], [None, "stick", None], [None, "stick", None]]: res = {"type": "stone_pickaxe", "count": 1, "durability": 66}
@@ -1046,19 +1073,28 @@ def close_inv(st):
 
 def get_slot_item(st, srv, idx):
     if idx < 50: return st["inv"].get(idx)
-    b = srv.blocks.get(st.get("furnace_pos"))
-    if b and b.get("type") == "furnace": return b.get("inv", {}).get(idx-50)
+    elif 50 <= idx <= 52:
+        b = srv.blocks.get(st.get("furnace_pos"))
+        if b and b.get("type") == "furnace": return b.get("inv", {}).get(idx-50)
+    elif 60 <= idx <= 74:
+        b = srv.blocks.get(st.get("chest_pos"))
+        if b and b.get("type") == "chest": return b.get("inv", {}).get(idx-60)
     return None
 
 def set_slot_item(st, srv, idx, item):
     if idx < 50:
         if item: st["inv"][idx] = item
         elif idx in st["inv"]: del st["inv"][idx]
-    else:
+    elif 50 <= idx <= 52:
         b = srv.blocks.get(st.get("furnace_pos"))
         if b and b.get("type") == "furnace":
             if "inv" not in b: b["inv"] = {0:None, 1:None, 2:None}
             b["inv"][idx-50] = item
+    elif 60 <= idx <= 74:
+        b = srv.blocks.get(st.get("chest_pos"))
+        if b and b.get("type") == "chest":
+            if "inv" not in b: b["inv"] = {i:None for i in range(15)}
+            b["inv"][idx-60] = item
 
 def render_scene(px, py, pz, pa, pt, uid, s_id):
     srv = SERVERS[s_id]
@@ -1332,7 +1368,7 @@ async def h_give(m):
     
     parts = m.text.split()
     if len(parts) < 2:
-        items_str = "grass, dirt, stone, bedrock, wood, leaves, planks, workbench, furnace, cobblestone, coal_ore, iron_ore, diamond_ore, stick, wood_pickaxe, stone_pickaxe, iron_pickaxe, diamond_pickaxe, wood_axe, stone_axe, iron_axe, diamond_axe, coal, iron, diamond, iron_ingot, torch"
+        items_str = "grass, dirt, stone, bedrock, wood, leaves, planks, workbench, chest, furnace, cobblestone, coal_ore, iron_ore, diamond_ore, stick, wood_pickaxe, stone_pickaxe, iron_pickaxe, diamond_pickaxe, wood_axe, stone_axe, iron_axe, diamond_axe, coal, iron, diamond, iron_ingot, torch"
         await bot.send_message(m.chat.id, f"Использование: /give <предмет> [кол-во]\n\nДоступные предметы:\n{items_str}")
         return
         
@@ -1377,6 +1413,7 @@ async def h_reset(m):
             p["hp"] = 10
             p["inv"].clear()
             p["furnace_pos"] = None
+            p["chest_pos"] = None
         await bot.send_message(m.chat.id, f"Сервер {s_id} сброшен (сгенерирован новый мир)!")
         for uid, p in SERVERS[s_id].players.items(): 
             if p.get("online"): await send_view(uid, uid)
@@ -1498,6 +1535,11 @@ async def h_cb(c):
                     elif 5 <= c_idx <= 9: c_idx = 51
                     elif 10 <= c_idx <= 19: c_idx -= 5
                     elif c_idx == 51: c_idx = 50
+                elif mode == "chest":
+                    if 0 <= c_idx <= 4: c_idx += 15
+                    elif 5 <= c_idx <= 9: c_idx += 65
+                    elif 10 <= c_idx <= 19: c_idx -= 5
+                    elif 65 <= c_idx <= 74: c_idx -= 5
                 else: 
                     if 0 <= c_idx <= 4: c_idx += 15
                     elif 5 <= c_idx <= 9:
@@ -1519,6 +1561,11 @@ async def h_cb(c):
                     elif c_idx == 51: c_idx = 7
                     elif 5 <= c_idx <= 14: c_idx += 5
                     elif 15 <= c_idx <= 19: c_idx -= 15
+                elif mode == "chest":
+                    if 60 <= c_idx <= 69: c_idx += 5
+                    elif 70 <= c_idx <= 74: c_idx -= 65
+                    elif 5 <= c_idx <= 14: c_idx += 5
+                    elif 15 <= c_idx <= 19: c_idx -= 15
                 else:
                     if c_idx in (20, 21): c_idx += 2
                     elif c_idx == 22: c_idx = 6
@@ -1535,6 +1582,8 @@ async def h_cb(c):
                 elif mode == "furnace":
                     if c_idx == 52: c_idx = 50
                     elif c_idx not in (5,10,15, 50,51): c_idx -= 1
+                elif mode == "chest":
+                    if c_idx not in (0,5,10,15,60,65,70): c_idx -= 1
                 else:
                     if c_idx in (21, 23): c_idx -= 1
                     elif c_idx == 24: c_idx = 21
@@ -1547,6 +1596,8 @@ async def h_cb(c):
                 elif mode == "furnace":
                     if c_idx in (50, 51): c_idx = 52
                     elif c_idx not in (9,14,19, 52): c_idx += 1
+                elif mode == "chest":
+                    if c_idx not in (4,9,14,19,64,69,74): c_idx += 1
                 else:
                     if c_idx in (20, 22): c_idx += 1
                     elif c_idx in (21, 23): c_idx = 24
@@ -1701,11 +1752,21 @@ async def h_cb(c):
             pb = ray_pick(st["x"], st["y"], st["z"]+1.6, st["angle"], st["tilt"], s_id, uid)
             if pb and pb[0]=="block" and (srv.type == "classic" or pb[3] <= 5.0):
                 target_block_type = srv.blocks.get(pb[1], {}).get("type")
-                if srv.type == "survival" and target_block_type == "workbench":
-                    st["inv_open"] = True; st["inv_mode"] = "workbench"; st["inv_cursor"] = 34; ev = True
-                elif srv.type == "survival" and target_block_type == "furnace":
-                    st["inv_open"] = True; st["inv_mode"] = "furnace"; st["inv_cursor"] = 50; st["furnace_pos"] = pb[1]; ev = True
-                elif pb[2] is not None:
+                is_sneak = (st.get("step_size", 1.0) == 0.5)
+                
+                if srv.type == "survival" and not is_sneak:
+                    if target_block_type == "workbench":
+                        st["inv_open"] = True; st["inv_mode"] = "workbench"; st["inv_cursor"] = 34; ev = True
+                    elif target_block_type == "furnace":
+                        st["inv_open"] = True; st["inv_mode"] = "furnace"; st["inv_cursor"] = 50; st["furnace_pos"] = pb[1]; ev = True
+                    elif target_block_type == "chest":
+                        bx, by, bz = pb[1]
+                        if (bx, by, bz+1) in srv.blocks and srv.blocks[(bx, by, bz+1)].get("type") != "torch":
+                            pass
+                        else:
+                            st["inv_open"] = True; st["inv_mode"] = "chest"; st["inv_cursor"] = 60; st["chest_pos"] = pb[1]; ev = True
+                
+                if not st.get("inv_open") and pb[2] is not None:
                     nb = pb[2] 
                     target_b = pb[1] 
                     
@@ -1718,11 +1779,12 @@ async def h_cb(c):
                             if btype == "torch":
                                 dx, dy, dz = nb[0]-target_b[0], nb[1]-target_b[1], nb[2]-target_b[2]
                                 srv.blocks[nb] = {"type": "torch", "attach": (dx, dy, dz)}
-                            elif btype == "furnace":
+                            elif btype in ("furnace", "chest"):
                                 dx, dy = st["x"] - nb[0], st["y"] - nb[1]
                                 if abs(dx) > abs(dy): facing = "right" if dx > 0 else "left"
                                 else: facing = "back" if dy > 0 else "front"
-                                srv.blocks[nb] = {"type": "furnace", "facing": facing, "inv": {0:None, 1:None, 2:None}, "burn_time": 0, "smelt_time": 0}
+                                if btype == "furnace": srv.blocks[nb] = {"type": "furnace", "facing": facing, "inv": {0:None, 1:None, 2:None}, "burn_time": 0, "smelt_time": 0}
+                                else: srv.blocks[nb] = {"type": "chest", "facing": facing, "inv": {i:None for i in range(15)}}
                             else:
                                 srv.blocks[nb] = {"type": btype} if srv.type=="survival" else {"color":(255,255,255)}
                                 
@@ -1753,7 +1815,7 @@ async def h_cb(c):
                             elif t_type == "stone_pickaxe": mhp = 6
                             elif t_type == "wood_pickaxe": mhp = 9
                             else: mhp = 12
-                        elif btype in ("planks", "workbench", "wood"):
+                        elif btype in ("planks", "workbench", "wood", "chest"):
                             if t_type == "diamond_axe": mhp = 1
                             elif t_type == "iron_axe": mhp = 2
                             elif t_type == "stone_axe": mhp = 3
@@ -1768,6 +1830,13 @@ async def h_cb(c):
                             if btype == "furnace":
                                 f_inv = srv.blocks[pb[1]].get("inv", {})
                                 for itm in f_inv.values():
+                                    if itm:
+                                        for i in range(20):
+                                            if i not in st["inv"]:
+                                                st["inv"][i] = itm; break
+                            elif btype == "chest":
+                                c_inv = srv.blocks[pb[1]].get("inv", {})
+                                for itm in c_inv.values():
                                     if itm:
                                         for i in range(20):
                                             if i not in st["inv"]:
@@ -1806,11 +1875,13 @@ async def h_cb(c):
                 elif pb[0] == "player":
                     tgt = srv.players[pb[1]]
                     
-                    if t_type == "diamond_axe": damage = 6
-                    elif t_type == "iron_axe": damage = 5
-                    elif t_type in ("diamond_pickaxe", "stone_axe"): damage = 4
-                    elif t_type in ("iron_pickaxe", "wood_axe"): damage = 3
-                    elif t_type == "stone_pickaxe": damage = 2
+                    if t_type == "diamond_axe": damage = 4
+                    elif t_type == "iron_axe": damage = 4
+                    elif t_type in ("wood_axe", "stone_axe"): damage = 3
+                    elif t_type == "diamond_pickaxe": damage = 5
+                    elif t_type == "iron_pickaxe": damage = 4
+                    elif t_type == "stone_pickaxe": damage = 3
+                    elif t_type == "wood_pickaxe": damage = 2
                     else: damage = 1
                         
                     tgt["hp"] -= damage
