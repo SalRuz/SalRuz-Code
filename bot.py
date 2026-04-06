@@ -156,6 +156,18 @@ def draw_iron_pickaxe(d):
 def draw_diamond_pickaxe(d):
     d.line((32, 96, 96, 32), fill=(139, 69, 19, 255), width=8) 
     d.polygon([(64, 16), (112, 32), (96, 64)], fill=(0, 255, 255, 255)) 
+def draw_wood_axe(d):
+    d.line((32, 96, 96, 32), fill=(139, 69, 19, 255), width=8) 
+    d.polygon([(48, 16), (96, 16), (96, 64), (64, 64)], fill=(180, 140, 80, 255))
+def draw_stone_axe(d):
+    d.line((32, 96, 96, 32), fill=(139, 69, 19, 255), width=8) 
+    d.polygon([(48, 16), (96, 16), (96, 64), (64, 64)], fill=(100, 100, 100, 255))
+def draw_iron_axe(d):
+    d.line((32, 96, 96, 32), fill=(139, 69, 19, 255), width=8) 
+    d.polygon([(48, 16), (96, 16), (96, 64), (64, 64)], fill=(220, 220, 220, 255))
+def draw_diamond_axe(d):
+    d.line((32, 96, 96, 32), fill=(139, 69, 19, 255), width=8) 
+    d.polygon([(48, 16), (96, 16), (96, 64), (64, 64)], fill=(0, 255, 255, 255))
 def draw_cobble(d):
     d.rectangle((0,0,128,128), fill=(100,100,100))
     for _ in range(50):
@@ -213,6 +225,10 @@ create_fallback_tex("der_kirka.png", (0, 0, 0, 0), draw_wood_pickaxe, rgba=True)
 create_fallback_tex("kam_kirka.png", (0, 0, 0, 0), draw_stone_pickaxe, rgba=True)
 create_fallback_tex("zhel_kirka.png", (0, 0, 0, 0), draw_iron_pickaxe, rgba=True)
 create_fallback_tex("alm_kirka.png", (0, 0, 0, 0), draw_diamond_pickaxe, rgba=True)
+create_fallback_tex("der_topor.png", (0, 0, 0, 0), draw_wood_axe, rgba=True)
+create_fallback_tex("kam_topor.png", (0, 0, 0, 0), draw_stone_axe, rgba=True)
+create_fallback_tex("zhel_topor.png", (0, 0, 0, 0), draw_iron_axe, rgba=True)
+create_fallback_tex("alm_topor.png", (0, 0, 0, 0), draw_diamond_axe, rgba=True)
 create_fallback_tex("ruda_ugol.png", (100, 100, 100), draw_coal_ore)
 create_fallback_tex("ruda_zhel.png", (100, 100, 100), draw_iron_ore)
 create_fallback_tex("alm_ruda.png", (100, 100, 100), draw_diamond_ore)
@@ -251,6 +267,10 @@ TEX_CACHE = {
     "stone_pickaxe": load_tex("kam_kirka.png", (100, 100, 100)),
     "iron_pickaxe": load_tex("zhel_kirka.png", (220, 220, 220)),
     "diamond_pickaxe": load_tex("alm_kirka.png", (0, 255, 255)),
+    "wood_axe": load_tex("der_topor.png", (180, 140, 80)),
+    "stone_axe": load_tex("kam_topor.png", (100, 100, 100)),
+    "iron_axe": load_tex("zhel_topor.png", (220, 220, 220)),
+    "diamond_axe": load_tex("alm_topor.png", (0, 255, 255)),
     "cobblestone": load_tex("buliga.png", (100, 100, 100)),
     "coal_ore": load_tex("ruda_ugol.png", (100, 100, 100)),
     "iron_ore": load_tex("ruda_zhel.png", (100, 100, 100)),
@@ -284,7 +304,7 @@ def get_inv_icon(itype):
         if itype == "torch":
             base = tex.resize((14, 28), Image.Resampling.NEAREST)
             icon = Image.new("RGBA", (28, 28), (0,0,0,0))
-            icon.paste(base, (7, 0))
+            icon.paste(base, (7, 0), base) 
             INV_ICONS[itype] = icon
         else:
             INV_ICONS[itype] = tex.resize((28, 28), Image.Resampling.NEAREST)
@@ -637,7 +657,7 @@ async def furnace_ticker():
                         fuel_val = 0
                         if f_type == "coal": fuel_val = 80
                         elif f_type == "wood": fuel_val = 20
-                        elif f_type in ("planks", "workbench", "wood_pickaxe"): fuel_val = 10
+                        elif f_type in ("planks", "workbench", "wood_pickaxe", "wood_axe"): fuel_val = 10
                         elif f_type == "stick": fuel_val = 5
 
                         if fuel_val > 0:
@@ -778,15 +798,17 @@ def make_keyboard(uid):
         InlineKeyboardButton("↘️", callback_data="move_br")
     )
     kb.add(
-        InlineKeyboardButton("🌀⬅️ 15°", callback_data="turn_l_15"),
-        InlineKeyboardButton("🌀➡️ 15°", callback_data="turn_r_15")
+        InlineKeyboardButton("⬅️ Предмет", callback_data="hotbar_prev"),
+        InlineKeyboardButton("➡️ Предмет", callback_data="hotbar_next")
     )
     
     kb.row(
-        InlineKeyboardButton("⏪ 90°", callback_data="turn_l_90"),
-        InlineKeyboardButton("◀️ 30°", callback_data="turn_l_30"),
-        InlineKeyboardButton("▶️ 30°", callback_data="turn_r_30"),
-        InlineKeyboardButton("⏩ 90°", callback_data="turn_r_90")
+        InlineKeyboardButton("⏪90°", callback_data="turn_l_90"),
+        InlineKeyboardButton("◀️30°", callback_data="turn_l_30"),
+        InlineKeyboardButton("🌀15°", callback_data="turn_l_15"),
+        InlineKeyboardButton("🌀15°", callback_data="turn_r_15"),
+        InlineKeyboardButton("▶️30°", callback_data="turn_r_30"),
+        InlineKeyboardButton("⏩90°", callback_data="turn_r_90")
     )
     kb.row(
         InlineKeyboardButton("⏫ 30°", callback_data="look_up_30"),
@@ -945,7 +967,7 @@ def draw_inv(img, d, w, h, st, srv=None):
             if item.get("durability") is None:
                 d.text((sx+20, sy+20), str(item["count"]), fill=(255,255,0))
             if "durability" in item:
-                max_dur = 120 if item["type"] == "diamond_pickaxe" else 90 if item["type"] == "iron_pickaxe" else 66 if item["type"] == "stone_pickaxe" else 30
+                max_dur = 120 if "diamond" in item["type"] else 90 if "iron" in item["type"] else 66 if "stone" in item["type"] else 30
                 dur_pct = max(0, item["durability"] / max_dur)
                 d.rectangle((sx+4, sy+32, sx+32, sy+34), fill=(50,50,50))
                 d.rectangle((sx+4, sy+32, sx+4+28*dur_pct, sy+34), fill=(0,255,0) if dur_pct>0.3 else (255,0,0))
@@ -978,16 +1000,18 @@ def update_crafting(st):
     elif sg == [["planks", "planks"], ["planks", "planks"]]: res = {"type": "workbench", "count": 1}
     elif sg == [["cobblestone", "cobblestone", "cobblestone"], ["cobblestone", None, "cobblestone"], ["cobblestone", "cobblestone", "cobblestone"]]: 
         res = {"type": "furnace", "count": 1}
-    elif sg == [["planks", "planks", "planks"], [None, "stick", None], [None, "stick", None]]: 
-        res = {"type": "wood_pickaxe", "count": 1, "durability": 30}
-    elif sg == [["cobblestone", "cobblestone", "cobblestone"], [None, "stick", None], [None, "stick", None]]: 
-        res = {"type": "stone_pickaxe", "count": 1, "durability": 66}
-    elif sg == [["iron_ingot", "iron_ingot", "iron_ingot"], [None, "stick", None], [None, "stick", None]]: 
-        res = {"type": "iron_pickaxe", "count": 1, "durability": 90}
-    elif sg == [["diamond", "diamond", "diamond"], [None, "stick", None], [None, "stick", None]]: 
-        res = {"type": "diamond_pickaxe", "count": 1, "durability": 120}
-    elif sg == [["coal"], ["stick"]]: 
-        res = {"type": "torch", "count": 4}
+    # Pickaxes
+    elif sg == [["planks", "planks", "planks"], [None, "stick", None], [None, "stick", None]]: res = {"type": "wood_pickaxe", "count": 1, "durability": 30}
+    elif sg == [["cobblestone", "cobblestone", "cobblestone"], [None, "stick", None], [None, "stick", None]]: res = {"type": "stone_pickaxe", "count": 1, "durability": 66}
+    elif sg == [["iron_ingot", "iron_ingot", "iron_ingot"], [None, "stick", None], [None, "stick", None]]: res = {"type": "iron_pickaxe", "count": 1, "durability": 90}
+    elif sg == [["diamond", "diamond", "diamond"], [None, "stick", None], [None, "stick", None]]: res = {"type": "diamond_pickaxe", "count": 1, "durability": 120}
+    # Axes
+    elif sg in ([[["planks", "planks"], ["planks", "stick"], [None, "stick"]], [["planks", "planks"], ["stick", "planks"], ["stick", None]]]): res = {"type": "wood_axe", "count": 1, "durability": 30}
+    elif sg in ([[["cobblestone", "cobblestone"], ["cobblestone", "stick"], [None, "stick"]], [["cobblestone", "cobblestone"], ["stick", "cobblestone"], ["stick", None]]]): res = {"type": "stone_axe", "count": 1, "durability": 66}
+    elif sg in ([[["iron_ingot", "iron_ingot"], ["iron_ingot", "stick"], [None, "stick"]], [["iron_ingot", "iron_ingot"], ["stick", "iron_ingot"], ["stick", None]]]): res = {"type": "iron_axe", "count": 1, "durability": 90}
+    elif sg in ([[["diamond", "diamond"], ["diamond", "stick"], [None, "stick"]], [["diamond", "diamond"], ["stick", "diamond"], ["stick", None]]]): res = {"type": "diamond_axe", "count": 1, "durability": 120}
+    
+    elif sg == [["coal"], ["stick"]]: res = {"type": "torch", "count": 4}
     
     if res:
         min_ops = 999
@@ -1016,7 +1040,8 @@ def close_inv(st):
         if free is not None: 
             st["inv"][free] = st["drag_item"]
             st["drag_item"] = None
-    if st.get("inv_cursor", 0) >= 20:
+            
+    if st.get("inv_cursor", 0) >= 5:
         st["inv_cursor"] = 0
 
 def get_slot_item(st, srv, idx):
@@ -1174,7 +1199,7 @@ def render_scene(px, py, pz, pa, pt, uid, s_id):
                 if item.get("durability") is None:
                     d.text((hx+i*40+20, out_h-25), str(item["count"]), fill=(255,255,0))
                 if "durability" in item:
-                    max_dur = 120 if item["type"] == "diamond_pickaxe" else 90 if item["type"] == "iron_pickaxe" else 66 if item["type"] == "stone_pickaxe" else 30
+                    max_dur = 120 if "diamond" in item["type"] else 90 if "iron" in item["type"] else 66 if "stone" in item["type"] else 30
                     dur_pct = max(0, item["durability"] / max_dur)
                     d.rectangle((hx+i*40+4, out_h-13, hx+i*40+32, out_h-11), fill=(50,50,50))
                     d.rectangle((hx+i*40+4, out_h-13, hx+i*40+4+28*dur_pct, out_h-11), fill=(0,255,0) if dur_pct>0.3 else (255,0,0))
@@ -1307,7 +1332,7 @@ async def h_give(m):
     
     parts = m.text.split()
     if len(parts) < 2:
-        items_str = "grass, dirt, stone, bedrock, wood, leaves, planks, workbench, furnace, cobblestone, coal_ore, iron_ore, diamond_ore, stick, wood_pickaxe, stone_pickaxe, iron_pickaxe, diamond_pickaxe, coal, iron, diamond, iron_ingot, torch"
+        items_str = "grass, dirt, stone, bedrock, wood, leaves, planks, workbench, furnace, cobblestone, coal_ore, iron_ore, diamond_ore, stick, wood_pickaxe, stone_pickaxe, iron_pickaxe, diamond_pickaxe, wood_axe, stone_axe, iron_axe, diamond_axe, coal, iron, diamond, iron_ingot, torch"
         await bot.send_message(m.chat.id, f"Использование: /give <предмет> [кол-во]\n\nДоступные предметы:\n{items_str}")
         return
         
@@ -1325,8 +1350,8 @@ async def h_give(m):
         for i in range(20):
             if i not in st["inv"]:
                 st["inv"][i] = {"type": item_type, "count": count}
-                if "pickaxe" in item_type:
-                    max_dur = 120 if item_type == "diamond_pickaxe" else 90 if item_type == "iron_pickaxe" else 66 if item_type == "stone_pickaxe" else 30
+                if "pickaxe" in item_type or "axe" in item_type:
+                    max_dur = 120 if "diamond" in item_type else 90 if "iron" in item_type else 66 if "stone" in item_type else 30
                     st["inv"][i]["durability"] = max_dur
                 added = True
                 break
@@ -1461,18 +1486,19 @@ async def h_cb(c):
             
             if d == "inv_u":
                 if mode == "workbench":
-                    if 0 <= c_idx <= 4: c_idx += 30
-                    elif 5 <= c_idx <= 9: 
-                        if c_idx in (5,6): c_idx = 36
-                        elif c_idx in (7,8): c_idx = 38
+                    if 0 <= c_idx <= 4: c_idx += 15
+                    elif 5 <= c_idx <= 9:
+                        if c_idx in (5, 6): c_idx = 36
+                        elif c_idx in (7, 8): c_idx = 38
                         elif c_idx == 9: c_idx = 39
                     elif 10 <= c_idx <= 19: c_idx -= 5
                     elif 33 <= c_idx <= 38: c_idx -= 3
                 elif mode == "furnace":
-                    if c_idx == 51: c_idx = 50
+                    if 0 <= c_idx <= 4: c_idx += 15
                     elif 5 <= c_idx <= 9: c_idx = 51
                     elif 10 <= c_idx <= 19: c_idx -= 5
-                else:
+                    elif c_idx == 51: c_idx = 50
+                else: 
                     if 0 <= c_idx <= 4: c_idx += 15
                     elif 5 <= c_idx <= 9:
                         if c_idx in (5, 6): c_idx = 22
@@ -1480,10 +1506,11 @@ async def h_cb(c):
                         elif c_idx == 9: c_idx = 24
                     elif 10 <= c_idx <= 19: c_idx -= 5
                     elif c_idx in (22, 23): c_idx -= 2
+
             elif d == "inv_d":
                 if mode == "workbench":
                     if 30 <= c_idx <= 35: c_idx += 3
-                    elif c_idx in (36,37,38): c_idx = 7
+                    elif c_idx in (36, 37, 38): c_idx = 7
                     elif c_idx == 39: c_idx = 9
                     elif 5 <= c_idx <= 14: c_idx += 5
                     elif 15 <= c_idx <= 19: c_idx -= 15
@@ -1491,6 +1518,7 @@ async def h_cb(c):
                     if c_idx in (50, 52): c_idx = 51
                     elif c_idx == 51: c_idx = 7
                     elif 5 <= c_idx <= 14: c_idx += 5
+                    elif 15 <= c_idx <= 19: c_idx -= 15
                 else:
                     if c_idx in (20, 21): c_idx += 2
                     elif c_idx == 22: c_idx = 6
@@ -1498,6 +1526,7 @@ async def h_cb(c):
                     elif c_idx == 24: c_idx = 9
                     elif 5 <= c_idx <= 14: c_idx += 5
                     elif 15 <= c_idx <= 19: c_idx -= 15
+
             elif d == "inv_l":
                 if mode == "workbench":
                     if c_idx in (31,32,34,35,37,38): c_idx -= 1
@@ -1583,6 +1612,15 @@ async def h_cb(c):
             
             await send_view(c.message.chat.id, uid)
             return
+
+        elif d == "hotbar_prev":
+            if st.get("inv_cursor", 0) > 4: st["inv_cursor"] = 4
+            else: st["inv_cursor"] = (st["inv_cursor"] - 1) % 5
+            ev = True
+        elif d == "hotbar_next":
+            if st.get("inv_cursor", 0) > 4: st["inv_cursor"] = 0
+            else: st["inv_cursor"] = (st["inv_cursor"] + 1) % 5
+            ev = True
 
         elif d == "toggle_step":
             cur = st.get("step_size", 1.0)
@@ -1673,7 +1711,7 @@ async def h_cb(c):
                     
                     c_slot = st["inv_cursor"] if st["inv_cursor"] < 5 else 0
                     item = st["inv"].get(c_slot)
-                    if item and item["type"] in ["wood_pickaxe", "stone_pickaxe", "iron_pickaxe", "diamond_pickaxe", "stick", "iron_ingot", "diamond"]: pass
+                    if item and item["type"] in ["wood_pickaxe", "stone_pickaxe", "iron_pickaxe", "diamond_pickaxe", "wood_axe", "stone_axe", "iron_axe", "diamond_axe", "stick", "iron_ingot", "diamond"]: pass
                     elif item or srv.type == "classic":
                         btype = item["type"] if item else "planks"
                         if nb not in srv.blocks:
@@ -1696,11 +1734,10 @@ async def h_cb(c):
         elif d == "break":
             c_slot = st["inv_cursor"] if st["inv_cursor"] < 5 else 0
             tool = st["inv"].get(c_slot)
-            is_wood_pick = tool and tool["type"] == "wood_pickaxe"
-            is_stone_pick = tool and tool["type"] == "stone_pickaxe"
-            is_iron_pick = tool and tool["type"] == "iron_pickaxe"
-            is_diamond_pick = tool and tool["type"] == "diamond_pickaxe"
-            is_pick = is_wood_pick or is_stone_pick or is_iron_pick or is_diamond_pick
+            t_type = tool["type"] if tool else None
+            
+            is_pick = t_type in ("wood_pickaxe", "stone_pickaxe", "iron_pickaxe", "diamond_pickaxe")
+            is_axe = t_type in ("wood_axe", "stone_axe", "iron_axe", "diamond_axe")
 
             pb = ray_pick(st["x"], st["y"], st["z"]+1.6, st["angle"], st["tilt"], s_id, uid)
             if pb and (srv.type == "classic" or pb[3] <= 5.0):
@@ -1711,13 +1748,17 @@ async def h_cb(c):
                         btype = srv.blocks[pb[1]].get("type", "stone")
                         
                         if btype in ("stone", "cobblestone", "coal_ore", "iron_ore", "diamond_ore", "furnace"):
-                            if is_diamond_pick: mhp = 1
-                            elif is_iron_pick: mhp = 3
-                            elif is_stone_pick: mhp = 6
-                            elif is_wood_pick: mhp = 9
+                            if t_type == "diamond_pickaxe": mhp = 1
+                            elif t_type == "iron_pickaxe": mhp = 3
+                            elif t_type == "stone_pickaxe": mhp = 6
+                            elif t_type == "wood_pickaxe": mhp = 9
                             else: mhp = 12
-                        elif btype in ("planks", "workbench"):
-                            mhp = 5
+                        elif btype in ("planks", "workbench", "wood"):
+                            if t_type == "diamond_axe": mhp = 1
+                            elif t_type == "iron_axe": mhp = 2
+                            elif t_type == "stone_axe": mhp = 3
+                            elif t_type == "wood_axe": mhp = 4
+                            else: mhp = 6 if btype == "wood" else 5
                         else:
                             mhp = BLOCK_STATS.get(btype, 3)
 
@@ -1742,7 +1783,7 @@ async def h_cb(c):
                             elif btype == "coal_ore": drop_t = "coal"
                             elif btype == "iron_ore": drop_t = "iron"
                             elif btype == "diamond_ore":
-                                if is_iron_pick or is_diamond_pick: drop_t = "diamond"
+                                if t_type in ("iron_pickaxe", "diamond_pickaxe"): drop_t = "diamond"
                                 else: drop_t = None
 
                             if drop_t:
@@ -1754,7 +1795,7 @@ async def h_cb(c):
                                         if i not in st["inv"]:
                                             st["inv"][i] = {"type": drop_t, "count": 1}; break
                             
-                            if is_pick:
+                            if is_pick or is_axe:
                                 tool["durability"] -= 1
                                 if tool["durability"] <= 0: del st["inv"][c_slot]
                         srv.rebuild_mesh()
@@ -1764,7 +1805,14 @@ async def h_cb(c):
                     ev = True
                 elif pb[0] == "player":
                     tgt = srv.players[pb[1]]
-                    damage = 5 if is_diamond_pick else 4 if is_iron_pick else 3 if is_stone_pick else 2 if is_wood_pick else 1
+                    
+                    if t_type == "diamond_axe": damage = 6
+                    elif t_type == "iron_axe": damage = 5
+                    elif t_type in ("diamond_pickaxe", "stone_axe"): damage = 4
+                    elif t_type in ("iron_pickaxe", "wood_axe"): damage = 3
+                    elif t_type == "stone_pickaxe": damage = 2
+                    else: damage = 1
+                        
                     tgt["hp"] -= damage
                     tgt["flash_time"] = time.time()
                     if tgt["hp"] <= 0:
@@ -1772,6 +1820,11 @@ async def h_cb(c):
                         tgt["hp"], tgt["x"], tgt["y"], tgt["z"] = 10, 0.5, 0.5, get_ground_z(0.5, 0.5, srv)
                     ev = True
                     st["hit_time"] = time.time()
+                    
+                    if is_pick or is_axe:
+                        tool["durability"] -= 1
+                        if tool["durability"] <= 0: del st["inv"][c_slot]
+                        
                     async def reset_hit_btn(cid, p_uid, m_id):
                         await asyncio.sleep(1.0)
                         p_st = get_st(p_uid)
