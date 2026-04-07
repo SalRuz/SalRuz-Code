@@ -1798,6 +1798,11 @@ async def cb_join(c):
     except: pass
     
     st = init_player(uid, s_id, c.from_user.first_name)
+    
+    # ОБЯЗАТЕЛЬНО: Пересобираем мир после того, как игрок получил статус Online
+    # Иначе сервер отрендерит пустоту (так как оптимизация скрывает пустые чанки)
+    SERVERS[s_id].rebuild_mesh() 
+    
     SERVERS[s_id].broadcast(f"🎉 {st['name']} присоединился!")
     
     tasks = [send_view(p_uid, p_uid) for p_uid, ps in SERVERS[s_id].players.items() if ps.get("online")]
@@ -2041,17 +2046,20 @@ async def h_cb(c):
             ev = True
 
         if d in ["move_f", "move_b", "move_l", "move_r", "move_fl", "move_fr", "move_bl", "move_br"]:
+            # Запоминаем в каком чанке мы были до шага
+            old_cx, old_cy = int(st["x"] // 16), int(st["y"] // 16)
+            
             f, s = 0, 0
             if "f" in d: f=1
             if "b" in d: f=-1
             if "l" in d: s=-1
             if "r" in d: s=1
             a = st["angle"]
-            
+
             step_size = st.get("step_size", 1.0)
             nx = st["x"] + (math.sin(a)*f + math.cos(a)*s) * step_size
             ny = st["y"] + (math.cos(a)*f - math.sin(a)*s) * step_size
-            
+
             if st.get("creative"):
                 st["x"], st["y"] = nx, ny
                 if st["jump"]:
@@ -2061,10 +2069,10 @@ async def h_cb(c):
             else:
                 if srv.type == "classic":
                     nx, ny = clamp(nx, 0.5, srv.size-0.5), clamp(ny, 0.5, srv.size-0.5)
-                    
+
                 if srv.type == "survival":
                     srv.load_chunks_around(nx, ny, radius=1)
-                    
+
                 tz = get_ground_z(nx, ny, srv, st["z"])
                     
                 if is_blocked(srv, st["x"], st["y"], st["z"]):
@@ -2083,6 +2091,12 @@ async def h_cb(c):
                                 if st["hp"]<=0:
                                     await broadcast_chat(s_id, f"💀 {st['name']} разбился!")
                                     st["x"], st["y"], st["z"], st["hp"] = 0.5, 0.5, get_ground_z(0.5, 0.5, srv), 10
+            
+            # Проверяем, перешли ли мы в новый чанк
+            new_cx, new_cy = int(st["x"] // 16), int(st["y"] // 16)
+            if old_cx != new_cx or old_cy != new_cy:
+                srv.rebuild_mesh() # Перерисовываем мир вокруг новых координат
+                
             st["jump"] = False
             
         elif d == "refresh": 
@@ -2228,8 +2242,9 @@ async def h_cb(c):
                     elif srv.type == "survival":
                         btype = srv.blocks[pb[1]].get("type", "stone")
                         base_type = btype.replace("_slab", "").replace("_stairs", "")
-                        
-                        if base_type in ("stone", "cobblestone", "coal_ore", "iron_ore", "diamond_ore", "furnace"):
+
+                        # Песчаник теперь добывается как камень (нужна кирка)
+                        if base_type in ("stone", "cobblestone", "coal_ore", "iron_ore", "diamond_ore", "furnace", "sandstone"):
                             if t_type == "diamond_pickaxe": mhp = 1
                             elif t_type == "iron_pickaxe": mhp = 3
                             elif t_type == "stone_pickaxe": mhp = 6
@@ -2281,6 +2296,11 @@ async def h_cb(c):
                             elif btype == "diamond_ore":
                                 if t_type in ("iron_pickaxe", "diamond_pickaxe"): drop_t = "diamond"
                                 else: drop_t = None
+                            elif btype == "sandstone": # Логика дропа песчаника
+                                if t_type in ("wood_pickaxe", "stone_pickaxe", "iron_pickaxe", "diamond_pickaxe"): drop_t = "sandstone"
+                                else: drop_t = None
+                            elif btype == "glass": # Стекло разбивается насовсем
+                                drop_t = None
 
                             if drop_t:
                                 for i in range(20):
