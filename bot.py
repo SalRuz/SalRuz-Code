@@ -409,6 +409,8 @@ TOOLS = PICKAXES + AXES + SHOVELS + HOES + SWORDS
 INV_ICONS = {}
 def get_inv_icon(itype):
     if itype not in INV_ICONS:
+        tex_name = itype # ИСПРАВЛЕНИЕ: Базовое значение по умолчанию
+        
         if itype == "door": tex_name = "door_top"
         elif itype == "trapdoor": tex_name = "trapdoor"
         elif "slab" in itype or "stairs" in itype:
@@ -420,9 +422,9 @@ def get_inv_icon(itype):
         elif itype == "chest": tex_name = "sunduk"
         elif itype == "dirt": tex_name = "zemlya"
         elif itype == "torch": tex_name = "torch_side"
-        
+
         tex = TEX_CACHE.get(tex_name, TEX_CACHE.get(itype, TEX_CACHE["zemlya"]))
-        
+
         if itype == "torch":
             base = tex.resize((14, 28), Image.Resampling.NEAREST)
             icon = Image.new("RGBA", (28, 28), (0,0,0,0))
@@ -432,10 +434,10 @@ def get_inv_icon(itype):
             base = tex.resize((28, 28), Image.Resampling.NEAREST).convert("RGBA")
             icon = Image.new("RGBA", (28, 28), (0,0,0,0))
             if "slab" in itype:
-                icon.paste(base.crop((0, 14, 28, 28)), (0, 14)) # Только нижняя половина
-            else: # Ступени
-                icon.paste(base.crop((0, 14, 28, 28)), (0, 14)) # Нижняя половина
-                icon.paste(base.crop((14, 0, 28, 14)), (14, 0)) # Правая верхняя четверть
+                icon.paste(base.crop((0, 14, 28, 28)), (0, 14))
+            else: 
+                icon.paste(base.crop((0, 14, 28, 28)), (0, 14))
+                icon.paste(base.crop((14, 0, 28, 14)), (14, 0))
             INV_ICONS[itype] = icon
         else:
             INV_ICONS[itype] = tex.resize((28, 28), Image.Resampling.NEAREST)
