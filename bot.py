@@ -1737,16 +1737,16 @@ def get_user_lock(uid):
     return USER_LOCKS[uid]
 
 async def send_view(cid, uid, force=False):
-    s_id = user_server_map.get(uid)
-    if not s_id: return
-    st = get_st(uid)
-    if not st: return
+    try:
+        s_id = user_server_map.get(uid)
+        if not s_id: return
+        st = get_st(uid)
+        if not st: return
 
-    lock = get_user_lock(uid)
-    if lock.locked() and not force: return 
-    
-    async with lock:
-        try:
+        lock = get_user_lock(uid)
+        if lock.locked() and not force: return 
+        
+        async with lock:
             kb = get_keyboard(uid)
 
             async with RENDER_SEMAPHORE:
@@ -1758,8 +1758,6 @@ async def send_view(cid, uid, force=False):
             img_hash = hashlib.md5(img_bytes).hexdigest()
             current_state = f"{img_hash}_{kb_str}_{cap}"
             
-            # ИСПРАВЛЕНИЕ: Если force=True или у игрока нет игрового экрана (msg_id=None), 
-            # мы ОБЯЗАНЫ отправить кадр, даже если картинка не поменялась!
             if not force and st.get("msg_id") is not None and st.get("last_state_hash") == current_state:
                 return 
                 
@@ -1774,16 +1772,21 @@ async def send_view(cid, uid, force=False):
                 except ApiTelegramException as e:
                     err = str(e).lower()
                     if "not modified" in err: return
-                    if "message to edit not found" in err: st["msg_id"] = None
-                except Exception: pass
+                    # Если сообщение удалено или устарело — сбрасываем msg_id
+                    if "not found" in err or "can't be edited" in err or "to edit" in err: 
+                        st["msg_id"] = None
+                except Exception: 
+                    st["msg_id"] = None # При любой другой ошибке пробуем отправить заново
 
             if not st.get("msg_id"):
                 bio_send = io.BytesIO(img_bytes)
                 bio_send.name = "s.jpg"
                 msg = await bot.send_photo(cid, bio_send, caption=cap, reply_markup=kb)
                 st["msg_id"] = msg.message_id
-        finally:
-            pass
+    except Exception as e:
+        # Если произошла скрытая ошибка рендера, бот выведет её в чат
+        try: await bot.send_message(cid, f"❌ Системная ошибка рендера: {e}")
+        except: pass
 
 def server_menu():
     kb = InlineKeyboardMarkup()
@@ -1931,29 +1934,38 @@ async def h_text(m):
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("join_"))
 async def cb_join(c):
-    s_id = int(c.data.split("_")[1])
-    uid = c.from_user.id
-    ACTIVE_MENUS.pop(uid, None)
-    try: await bot.delete_message(c.message.chat.id, c.message.message_id)
-    except: pass
-    
-    st = init_player(uid, s_id, c.from_user.first_name)
-    
-    if SERVERS[s_id].type == "survival":
-        SERVERS[s_id].load_chunks_around(st["x"], st["y"], radius=1)
-        st["z"] = get_ground_z(st["x"], st["y"], SERVERS[s_id], st.get("z"))
-    
-    SERVERS[s_id].rebuild_mesh() 
-    SERVERS[s_id].broadcast(f"🎉 {st['name']} присоединился!")
-    
-    # ИСПРАВЛЕНИЕ: Гарантированно и принудительно отправляем экран самому игроку
-    await send_view(c.message.chat.id, uid, force=True)
-    
-    # После этого обновляем экраны всех остальных на сервере
-    tasks = [send_view(p_uid, p_uid) for p_uid, ps in SERVERS[s_id].players.items() if ps.get("online") and p_uid != uid]
-    if tasks: await asyncio.gather(*tasks, return_exceptions=True)
-    
-    await update_server_menus()
+    try:
+        s_id = int(c.data.split("_")[1])
+        uid = c.from_user.id
+        ACTIVE_MENUS.pop(uid, None)
+        try: await bot.delete_message(c.message.chat.id, c.message.message_id)
+        except: pass
+        
+        st = init_player(uid, s_id, c.from_user.first_name)
+        
+        if SERVERS[s_id].type == "survival":
+            SERVERS[s_id].load_chunks_around(st["x"], st["y"], radius=1)
+            st["z"] = get_ground_z(st["x"], st["y"], SERVERS[s_id], st.get("z"))
+        
+        SERVERS[s_id].rebuild_mesh() 
+        SERVERS[s_id].broadcast(f"🎉 {st['name']} присоединился!")
+        
+        # ГАРАНТИЯ: Принудительно отвязываем новый сеанс от старых сообщений
+        st["msg_id"] = None
+        st["last_state_hash"] = None
+        
+        # Принудительно отправляем свежий экран игры самому игроку
+        await send_view(c.message.chat.id, uid, force=True)
+        
+        # Обновляем экраны всех остальных на сервере
+        tasks = [send_view(p_uid, p_uid) for p_uid, ps in SERVERS[s_id].players.items() if ps.get("online") and p_uid != uid]
+        if tasks: await asyncio.gather(*tasks, return_exceptions=True)
+        
+        await update_server_menus()
+    except Exception as e:
+        # Защита от тихих падений: если что-то сломалось при входе, бот скажет об этом
+        try: await bot.send_message(c.message.chat.id, f"❌ Ошибка входа на сервер: {e}")
+        except: pass
 
 @bot.message_handler(content_types=["photo"])
 async def h_photo(m):
