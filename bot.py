@@ -759,7 +759,7 @@ def load_all_data():
                     p_data["action_lock"] = False
                 for pos, bd in data.get("blocks", {}).items():
                     t = bd.get("type")
-                    if not t: t = "stone" # Предотвращаем None
+                    if not t: t = "stone"
                     SERVERS[1].blocks[pos] = {"color": bd.get("color", (255,255,255)), "type": t}
                     if "tex_bytes" in bd:
                         try: SERVERS[1].blocks[pos]["tex"] = Image.open(io.BytesIO(bd["tex_bytes"])).convert("RGBA")
