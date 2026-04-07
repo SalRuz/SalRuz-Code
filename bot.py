@@ -324,6 +324,9 @@ create_fallback_tex("zhel_slitok.png", (0, 0, 0, 0), draw_ingot, rgba=True)
 create_fallback_tex("sunduk.png", (150, 100, 50), draw_chest_front)
 create_fallback_tex("sunduk_bok.png", (150, 100, 50), draw_chest_side)
 create_fallback_tex("vn_sunduk.png", (120, 80, 40))
+create_fallback_tex("dver1.png", (139, 69, 19))
+create_fallback_tex("dver2.png", (139, 69, 19))
+create_fallback_tex("luk.png", (139, 69, 19), rgba=True)
 
 create_fallback_tex("full_hp.png", (0,0,0,0), get_heart_drawer(2), True)
 create_fallback_tex("half_hp.png", (0,0,0,0), get_heart_drawer(1), True)
@@ -388,6 +391,9 @@ TEX_CACHE = {
     "sunduk": load_tex("sunduk.png", (150, 100, 50)),
     "sunduk_bok": load_tex("sunduk_bok.png", (150, 100, 50)),
     "vn_sunduk": load_tex("vn_sunduk.png", (120, 80, 40)),
+    "door_bottom": load_tex("dver1.png", (139, 69, 19)),
+    "door_top": load_tex("dver2.png", (139, 69, 19)),
+    "trapdoor": load_tex("luk.png", (139, 69, 19)),
     "full_hp": load_tex("full_hp.png", (0,0,0,0)),
     "half_hp": load_tex("half_hp.png", (0,0,0,0)),
     "non_hp": load_tex("non_hp.png", (0,0,0,0)),
@@ -403,8 +409,9 @@ TOOLS = PICKAXES + AXES + SHOVELS + HOES + SWORDS
 INV_ICONS = {}
 def get_inv_icon(itype):
     if itype not in INV_ICONS:
-        tex_name = itype
-        if "slab" in itype or "stairs" in itype:
+        if itype == "door": tex_name = "door_top"
+        elif itype == "trapdoor": tex_name = "trapdoor"
+        elif "slab" in itype or "stairs" in itype:
             tex_name = itype.replace("_slab", "").replace("_stairs", "")
         elif itype == "grass": tex_name = "trava_side"
         elif itype == "wood": tex_name = "wood_side"
@@ -714,6 +721,22 @@ class Server:
                     elif facing == "back": boxes.append((0, 0, 0.5, 1, 0.5, 0.5))
                     elif facing == "right": boxes.append((0.5, 0, 0.5, 0.5, 1, 0.5))
                     elif facing == "left": boxes.append((0, 0, 0.5, 0.5, 1, 0.5))
+                elif btype in ("door_bottom", "door_top"):
+                    facing = bdata.get("facing", "front")
+                    is_open = bdata.get("open", False)
+                    if facing == "front": boxes.append((0.8, 0, 0, 0.2, 1, 1) if is_open else (0, 0.8, 0, 1, 0.2, 1))
+                    elif facing == "back": boxes.append((0, 0, 0, 0.2, 1, 1) if is_open else (0, 0, 0, 1, 0.2, 1))
+                    elif facing == "right": boxes.append((0, 0.8, 0, 1, 0.2, 1) if is_open else (0.8, 0, 0, 0.2, 1, 1))
+                    elif facing == "left": boxes.append((0, 0, 0, 1, 0.2, 1) if is_open else (0, 0, 0, 0.2, 1, 1))
+                elif btype == "trapdoor":
+                    facing = bdata.get("facing", "front")
+                    is_open = bdata.get("open", False)
+                    if not is_open: boxes.append((0, 0, 0, 1, 1, 0.2))
+                    else:
+                        if facing == "front": boxes.append((0, 0.8, 0, 1, 0.2, 1))
+                        elif facing == "back": boxes.append((0, 0, 0, 1, 0.2, 1))
+                        elif facing == "right": boxes.append((0.8, 0, 0, 0.2, 1, 1))
+                        elif facing == "left": boxes.append((0, 0, 0, 0.2, 1, 1))
                 else:
                     boxes.append((0, 0, 0, 1, 1, 1))
 
@@ -772,6 +795,9 @@ class Server:
                                 else: tex = TEX_CACHE["sunduk_bok"]
                             elif base_type in ["dirt", "stone", "leaves", "planks", "bedrock", "cobblestone", "coal_ore", "iron_ore", "diamond_ore", "sand", "sandstone", "glass"]:
                                 tex = TEX_CACHE.get(base_type, TEX_CACHE["zemlya"])
+                            elif btype == "door_bottom": tex = TEX_CACHE["door_bottom"] if fn in ("front", "back") else TEX_CACHE["planks"]
+                            elif btype == "door_top": tex = TEX_CACHE["door_top"] if fn in ("front", "back") else TEX_CACHE["planks"]
+                            elif btype == "trapdoor": tex = TEX_CACHE["trapdoor"] if fn in ("top", "bottom") else TEX_CACHE["wood_side"]
                             face_info["tex"] = tex
                         
                         dmg = self.block_damage.get((gx,gy,gz), 0)
@@ -937,7 +963,7 @@ async def furnace_ticker():
                         if f_type == "coal": fuel_val = 40
                         elif f_type == "d_ugol": fuel_val = 35
                         elif f_type == "wood": fuel_val = 10
-                        elif f_type in ("planks", "workbench", "chest") or "wood_" in f_type or "planks_" in f_type: fuel_val = 5
+                        elif f_type in ("planks", "workbench", "chest", "door", "trapdoor") or "wood_" in f_type or "planks_" in f_type: fuel_val = 5
                         elif f_type == "stick": fuel_val = 2.5
 
                         if fuel_val > 0:
@@ -1041,11 +1067,36 @@ def is_blocked(srv, x, y, z):
                 if facing == "back" and dy < 0.5: top_half = True
                 if facing == "right" and dx >= 0.5: top_half = True
                 if facing == "left" and dx < 0.5: top_half = True
-                
+
                 if top_half:
                     if z < bz + 0.99: return True
                 else:
                     if z < bz + 0.49: return True
+            elif btype in ("door_bottom", "door_top"):
+                is_open = b.get("open", False)
+                facing = b.get("facing", "front")
+                dx, dy = x - ix, y - iy
+                if not is_open:
+                    if facing == "front" and dy >= 0.7: return True
+                    if facing == "back" and dy <= 0.3: return True
+                    if facing == "right" and dx >= 0.7: return True
+                    if facing == "left" and dx <= 0.3: return True
+                else:
+                    if facing == "front" and dx >= 0.7: return True
+                    if facing == "back" and dx <= 0.3: return True
+                    if facing == "right" and dy >= 0.7: return True
+                    if facing == "left" and dy <= 0.3: return True
+            elif btype == "trapdoor":
+                is_open = b.get("open", False)
+                if not is_open:
+                    if z < bz + 0.2: return True
+                else:
+                    facing = b.get("facing", "front")
+                    dx, dy = x - ix, y - iy
+                    if facing == "front" and dy >= 0.7: return True
+                    if facing == "back" and dy <= 0.3: return True
+                    if facing == "right" and dx >= 0.7: return True
+                    if facing == "left" and dx <= 0.3: return True
             else:
                 return True
     return False
@@ -1061,7 +1112,8 @@ def init_player(uid, s_id, name):
             "x": px, "y": py, "z": get_ground_z(px, py, srv), 
             "angle": 0.0, "tilt": 0.0, "jump": False, "last_action": time.time(),
             "name": transliterate(name), "msg_id": None, "view_radius": 8, "res_level": 2, "hp": 10, "flash_time": 0,
-            "inv": {0: {"type": "wood", "count": 10}}, "inv_open": False, "inv_mode": "normal", "inv_cursor": 0, "drag_item": None,
+            "inv": {0: {"type": "wood", "count": 10}}, "inv_open": False, "inv_mode": "normal", "inv_cursor": 5 if s_id == 1 else 0, "drag_item": None,
+            "classic_hotbar": {}, # Ячейки для картинок в классике
             "furnace_pos": None, "chest_pos": None, "step_size": 1.0,
             "is_busy": False, "online": True, "hit_time": 0, "last_state_hash": None, "action_lock": False, "creative": False
         }
@@ -1074,6 +1126,8 @@ def init_player(uid, s_id, name):
         srv.players[uid]["last_state_hash"] = None
         srv.players[uid]["action_lock"] = False
         if "creative" not in srv.players[uid]: srv.players[uid]["creative"] = False
+        if "classic_hotbar" not in srv.players[uid]: srv.players[uid]["classic_hotbar"] = {}
+        if s_id == 1 and "inv_cursor" not in srv.players[uid]: srv.players[uid]["inv_cursor"] = 5
     return srv.players[uid]
 
 def make_keyboard(uid):
@@ -1393,7 +1447,11 @@ def update_crafting(st):
         [["stone", None, None], ["stone", "stone", None], ["stone", "stone", "stone"]],
         [[None, None, "stone"], [None, "stone", "stone"], ["stone", "stone", "stone"]]
     ): res = {"type": "stone_stairs", "count": 4}
-    
+
+    # Двери и люки
+    elif sg == [["planks", "planks"], ["planks", "planks"], ["planks", "planks"]]: res = {"type": "door", "count": 3}
+    elif sg == [["planks", "planks", "planks"], ["planks", "planks", "planks"]]: res = {"type": "trapdoor", "count": 3}
+
     if res:
         min_ops = 999
         for r in grid:
@@ -1595,6 +1653,20 @@ def render_scene(px, py, pz, pa, pt, uid, s_id):
                     dur_pct = max(0, item["durability"] / max_dur)
                     d.rectangle((hx+i*40+4, out_h-13, hx+i*40+32, out_h-11), fill=(50,50,50))
                     d.rectangle((hx+i*40+4, out_h-13, hx+i*40+4+28*dur_pct, out_h-11), fill=(0,255,0) if dur_pct>0.3 else (255,0,0))
+    elif srv.type == "classic":
+        hx = out_w//2 - 120
+        for i in range(6):
+            d.rectangle((hx+i*40, out_h-45, hx+i*40+36, out_h-9), fill=(100,100,100,150), outline=(255,255,255) if i==st.get("inv_cursor", 5) else None)
+            if i < 5:
+                # Отрисовка сохраненной картинки слота
+                slot_tex = st.get("classic_hotbar", {}).get(i)
+                if slot_tex:
+                    icon = slot_tex.resize((28, 28), Image.Resampling.NEAREST)
+                    img.paste(icon, (hx+i*40+4, out_h-41), icon)
+            else:
+                # Красный крестик на 6-й ячейке
+                d.line((hx+i*40+6, out_h-43, hx+i*40+30, out_h-11), fill=(255,50,50), width=3)
+                d.line((hx+i*40+30, out_h-43, hx+i*40+6, out_h-11), fill=(255,50,50), width=3)
 
     bio = io.BytesIO()
     img.convert("RGB").save(bio, "JPEG", quality=90)
@@ -1632,6 +1704,10 @@ def ray_pick(px, py, pz, pa, pt, s_id, ignore_uid=None):
                     elif facing == "back" and hy < 0.5: hit = True
                     elif facing == "right" and hx >= 0.5: hit = True
                     elif facing == "left" and hx < 0.5: hit = True
+            elif btype in ("door_bottom", "door_top"):
+                hit = True # Упрощенный хитбокс луча
+            elif btype == "trapdoor":
+                hit = True
             else:
                 hit = True
 
@@ -1897,7 +1973,11 @@ async def h_photo(m):
                 if not ps.get("online"): continue
                 if p_uid == uid or (ps["x"] - bx)**2 + (ps["y"] - by)**2 <= ps.get("view_radius", 8)**2:
                     tasks.append(send_view(p_uid, p_uid))
-            
+        elif mode and mode[0] == "hotbar" and s_id == 1:
+            st["classic_hotbar"][mode[1]] = tex
+            del pending_skin_mode[uid]
+            await broadcast_chat(s_id, f"🖼 {un} задал новую текстуру в хотбар!")
+            tasks.append(send_view(uid, uid, force=True))
         elif m.caption and "/skin" in m.caption.lower():
             player_skins[uid] = {"base": tex.copy(), "face": bake_face(tex)}
             await broadcast_chat(s_id, f"👕 {un} установил новый скин!")
@@ -2089,12 +2169,14 @@ async def h_cb(c):
             return
 
         elif d == "hotbar_prev":
-            if st.get("inv_cursor", 0) > 4: st["inv_cursor"] = 4
-            else: st["inv_cursor"] = (st["inv_cursor"] - 1) % 5
+            max_slots = 5 if srv.type == "classic" else 4
+            if st.get("inv_cursor", 0) > max_slots: st["inv_cursor"] = max_slots
+            else: st["inv_cursor"] = (st["inv_cursor"] - 1) % (max_slots + 1)
             ev = True
         elif d == "hotbar_next":
-            if st.get("inv_cursor", 0) > 4: st["inv_cursor"] = 0
-            else: st["inv_cursor"] = (st["inv_cursor"] + 1) % 5
+            max_slots = 5 if srv.type == "classic" else 4
+            if st.get("inv_cursor", 0) > max_slots: st["inv_cursor"] = 0
+            else: st["inv_cursor"] = (st["inv_cursor"] + 1) % (max_slots + 1)
             ev = True
 
         elif d == "toggle_step":
@@ -2185,10 +2267,22 @@ async def h_cb(c):
         elif d == "cycle_res": st["res_level"] = st["res_level"]+1 if st["res_level"]<4 else 1
         elif d == "paint":
             if srv.type == "classic":
-                pb = ray_pick(st["x"], st["y"], st["z"]+1.6, st["angle"], st["tilt"], s_id, uid)
-                if pb and pb[0]=="block": pending_skin_mode[uid] = ("block", pb[1])
-                try: await bot.edit_message_reply_markup(c.message.chat.id, c.message.message_id, reply_markup=make_keyboard(uid))
-                except: pass
+                if st.get("inv_cursor", 5) < 5:
+                    pb = ray_pick(st["x"], st["y"], st["z"]+1.6, st["angle"], st["tilt"], s_id, uid)
+                    tex = st["classic_hotbar"].get(st["inv_cursor"])
+                    if pb and pb[0]=="block" and tex:
+                        srv.blocks[pb[1]]["tex"] = tex
+                        srv.rebuild_mesh()
+                        ev = True
+                    
+                    pending_skin_mode[uid] = ("hotbar", st["inv_cursor"])
+                    try: await bot.send_message(uid, f"📸 Отправь фото для ячейки {st['inv_cursor'] + 1}!")
+                    except: pass
+                else:
+                    pb = ray_pick(st["x"], st["y"], st["z"]+1.6, st["angle"], st["tilt"], s_id, uid)
+                    if pb and pb[0]=="block": pending_skin_mode[uid] = ("block", pb[1])
+                    try: await bot.edit_message_reply_markup(c.message.chat.id, c.message.message_id, reply_markup=make_keyboard(uid))
+                    except: pass
             else: 
                 st["inv_open"] = True; st["inv_mode"] = "normal"
 
@@ -2249,17 +2343,26 @@ async def h_cb(c):
                     target_block_type = srv.blocks.get(pb[1], {}).get("type")
                     is_sneak = (st.get("step_size", 1.0) == 0.5)
                     
-                    if srv.type == "survival" and not is_sneak:
-                        if target_block_type == "workbench":
+                    if not is_sneak:
+                        if target_block_type == "workbench" and srv.type == "survival":
                             st["inv_open"] = True; st["inv_mode"] = "workbench"; st["inv_cursor"] = 34; ev = True
-                        elif target_block_type == "furnace":
+                        elif target_block_type == "furnace" and srv.type == "survival":
                             st["inv_open"] = True; st["inv_mode"] = "furnace"; st["inv_cursor"] = 50; st["furnace_pos"] = pb[1]; ev = True
-                        elif target_block_type == "chest":
+                        elif target_block_type == "chest" and srv.type == "survival":
                             bx, by, bz = pb[1]
-                            if (bx, by, bz+1) in srv.blocks and srv.blocks[(bx, by, bz+1)].get("type") != "torch":
-                                pass
-                            else:
-                                st["inv_open"] = True; st["inv_mode"] = "chest"; st["inv_cursor"] = 60; st["chest_pos"] = pb[1]; ev = True
+                            if (bx, by, bz+1) in srv.blocks and srv.blocks[(bx, by, bz+1)].get("type") != "torch": pass
+                            else: st["inv_open"] = True; st["inv_mode"] = "chest"; st["inv_cursor"] = 60; st["chest_pos"] = pb[1]; ev = True
+                        elif target_block_type in ("door_bottom", "door_top", "trapdoor"):
+                            tgt = srv.blocks[pb[1]]
+                            tgt["open"] = not tgt.get("open", False)
+                            if target_block_type == "door_bottom":
+                                top_b = (pb[1][0], pb[1][1], pb[1][2]+1)
+                                if top_b in srv.blocks: srv.blocks[top_b]["open"] = tgt["open"]
+                            elif target_block_type == "door_top":
+                                bot_b = (pb[1][0], pb[1][1], pb[1][2]-1)
+                                if bot_b in srv.blocks: srv.blocks[bot_b]["open"] = tgt["open"]
+                            srv.rebuild_mesh(); ev = True
+                            return # Прерываем, мы только открыли дверь
                     
                     if not st.get("inv_open") and pb[2] is not None:
                         nb = pb[2] 
@@ -2270,30 +2373,53 @@ async def h_cb(c):
                         if item and item["type"] in TOOLS: pass
                         elif item or srv.type == "classic":
                             btype = item["type"] if item else "planks"
+                            
+                            # Классика: если выбран слот 0-4, ставим блок с фото из слота
+                            c_tex = None
+                            if srv.type == "classic" and st.get("inv_cursor", 5) < 5:
+                                c_tex = st["classic_hotbar"].get(st["inv_cursor"])
+
                             if nb not in srv.blocks:
-                                if btype == "torch":
-                                    dx, dy, dz = nb[0]-target_b[0], nb[1]-target_b[1], nb[2]-target_b[2]
-                                    srv.blocks[nb] = {"type": "torch", "attach": (dx, dy, dz)}
-                                elif btype in ("furnace", "chest") or "stairs" in btype:
+                                if btype == "door" and srv.type == "survival":
+                                    nb_top = (nb[0], nb[1], nb[2]+1)
+                                    if nb_top not in srv.blocks:
+                                        dx, dy = st["x"] - nb[0] - 0.5, st["y"] - nb[1] - 0.5
+                                        if abs(dx) > abs(dy): facing = "left" if dx > 0 else "right"
+                                        else: facing = "back" if dy > 0 else "front"
+                                        srv.blocks[nb] = {"type": "door_bottom", "facing": facing, "open": False}
+                                        srv.blocks[nb_top] = {"type": "door_top", "facing": facing, "open": False}
+                                        srv.modified_blocks.update([nb, nb_top])
+                                        srv.deleted_blocks.difference_update([nb, nb_top])
+                                        if item: item["count"] -= 1
+                                elif btype == "trapdoor" and srv.type == "survival":
                                     dx, dy = st["x"] - nb[0] - 0.5, st["y"] - nb[1] - 0.5
-                                    # Теперь ступеньки всегда ставятся проходимой (лицевой) стороной к игроку
                                     if abs(dx) > abs(dy): facing = "left" if dx > 0 else "right"
                                     else: facing = "back" if dy > 0 else "front"
-                                    
-                                    if btype == "furnace": srv.blocks[nb] = {"type": "furnace", "facing": facing, "inv": {0:None, 1:None, 2:None}, "burn_time": 0, "smelt_time": 0}
-                                    elif btype == "chest": srv.blocks[nb] = {"type": "chest", "facing": facing, "inv": {i:None for i in range(15)}}
-                                    else: srv.blocks[nb] = {"type": btype, "facing": facing}
-                                else:
-                                    srv.blocks[nb] = {"type": btype} if srv.type=="survival" else {"color":(255,255,255)}
-                                    
-                                # ДОБАВИТЬ ЭТО: Запоминаем постройку
-                                if srv.type == "survival":
+                                    srv.blocks[nb] = {"type": "trapdoor", "facing": facing, "open": False}
                                     srv.modified_blocks.add(nb)
                                     srv.deleted_blocks.discard(nb)
-
-                                if item:
-                                    item["count"] -= 1
-                                    if item["count"] <= 0: del st["inv"][c_slot]
+                                    if item: item["count"] -= 1
+                                else:
+                                    if btype == "torch":
+                                        dx, dy, dz = nb[0]-target_b[0], nb[1]-target_b[1], nb[2]-target_b[2]
+                                        srv.blocks[nb] = {"type": "torch", "attach": (dx, dy, dz)}
+                                    elif btype in ("furnace", "chest") or "stairs" in btype:
+                                        dx, dy = st["x"] - nb[0] - 0.5, st["y"] - nb[1] - 0.5
+                                        if abs(dx) > abs(dy): facing = "left" if dx > 0 else "right"
+                                        else: facing = "back" if dy > 0 else "front"
+                                        if btype == "furnace": srv.blocks[nb] = {"type": "furnace", "facing": facing, "inv": {0:None, 1:None, 2:None}, "burn_time": 0, "smelt_time": 0}
+                                        elif btype == "chest": srv.blocks[nb] = {"type": "chest", "facing": facing, "inv": {i:None for i in range(15)}}
+                                        else: srv.blocks[nb] = {"type": btype, "facing": facing}
+                                    else:
+                                        srv.blocks[nb] = {"color":(255,255,255), "tex": c_tex} if srv.type=="classic" else {"type": btype}
+                                        
+                                    if srv.type == "survival":
+                                        srv.modified_blocks.add(nb)
+                                        srv.deleted_blocks.discard(nb)
+                                        
+                                    if item: item["count"] -= 1
+                                    
+                                if item and item["count"] <= 0: del st["inv"][c_slot]
                                 srv.rebuild_mesh(); ev = True
 
         elif d == "break":
@@ -2319,7 +2445,7 @@ async def h_cb(c):
                             elif t_type == "stone_pickaxe": mhp = 6
                             elif t_type == "wood_pickaxe": mhp = 9
                             else: mhp = 12
-                        elif base_type in ("planks", "workbench", "wood", "chest"):
+                        elif base_type in ("planks", "workbench", "wood", "chest", "door_bottom", "door_top", "trapdoor"):
                             if t_type == "diamond_axe": mhp = 1
                             elif t_type == "iron_axe": mhp = 2
                             elif t_type == "stone_axe": mhp = 3
@@ -2353,9 +2479,21 @@ async def h_cb(c):
                                             if i not in st["inv"]:
                                                 st["inv"][i] = itm; break
 
+                            # Удаление связанных блоков для дверей
+                            if btype == "door_bottom":
+                                top_b = (pb[1][0], pb[1][1], pb[1][2]+1)
+                                if top_b in srv.blocks and srv.blocks[top_b].get("type") == "door_top":
+                                    del srv.blocks[top_b]
+                                    srv.deleted_blocks.add(top_b)
+                            elif btype == "door_top":
+                                bot_b = (pb[1][0], pb[1][1], pb[1][2]-1)
+                                if bot_b in srv.blocks and srv.blocks[bot_b].get("type") == "door_bottom":
+                                    del srv.blocks[bot_b]
+                                    srv.deleted_blocks.add(bot_b)
+                            
                             del srv.blocks[pb[1]]
                             del srv.block_damage[pb[1]]
-                            
+
                             # ДОБАВИТЬ ЭТО: Запоминаем разрушение
                             if srv.type == "survival":
                                 srv.deleted_blocks.add(pb[1])
@@ -2367,6 +2505,7 @@ async def h_cb(c):
                             elif btype == "stone": drop_t = "cobblestone"
                             elif btype == "coal_ore": drop_t = "coal"
                             elif btype == "iron_ore": drop_t = "iron"
+                            elif btype in ("door_bottom", "door_top"): drop_t = "door"
                             elif btype == "diamond_ore":
                                 if t_type in ("iron_pickaxe", "diamond_pickaxe"): drop_t = "diamond"
                                 else: drop_t = None
