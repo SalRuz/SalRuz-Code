@@ -1743,7 +1743,6 @@ async def send_view(cid, uid, force=False):
     if not st: return
 
     lock = get_user_lock(uid)
-    # Если рендер уже идёт, и это не принудительный кадр от кнопки, отменяем спам кадром
     if lock.locked() and not force: return 
     
     async with lock:
@@ -1759,7 +1758,9 @@ async def send_view(cid, uid, force=False):
             img_hash = hashlib.md5(img_bytes).hexdigest()
             current_state = f"{img_hash}_{kb_str}_{cap}"
             
-            if st.get("last_state_hash") == current_state:
+            # ИСПРАВЛЕНИЕ: Если force=True или у игрока нет игрового экрана (msg_id=None), 
+            # мы ОБЯЗАНЫ отправить кадр, даже если картинка не поменялась!
+            if not force and st.get("msg_id") is not None and st.get("last_state_hash") == current_state:
                 return 
                 
             st["last_state_hash"] = current_state
@@ -1937,20 +1938,21 @@ async def cb_join(c):
     except: pass
     
     st = init_player(uid, s_id, c.from_user.first_name)
-
-    # ИСПРАВЛЕНИЕ: Загружаем чанки вокруг игрока, если они были выгружены, пока он был оффлайн
+    
     if SERVERS[s_id].type == "survival":
         SERVERS[s_id].load_chunks_around(st["x"], st["y"], radius=1)
-        # Корректируем высоту на случай, если игрок падал в пустоту из-за отсутствия чанков
         st["z"] = get_ground_z(st["x"], st["y"], SERVERS[s_id], st.get("z"))
-
-    # ОБЯЗАТЕЛЬНО: Пересобираем мир после того, как игрок получил статус Online
-    SERVERS[s_id].rebuild_mesh()
     
+    SERVERS[s_id].rebuild_mesh() 
     SERVERS[s_id].broadcast(f"🎉 {st['name']} присоединился!")
     
-    tasks = [send_view(p_uid, p_uid) for p_uid, ps in SERVERS[s_id].players.items() if ps.get("online")]
+    # ИСПРАВЛЕНИЕ: Гарантированно и принудительно отправляем экран самому игроку
+    await send_view(c.message.chat.id, uid, force=True)
+    
+    # После этого обновляем экраны всех остальных на сервере
+    tasks = [send_view(p_uid, p_uid) for p_uid, ps in SERVERS[s_id].players.items() if ps.get("online") and p_uid != uid]
     if tasks: await asyncio.gather(*tasks, return_exceptions=True)
+    
     await update_server_menus()
 
 @bot.message_handler(content_types=["photo"])
