@@ -425,10 +425,10 @@ def get_inv_icon(itype):
             base = tex.resize((28, 28), Image.Resampling.NEAREST).convert("RGBA")
             icon = Image.new("RGBA", (28, 28), (0,0,0,0))
             if "slab" in itype:
-                icon.paste(base.crop((0, 14, 28, 28)), (0, 14)) # Только нижняя половина
-            else: # Ступени
-                icon.paste(base.crop((0, 14, 28, 28)), (0, 14)) # Нижняя половина
-                icon.paste(base.crop((14, 0, 28, 14)), (14, 0)) # Правая верхняя четверть
+                icon.paste(base.crop((0, 14, 28, 28)), (0, 14)) 
+            else: 
+                icon.paste(base.crop((0, 14, 28, 28)), (0, 14)) 
+                icon.paste(base.crop((14, 0, 28, 14)), (14, 0)) 
             INV_ICONS[itype] = icon
         else:
             INV_ICONS[itype] = tex.resize((28, 28), Image.Resampling.NEAREST)
@@ -520,11 +520,11 @@ class Server:
             for dx in [0, 1]:
                 for dy in [0, 1]: self.blocks[(cx+dx, cy+dy, 0)] = {"type": "bedrock", "tex": TEX_CACHE["bedrock"]}
         else:
-            self.load_chunks_around(0, 0, radius=1)
+            self.load_chunks_around(0, 0, radius=2)
 
         self.rebuild_mesh()
 
-    def load_chunks_around(self, px, py, radius=2): # <-- Changed to 2
+    def load_chunks_around(self, px, py, radius=2):
         if self.type == "classic": return
         cx, cy = int(px // 16), int(py // 16)
         changed = False
@@ -538,7 +538,6 @@ class Server:
         if changed: self.rebuild_mesh()
 
     def generate_chunk(self, cx, cy):
-        # Генерация пустыни на основе сида
         is_desert = math.sin(cx*0.5 + self.seed) + math.cos(cy*0.5 - self.seed) > 0.8
         
         for x in range(cx * 16, cx * 16 + 16):
@@ -576,7 +575,6 @@ class Server:
                                 if dx==0 and dy==0 and dz==4: continue
                                 self.blocks[(x+dx, y+dy, h+dz)] = {"type": "leaves"}
 
-        # Руды (оставьте как было)
         for _ in range(18):
             vx, vy, vz = random.randint(cx*16, cx*16+15), random.randint(cy*16, cy*16+15), random.randint(-33, -6)
             vein_size = random.randint(3, 5)
@@ -609,11 +607,32 @@ class Server:
 
     def rebuild_mesh(self):
         new_faces = []
-        self.light_sources = [pos for pos, b in self.blocks.items() if b.get("type") == "torch" or (b.get("type") == "furnace" and b.get("burn_time", 0) > 0)]
+        
+        # --- ОПТИМИЗАЦИЯ ДЛЯ БЕСКОНЕЧНОГО МИРА ---
+        active_chunks = set()
+        if self.type == "survival":
+            for p in self.players.values():
+                if p.get("online"):
+                    cx, cy = int(p["x"] // 16), int(p["y"] // 16)
+                    vr_chunks = max(2, int((p.get("view_radius", 8) + 16) // 16))
+                    for dx in range(-vr_chunks, vr_chunks + 1):
+                        for dy in range(-vr_chunks, vr_chunks + 1):
+                            active_chunks.add((cx + dx, cy + dy))
+                            
+        self.light_sources = []
+        for pos, b in self.blocks.items():
+            if self.type == "survival" and (pos[0]//16, pos[1]//16) not in active_chunks:
+                continue
+            if b.get("type") == "torch" or (b.get("type") == "furnace" and b.get("burn_time", 0) > 0):
+                self.light_sources.append(pos)
         
         try:
             for pos, bdata in self.blocks.items():
                 gx, gy, gz = pos
+                
+                if self.type == "survival" and (gx // 16, gy // 16) not in active_chunks:
+                    continue
+                    
                 btype = bdata.get("type", "stone")
                 
                 if btype == "torch":
@@ -1596,7 +1615,6 @@ async def send_view(cid, uid, force=False):
     if not st: return
 
     lock = get_user_lock(uid)
-    # Если рендер уже идёт, и это не принудительный кадр от кнопки, отменяем спам кадром
     if lock.locked() and not force: return 
     
     async with lock:
@@ -1646,7 +1664,7 @@ def server_menu():
 @bot.message_handler(commands=["creative"])
 async def h_creative(m):
     if m.from_user.id != ADMIN_ID: return
-    if not m.text: return # Фикс ошибки NoneType
+    if not m.text: return
     parts = m.text.split()
     uid = m.from_user.id
     st = get_st(uid)
@@ -1659,7 +1677,6 @@ async def h_creative(m):
             st["creative"] = False
             st["jump"] = False
             srv = SERVERS[user_server_map[uid]]
-            # Спуск игрока на землю при отключении режима полета
             st["z"] = get_ground_z(st["x"], st["y"], srv) 
             await bot.send_message(m.chat.id, "Креатив выключен! Вы спущены на землю.")
             asyncio.create_task(send_view(m.chat.id, uid, force=True))
@@ -1767,7 +1784,7 @@ async def h_block(m):
 
 @bot.message_handler(content_types=["text"])
 async def h_text(m):
-    if not m.text: return # Фикс ошибки NoneType
+    if not m.text: return 
     uid = m.from_user.id
     if m.text.startswith("/"): return
     try: await bot.delete_message(m.chat.id, m.message_id)
@@ -2055,7 +2072,6 @@ async def h_cb(c):
                     nx, ny = clamp(nx, 0.5, srv.size-0.5), clamp(ny, 0.5, srv.size-0.5)
                     
                 if srv.type == "survival":
-                    # Бесконечная генерация: грузим чанки с учетом дальности прорисовки
                     vr_chunks = max(2, int((st.get("view_radius", 8) + 16) // 16))
                     srv.load_chunks_around(nx, ny, radius=vr_chunks)
                     
@@ -2066,7 +2082,6 @@ async def h_cb(c):
                     ev = True
                 else:
                     diff = tz - st["z"]
-                    # Разрешаем плавный шаг до 0.5 блоков без прыжка для полублоков и ступенек
                     if diff <= 0.5 or (0 < diff <= 1.5 and st["jump"]):
                         if not is_blocked(srv, nx, ny, tz): 
                             st["x"], st["y"], st["z"] = nx, ny, tz
