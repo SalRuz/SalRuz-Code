@@ -684,7 +684,7 @@ class Server:
                     if (cx, cy) not in active_chunks:
                         continue
                         
-                btype = bdata.get("type", "stone")
+                btype = bdata.get("type") or "stone" # Исправлено
                 
                 if btype == "torch":
                     dx, dy, dz = bdata.get("attach", (0,0,1))
@@ -753,7 +753,7 @@ class Server:
                             nb = (gx + offset[0], gy + offset[1], gz + offset[2])
                             nb_b = self.blocks.get(nb)
                             if nb_b:
-                                nbt = nb_b.get("type", "")
+                                nbt = nb_b.get("type") or "" # Исправлено
                                 if nbt not in ("torch", "glass") and "slab" not in nbt and "stairs" not in nbt:
                                     continue
                         
@@ -1037,7 +1037,7 @@ def get_ground_z(x, y, srv, pz=None):
         if (ix, iy, bz) in srv.blocks:
             b = srv.blocks[(ix, iy, bz)]
             if b.get("type") != "torch":
-                btype = b.get("type", "")
+                btype = b.get("type") or "" # Исправлено
                 if "slab" in btype: return bz + 0.5
                 if "stairs" in btype:
                     facing = b.get("facing", "front")
@@ -1055,7 +1055,7 @@ def is_blocked(srv, x, y, z):
     for bz in [int(math.floor(z + 0.1)), int(math.floor(z + 1.6))]:
         b = srv.blocks.get((ix, iy, bz))
         if b and b.get("type") != "torch":
-            btype = b.get("type", "")
+            btype = b.get("type") or "" # Исправлено
             if "slab" in btype:
                 # 0.49 чтобы погрешность float не вызывала застревание
                 if z < bz + 0.49: return True
@@ -1687,7 +1687,7 @@ def ray_pick(px, py, pz, pa, pt, s_id, ignore_uid=None):
         cb = (int(math.floor(wx)), int(math.floor(wy)), int(math.floor(wz)))
         if cb in srv.blocks:
             b = srv.blocks[cb]
-            btype = b.get("type", "")
+            btype = b.get("type") or "" # Исправлено
             bx, by, bz = cb[0], cb[1], cb[2]
             hit = False
 
@@ -2267,16 +2267,18 @@ async def h_cb(c):
         elif d == "cycle_res": st["res_level"] = st["res_level"]+1 if st["res_level"]<4 else 1
         elif d == "paint":
             if srv.type == "classic":
-                if st.get("inv_cursor", 5) < 5:
+                st["classic_hotbar"] = st.get("classic_hotbar", {})
+                inv_c = st.get("inv_cursor", 5)
+                if inv_c < 5:
                     pb = ray_pick(st["x"], st["y"], st["z"]+1.6, st["angle"], st["tilt"], s_id, uid)
-                    tex = st["classic_hotbar"].get(st["inv_cursor"])
+                    tex = st["classic_hotbar"].get(inv_c)
                     if pb and pb[0]=="block" and tex:
                         srv.blocks[pb[1]]["tex"] = tex
                         srv.rebuild_mesh()
                         ev = True
                     
-                    pending_skin_mode[uid] = ("hotbar", st["inv_cursor"])
-                    try: await bot.send_message(uid, f"📸 Отправь фото для ячейки {st['inv_cursor'] + 1}!")
+                    pending_skin_mode[uid] = ("hotbar", inv_c)
+                    try: await bot.send_message(uid, f"📸 Отправь фото для ячейки {inv_c + 1}!")
                     except: pass
                 else:
                     pb = ray_pick(st["x"], st["y"], st["z"]+1.6, st["angle"], st["tilt"], s_id, uid)
@@ -2340,7 +2342,7 @@ async def h_cb(c):
                 st["jump"] = False
                 pb = ray_pick(st["x"], st["y"], st["z"]+1.6, st["angle"], st["tilt"], s_id, uid)
                 if pb and pb[0]=="block" and (srv.type == "classic" or pb[3] <= 5.0):
-                    target_block_type = srv.blocks.get(pb[1], {}).get("type")
+                    target_block_type = srv.blocks.get(pb[1], {}).get("type") or "" # Исправлено
                     is_sneak = (st.get("step_size", 1.0) == 0.5)
                     
                     if not is_sneak:
@@ -2435,7 +2437,7 @@ async def h_cb(c):
                     bx, by, bz = pb[1]
                     if srv.blocks.get(pb[1], {}).get("type") == "bedrock": pass 
                     elif srv.type == "survival":
-                        btype = srv.blocks[pb[1]].get("type", "stone")
+                        btype = srv.blocks[pb[1]].get("type") or "stone" # Исправлено
                         base_type = btype.replace("_slab", "").replace("_stairs", "")
 
                         # Песчаник теперь добывается как камень (нужна кирка)
