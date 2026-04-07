@@ -501,12 +501,44 @@ class Server:
         self.seed = random.randint(0, 999999)
         self.chunks_loaded = set()
         self.light_sources = []
+        
+        # Память для бесконечного мира: сохраняем действия игроков
+        self.modified_blocks = set() # Построенные блоки
+        self.deleted_blocks = set()  # Сломанные блоки
         self.generate()
+
+    def unload_far_chunks(self):
+        if self.type != "survival": return
+        active_chunks = set()
+        for p in self.players.values():
+            if p.get("online"):
+                cx, cy = int(p["x"] // 16), int(p["y"] // 16)
+                # Держим в памяти только чанки рядом с игроками
+                for dx in range(-2, 3):
+                    for dy in range(-2, 3):
+                        active_chunks.add((cx + dx, cy + dy))
+        
+        chunks_to_remove = self.chunks_loaded - active_chunks
+        if not chunks_to_remove: return
+        
+        blocks_to_delete = []
+        for pos in self.blocks:
+            if pos in self.modified_blocks: continue # Не удаляем постройки
+            cx, cy = pos[0] // 16, pos[1] // 16
+            if (cx, cy) in chunks_to_remove:
+                blocks_to_delete.append(pos)
+                
+        for pos in blocks_to_delete:
+            del self.blocks[pos]
+            
+        self.chunks_loaded -= chunks_to_remove
 
     def generate(self):
         self.blocks.clear()
         self.block_damage.clear()
         self.chunks_loaded.clear()
+        self.modified_blocks.clear()
+        self.deleted_blocks.clear()
         self.start_time = time.time()
         self.seed = random.randint(0, 999999)
         
@@ -538,7 +570,12 @@ class Server:
         if changed: self.rebuild_mesh()
 
     def generate_chunk(self, cx, cy):
-        # Генерация пустыни на основе сида
+        # 1. Сохраняем постройки игрока перед генерацией чанка
+        saved_custom_blocks = {}
+        for pos in list(self.modified_blocks):
+            if pos[0]//16 == cx and pos[1]//16 == cy:
+                if pos in self.blocks: saved_custom_blocks[pos] = self.blocks[pos]
+
         is_desert = math.sin(cx*0.5 + self.seed) + math.cos(cy*0.5 - self.seed) > 0.8
         
         for x in range(cx * 16, cx * 16 + 16):
@@ -576,7 +613,6 @@ class Server:
                                 if dx==0 and dy==0 and dz==4: continue
                                 self.blocks[(x+dx, y+dy, h+dz)] = {"type": "leaves"}
 
-        # Руды (оставьте как было)
         for _ in range(18):
             vx, vy, vz = random.randint(cx*16, cx*16+15), random.randint(cy*16, cy*16+15), random.randint(-33, -6)
             vein_size = random.randint(3, 5)
@@ -606,6 +642,15 @@ class Server:
                 vx += random.choice([-1, 0, 1])
                 vy += random.choice([-1, 0, 1])
                 vz += random.choice([-1, 0, 1])
+
+        # 2. Удаляем разрушенные игроком блоки, чтобы они не восстановились
+        for pos in list(self.blocks.keys()):
+            if pos[0]//16 == cx and pos[1]//16 == cy:
+                if pos in self.deleted_blocks:
+                    del self.blocks[pos]
+                    
+        # 3. Возвращаем построенные блоки игрока обратно
+        self.blocks.update(saved_custom_blocks)
 
     def rebuild_mesh(self):
         new_faces = []
@@ -764,7 +809,16 @@ def save_all_data():
                 s1_data["blocks"][pos]["tex_bytes"] = bio.getvalue()
         with open(DATA_DIR / "srv1.pkl", "wb") as f: pickle.dump(s1_data, f)
         
-        s2_data = {"players": SERVERS[2].players, "blocks": SERVERS[2].blocks, "damage": SERVERS[2].block_damage, "seed": SERVERS[2].seed, "chunks": SERVERS[2].chunks_loaded}
+        # Теперь сохраняем и списки модифицированных блоков!
+        s2_data = {
+            "players": SERVERS[2].players, 
+            "blocks": SERVERS[2].blocks, 
+            "damage": SERVERS[2].block_damage, 
+            "seed": SERVERS[2].seed, 
+            "chunks": SERVERS[2].chunks_loaded,
+            "modified": SERVERS[2].modified_blocks,
+            "deleted": SERVERS[2].deleted_blocks
+        }
         with open(DATA_DIR / "srv2.pkl", "wb") as f: pickle.dump(s2_data, f)
     except Exception as e: pass
 
@@ -797,6 +851,8 @@ def load_all_data():
                 SERVERS[2].block_damage = data.get("damage", {})
                 SERVERS[2].seed = data.get("seed", random.randint(0, 999999))
                 SERVERS[2].chunks_loaded = data.get("chunks", set())
+                SERVERS[2].modified_blocks = data.get("modified", set())
+                SERVERS[2].deleted_blocks = data.get("deleted", set())
             SERVERS[2].rebuild_mesh()
     except Exception as e: pass
 
@@ -817,6 +873,9 @@ async def update_server_menus():
 async def auto_saver():
     while True:
         await asyncio.sleep(30)
+        # Каждые 30 сек очищаем память сервера от далеких чанков!
+        if 2 in SERVERS:
+            SERVERS[2].unload_far_chunks()
         save_all_data()
 
 async def physics_ticker():
@@ -2152,6 +2211,11 @@ async def h_cb(c):
                         else:
                             srv.blocks[(ix, iy, iz)] = {"type": btype}
                             
+                        # ДОБАВИТЬ ЭТО: Запоминаем постройку
+                        if srv.type == "survival":
+                            srv.modified_blocks.add((ix, iy, iz))
+                            srv.deleted_blocks.discard((ix, iy, iz))
+
                         st["z"] += 1.0
                         item["count"] -= 1
                         if item["count"] <= 0: del st["inv"][c_slot]
@@ -2222,6 +2286,11 @@ async def h_cb(c):
                                 else:
                                     srv.blocks[nb] = {"type": btype} if srv.type=="survival" else {"color":(255,255,255)}
                                     
+                                # ДОБАВИТЬ ЭТО: Запоминаем постройку
+                                if srv.type == "survival":
+                                    srv.modified_blocks.add(nb)
+                                    srv.deleted_blocks.discard(nb)
+
                                 if item:
                                     item["count"] -= 1
                                     if item["count"] <= 0: del st["inv"][c_slot]
@@ -2287,6 +2356,11 @@ async def h_cb(c):
                             del srv.blocks[pb[1]]
                             del srv.block_damage[pb[1]]
                             
+                            # ДОБАВИТЬ ЭТО: Запоминаем разрушение
+                            if srv.type == "survival":
+                                srv.deleted_blocks.add(pb[1])
+                                srv.modified_blocks.discard(pb[1])
+
                             drop_t = btype
                             if btype == "grass": drop_t = "dirt"
                             elif btype == "leaves": drop_t = None
@@ -2314,6 +2388,10 @@ async def h_cb(c):
                         srv.rebuild_mesh()
                     else:
                         del srv.blocks[pb[1]]
+                        # ДОБАВИТЬ ЭТО: Запоминаем разрушение
+                        if srv.type == "survival":
+                            srv.deleted_blocks.add(pb[1])
+                            srv.modified_blocks.discard(pb[1])
                         srv.rebuild_mesh()
                         
                     if is_tool:
