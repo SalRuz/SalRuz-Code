@@ -18,12 +18,13 @@ BOT_TOKEN = "8512207770:AAEKLtYEph7gleybGhF2lc7Gwq82Kj1yedM"
 bot = AsyncTeleBot(BOT_TOKEN)
 
 RENDER_SEMAPHORE = asyncio.Semaphore(2)
-USER_LOCKS = {}
 
+# Блокировка рендера для каждого юзера от конфликтов печки и UI
+SEND_VIEW_LOCKS = {}
 def get_user_lock(uid):
-    if uid not in USER_LOCKS:
-        USER_LOCKS[uid] = asyncio.Lock()
-    return USER_LOCKS[uid]
+    if uid not in SEND_VIEW_LOCKS:
+        SEND_VIEW_LOCKS[uid] = asyncio.Lock()
+    return SEND_VIEW_LOCKS[uid]
 
 try:
     DATA_DIR = Path("/app/data")
@@ -54,9 +55,7 @@ CYRILLIC_TO_LATIN = {
     'Ч': 'Ch', 'Ш': 'Sh', 'Щ': 'Shch', 'Ъ': 'Sch', 'Ы': 'Y', 'Ь': '', 'Э': 'E', 'Ю': 'Yu', 'Я': 'Ya'
 }
 
-def transliterate(text): 
-    if not text: return "Player"
-    return "".join(CYRILLIC_TO_LATIN.get(c, c) for c in str(text))
+def transliterate(text): return "".join(CYRILLIC_TO_LATIN.get(c, c) for c in text)
 
 def load_font():
     paths = [
@@ -132,19 +131,27 @@ def normalize_angle(a):
     while a >= 2*math.pi: a -= 2*math.pi
     return a
 
-# Возвращает точные рамки коллизии блока (xmin, ymin, zmin, xmax, ymax, zmax)
-def get_block_boxes(btype, facing="front"):
-    if not btype: btype = ""
-    if btype == "torch": return [(0.4, 0.4, 0.0, 0.6, 0.6, 0.6)]
-    if "slab" in btype: return [(0.0, 0.0, 0.0, 1.0, 1.0, 0.5)]
-    if "stairs" in btype:
-        boxes = [(0.0, 0.0, 0.0, 1.0, 1.0, 0.5)]
-        if facing == "front": boxes.append((0.0, 0.5, 0.5, 1.0, 1.0, 1.0))
-        elif facing == "back": boxes.append((0.0, 0.0, 0.5, 1.0, 0.5, 1.0))
-        elif facing == "right": boxes.append((0.0, 0.0, 0.5, 0.5, 1.0, 1.0))
-        elif facing == "left": boxes.append((0.5, 0.0, 0.5, 1.0, 1.0, 1.0))
+def get_block_aabbs(btype, bdata):
+    if btype == "torch":
+        dx, dy, dz = bdata.get("attach", (0,0,1))
+        w, h = 0.08, 0.5
+        if dx == 1:   cx, cy, cz = 0.1, 0.5, 0.25
+        elif dx == -1: cx, cy, cz = 0.9, 0.5, 0.25
+        elif dy == 1:  cx, cy, cz = 0.5, 0.1, 0.25
+        elif dy == -1: cx, cy, cz = 0.5, 0.9, 0.25
+        else:          cx, cy, cz = 0.5, 0.5, 0.0
+        return [(cx-0.15, cy-0.15, cz, cx+0.15, cy+0.15, cz+0.6)]
+    elif "slab" in btype:
+        return [(0, 0, 0, 1, 1, 0.5)]
+    elif "stairs" in btype:
+        boxes = [(0, 0, 0, 1, 1, 0.5)]
+        facing = bdata.get("facing", "front")
+        if facing == "front": boxes.append((0, 0.5, 0.5, 1, 1, 1))
+        elif facing == "back": boxes.append((0, 0, 0.5, 1, 0.5, 1))
+        elif facing == "right": boxes.append((0, 0, 0.5, 0.5, 1, 1))
+        elif facing == "left": boxes.append((0.5, 0, 0.5, 1, 1, 1))
         return boxes
-    return [(0.0, 0.0, 0.0, 1.0, 1.0, 1.0)]
+    return [(0, 0, 0, 1, 1, 1)]
 
 # --- ТЕКСТУРЫ ---
 def create_fallback_tex(name, color, draw_func=None, rgba=False):
@@ -424,10 +431,12 @@ TOOLS = PICKAXES + AXES + SHOVELS + HOES + SWORDS
 
 INV_ICONS = {}
 def get_inv_icon(itype):
-    if not itype: return Image.new("RGBA", (28, 28), (0,0,0,0))
     if itype not in INV_ICONS:
         tex_name = itype
-        if "slab" in itype or "stairs" in itype:
+        is_slab = "slab" in itype
+        is_stairs = "stairs" in itype
+        
+        if is_slab or is_stairs:
             tex_name = itype.replace("_slab", "").replace("_stairs", "")
         elif itype == "grass": tex_name = "trava_side"
         elif itype == "wood": tex_name = "wood_side"
@@ -437,26 +446,27 @@ def get_inv_icon(itype):
         elif itype == "dirt": tex_name = "zemlya"
         elif itype == "torch": tex_name = "torch_side"
         
-        tex = TEX_CACHE.get(tex_name, TEX_CACHE.get(itype, TEX_CACHE["zemlya"]))
+        base = TEX_CACHE.get(tex_name, TEX_CACHE.get(itype, TEX_CACHE["zemlya"]))
         
-        if "slab" in itype:
-            base = tex.resize((28, 28), Image.Resampling.NEAREST)
+        if itype == "torch":
+            t_base = base.resize((14, 28), Image.Resampling.NEAREST)
             icon = Image.new("RGBA", (28, 28), (0,0,0,0))
-            icon.paste(base.crop((0, 14, 28, 28)), (0, 14))
+            icon.paste(t_base, (7, 0), t_base) 
             INV_ICONS[itype] = icon
-        elif "stairs" in itype:
-            base = tex.resize((28, 28), Image.Resampling.NEAREST)
-            icon = Image.new("RGBA", (28, 28), (0,0,0,0))
-            icon.paste(base.crop((0, 14, 28, 28)), (0, 14))
-            icon.paste(base.crop((14, 0, 28, 14)), (14, 0))
-            INV_ICONS[itype] = icon
-        elif itype == "torch":
-            base = tex.resize((14, 28), Image.Resampling.NEAREST)
-            icon = Image.new("RGBA", (28, 28), (0,0,0,0))
-            icon.paste(base, (7, 0), base) 
-            INV_ICONS[itype] = icon
+        elif is_slab:
+            icon = Image.new("RGBA", (128, 128), (0,0,0,0))
+            half = base.crop((0, 64, 128, 128))
+            icon.paste(half, (0, 64))
+            INV_ICONS[itype] = icon.resize((28, 28), Image.Resampling.NEAREST)
+        elif is_stairs:
+            icon = Image.new("RGBA", (128, 128), (0,0,0,0))
+            bottom = base.crop((0, 64, 128, 128))
+            back = base.crop((64, 0, 128, 64))
+            icon.paste(bottom, (0, 64))
+            icon.paste(back, (64, 0))
+            INV_ICONS[itype] = icon.resize((28, 28), Image.Resampling.NEAREST)
         else:
-            INV_ICONS[itype] = tex.resize((28, 28), Image.Resampling.NEAREST)
+            INV_ICONS[itype] = base.resize((28, 28), Image.Resampling.NEAREST)
     return INV_ICONS[itype]
 
 HELD_ITEM_TEX_CACHE = {}
@@ -466,9 +476,11 @@ def get_body_front_tex(color, item_type):
         img = Image.new("RGBA", (128, 128), color)
         if item_type:
             icon = get_inv_icon(item_type).copy().convert("RGBA")
-            new_w, new_h = 32, 32
+            new_w = 48
+            new_h = 48
             icon = icon.resize((new_w, new_h), Image.Resampling.NEAREST)
-            img.paste(icon, (64 - new_w//2, 24), icon)
+            # Иконка строго по центру груди
+            img.paste(icon, (64 - new_w//2, 40 - new_h//2), icon)
         HELD_ITEM_TEX_CACHE[cache_key] = img
     return HELD_ITEM_TEX_CACHE[cache_key]
 
@@ -493,7 +505,7 @@ def bake_face(tex):
 DEFAULT_BASE_TEX = Image.new("RGBA", (128, 128), (255, 220, 100, 255))
 DEFAULT_FACE_TEX = bake_face(DEFAULT_BASE_TEX)
 
-BLOCK_STATS = {"dirt": 3, "grass": 3, "sand": 3, "sandstone": 6, "wood": 6, "leaves": 2, "stone": 12, "planks": 5, "workbench": 5, "chest": 5, "furnace": 12, "bedrock": 9999, "cobblestone": 12, "coal_ore": 12, "iron_ore": 12, "diamond_ore": 12, "torch": 1, "glass": 2}
+BLOCK_STATS = {"dirt": 3, "grass": 3, "sand": 3, "sandstone": 4, "wood": 6, "leaves": 2, "stone": 12, "planks": 5, "workbench": 5, "chest": 5, "furnace": 12, "bedrock": 9999, "cobblestone": 12, "coal_ore": 12, "iron_ore": 12, "diamond_ore": 12, "torch": 1, "glass": 2}
 
 def get_environment_light(s_id):
     srv = SERVERS.get(s_id)
@@ -539,16 +551,16 @@ class Server:
             colors = [(230, 80, 80), (80, 230, 80), (80, 80, 230)]
             for y in range(self.size):
                 for x in range(self.size):
-                    self.blocks[(x, y, 0)] = {"color": colors[(x + y + random.randint(0, 1)) % 3], "type": "stone"}
+                    self.blocks[(x, y, 0)] = {"color": colors[(x + y + random.randint(0, 1)) % 3]}
             cx, cy = int(self.size/2), int(self.size/2)
             for dx in [0, 1]:
                 for dy in [0, 1]: self.blocks[(cx+dx, cy+dy, 0)] = {"type": "bedrock", "tex": TEX_CACHE["bedrock"]}
         else:
-            self.load_chunks_around(0, 0, radius=2)
+            self.load_chunks_around(0, 0, radius=1)
 
         self.rebuild_mesh()
 
-    def load_chunks_around(self, px, py, radius=2):
+    def load_chunks_around(self, px, py, radius=1):
         if self.type == "classic": return
         cx, cy = int(px // 16), int(py // 16)
         changed = False
@@ -569,19 +581,18 @@ class Server:
                 h = int(math.sin(x/10.0 + self.seed)*4 + math.cos(y/10.0 - self.seed)*4 + math.sin((x+y)/5.0)*2)
                 
                 if is_desert:
-                    sand_d = 2 + int(abs(math.sin(x*1.3 + y*2.1)) * 3)
-                    sst_d = 2 + int(abs(math.cos(x*0.7 + y*1.9)) * 2)
-                    
-                    for dz in range(sand_d): self.blocks[(x, y, h - dz)] = {"type": "sand"}
-                    for dz in range(sst_d): self.blocks[(x, y, h - sand_d - dz)] = {"type": "sandstone"}
-                    stone_start = h - sand_d - sst_d
+                    sand_depth = random.randint(2, 5)
+                    for dz in range(sand_depth): 
+                        self.blocks[(x, y, h-dz)] = {"type": "sand"}
+                    self.blocks[(x, y, h-sand_depth)] = {"type": "sandstone"}
+                    rock_start = h - sand_depth - 1
                 else:
                     self.blocks[(x, y, h)] = {"type": "grass"}
                     self.blocks[(x, y, h-1)] = {"type": "dirt"}
                     self.blocks[(x, y, h-2)] = {"type": "dirt"}
-                    stone_start = h - 3
+                    rock_start = h - 3
                 
-                for z in range(stone_start, -34, -1):
+                for z in range(rock_start, -34, -1):
                     if z < -5:
                         cave_val = math.sin((x+self.seed)/4.0) + math.sin((y-self.seed)/4.0) + math.sin((z+self.seed)/3.0)
                         if cave_val > 1.2: continue
@@ -599,24 +610,33 @@ class Server:
 
         for _ in range(18):
             vx, vy, vz = random.randint(cx*16, cx*16+15), random.randint(cy*16, cy*16+15), random.randint(-33, -6)
-            for _ in range(random.randint(3, 5)):
-                if (vx, vy, vz) in self.blocks and self.blocks[(vx, vy, vz)].get("type") == "stone":
+            vein_size = random.randint(3, 5)
+            for _ in range(vein_size):
+                if (vx, vy, vz) in self.blocks and self.blocks[(vx, vy, vz)]["type"] == "stone":
                     self.blocks[(vx, vy, vz)] = {"type": "coal_ore"}
-                vx += random.choice([-1, 0, 1]); vy += random.choice([-1, 0, 1]); vz += random.choice([-1, 0, 1])
+                vx += random.choice([-1, 0, 1])
+                vy += random.choice([-1, 0, 1])
+                vz += random.choice([-1, 0, 1])
 
         for _ in range(12):
             vx, vy, vz = random.randint(cx*16, cx*16+15), random.randint(cy*16, cy*16+15), random.randint(-33, -12)
-            for _ in range(random.randint(3, 5)):
-                if (vx, vy, vz) in self.blocks and self.blocks[(vx, vy, vz)].get("type") == "stone":
+            vein_size = random.randint(3, 5)
+            for _ in range(vein_size):
+                if (vx, vy, vz) in self.blocks and self.blocks[(vx, vy, vz)]["type"] == "stone":
                     self.blocks[(vx, vy, vz)] = {"type": "iron_ore"}
-                vx += random.choice([-1, 0, 1]); vy += random.choice([-1, 0, 1]); vz += random.choice([-1, 0, 1])
+                vx += random.choice([-1, 0, 1])
+                vy += random.choice([-1, 0, 1])
+                vz += random.choice([-1, 0, 1])
 
         for _ in range(4):
             vx, vy, vz = random.randint(cx*16, cx*16+15), random.randint(cy*16, cy*16+15), random.randint(-33, -30)
-            for _ in range(random.randint(1, 5)):
-                if (vx, vy, vz) in self.blocks and self.blocks[(vx, vy, vz)].get("type") == "stone":
+            vein_size = random.randint(1, 5)
+            for _ in range(vein_size):
+                if (vx, vy, vz) in self.blocks and self.blocks[(vx, vy, vz)]["type"] == "stone":
                     self.blocks[(vx, vy, vz)] = {"type": "diamond_ore"}
-                vx += random.choice([-1, 0, 1]); vy += random.choice([-1, 0, 1]); vz += random.choice([-1, 0, 1])
+                vx += random.choice([-1, 0, 1])
+                vy += random.choice([-1, 0, 1])
+                vz += random.choice([-1, 0, 1])
 
     def rebuild_mesh(self):
         new_faces = []
@@ -625,11 +645,12 @@ class Server:
         try:
             for pos, bdata in self.blocks.items():
                 gx, gy, gz = pos
-                btype = bdata.get("type") or "stone"
+                btype = bdata.get("type", "stone")
                 
                 if btype == "torch":
                     dx, dy, dz = bdata.get("attach", (0,0,1))
                     w, h = 0.08, 0.5
+                    
                     if dx == 1:   cx, cy, cz = gx+0.1, gy+0.5, gz+0.25; a_x, a_y = 0, 0.4
                     elif dx == -1: cx, cy, cz = gx+0.9, gy+0.5, gz+0.25; a_x, a_y = 0, -0.4
                     elif dy == 1:  cx, cy, cz = gx+0.5, gy+0.1, gz+0.25; a_x, a_y = -0.4, 0
@@ -650,13 +671,25 @@ class Server:
                         new_faces.append(face_info)
                     continue
 
-                boxes = get_block_boxes(btype, bdata.get("facing", "front"))
-                is_complex = len(boxes) > 1 or boxes[0] != (0.0, 0.0, 0.0, 1.0, 1.0, 1.0)
+                boxes = []
+                if "slab" in btype:
+                    boxes.append((0, 0, 0, 1, 1, 0.5))
+                elif "stairs" in btype:
+                    boxes.append((0, 0, 0, 1, 1, 0.5))
+                    facing = bdata.get("facing", "front")
+                    if facing == "front": boxes.append((0, 0.5, 0.5, 1, 0.5, 0.5))
+                    elif facing == "back": boxes.append((0, 0, 0.5, 1, 0.5, 0.5))
+                    elif facing == "right": boxes.append((0, 0, 0.5, 0.5, 1, 0.5))
+                    elif facing == "left": boxes.append((0.5, 0, 0.5, 0.5, 1, 0.5))
+                else:
+                    boxes.append((0, 0, 0, 1, 1, 1))
 
-                for xmin, ymin, zmin, xmax, ymax, zmax in boxes:
+                is_complex = len(boxes) > 1 or boxes[0] != (0, 0, 0, 1, 1, 1)
+
+                for bx, by, bz, bw, bh, bd in boxes:
                     vw = [
-                        (gx+xmin, gy+ymin, gz+zmin), (gx+xmax, gy+ymin, gz+zmin), (gx+xmax, gy+ymax, gz+zmin), (gx+xmin, gy+ymax, gz+zmin),
-                        (gx+xmin, gy+ymin, gz+zmax), (gx+xmax, gy+ymin, gz+zmax), (gx+xmax, gy+ymax, gz+zmax), (gx+xmin, gy+ymax, gz+zmax)
+                        (gx+bx, gy+by, gz+bz), (gx+bx+bw, gy+by, gz+bz), (gx+bx+bw, gy+by+bh, gz+bz), (gx+bx, gy+by+bh, gz+bz),
+                        (gx+bx, gy+by, gz+bz+bd), (gx+bx+bw, gy+by, gz+bz+bd), (gx+bx+bw, gy+by+bh, gz+bz+bd), (gx+bx, gy+by+bh, gz+bz+bd)
                     ]
 
                     for fn, idx, offset in BLOCK_FACES_DATA:
@@ -664,7 +697,7 @@ class Server:
                             nb = (gx + offset[0], gy + offset[1], gz + offset[2])
                             nb_b = self.blocks.get(nb)
                             if nb_b:
-                                nbt = nb_b.get("type") or ""
+                                nbt = nb_b.get("type", "")
                                 if nbt not in ("torch", "glass") and "slab" not in nbt and "stairs" not in nbt:
                                     continue
                         
@@ -704,7 +737,7 @@ class Server:
                                 if fn in ["top", "bottom"]: tex = TEX_CACHE["vn_sunduk"]
                                 elif fn == facing_val: tex = TEX_CACHE["sunduk"]
                                 else: tex = TEX_CACHE["sunduk_bok"]
-                            elif base_type in ["dirt", "stone", "sandstone", "leaves", "planks", "bedrock", "cobblestone", "coal_ore", "iron_ore", "diamond_ore", "sand", "glass"]:
+                            elif base_type in ["dirt", "stone", "leaves", "planks", "bedrock", "cobblestone", "coal_ore", "iron_ore", "diamond_ore", "sand", "sandstone", "glass"]:
                                 tex = TEX_CACHE.get(base_type, TEX_CACHE["zemlya"])
                             face_info["tex"] = tex
                         
@@ -758,9 +791,7 @@ def load_all_data():
                     p_data["last_action"] = time.time()
                     p_data["action_lock"] = False
                 for pos, bd in data.get("blocks", {}).items():
-                    t = bd.get("type")
-                    if not t: t = "stone"
-                    SERVERS[1].blocks[pos] = {"color": bd.get("color", (255,255,255)), "type": t}
+                    SERVERS[1].blocks[pos] = {"color": bd.get("color", (255,255,255)), "type": bd.get("type")}
                     if "tex_bytes" in bd:
                         try: SERVERS[1].blocks[pos]["tex"] = Image.open(io.BytesIO(bd["tex_bytes"])).convert("RGBA")
                         except Exception: pass
@@ -774,8 +805,6 @@ def load_all_data():
                     p_data["online"] = False
                     p_data["last_action"] = time.time()
                     p_data["action_lock"] = False
-                for pos, bd in data.get("blocks", {}).items():
-                    if not bd.get("type"): bd["type"] = "stone"
                 SERVERS[2].blocks = data.get("blocks", {})
                 SERVERS[2].block_damage = data.get("damage", {})
                 SERVERS[2].seed = data.get("seed", random.randint(0, 999999))
@@ -884,6 +913,7 @@ async def furnace_ticker():
                     if is_burning_before != is_burning_after:
                         mesh_needs_rebuild = True
                         
+                    # Обновление в реальном времени для игроков смотрящих в печку
                     if b.get("burn_time", 0) > 0 or b.get("smelt_time", 0) > 0 or is_burning_before != is_burning_after:
                         for p_uid, ps in srv.players.items():
                             if ps.get("online") and ps.get("inv_mode") == "furnace" and ps.get("furnace_pos") == pos:
@@ -925,32 +955,51 @@ def get_st(uid):
 def get_ground_z(x, y, srv, pz=None):
     tz = -34 if srv.type == "survival" else -64
     ix, iy = int(math.floor(x)), int(math.floor(y))
+    
     start_z = 20
     if pz is not None:
         start_z = min(20, int(math.floor(pz)) + 1)
         
     for bz in range(start_z, tz-1, -1):
-        b = srv.blocks.get((ix, iy, bz))
-        if b and b.get("type") != "torch":
-            lx, ly = x - ix, y - iy
-            max_z = 0.0
-            for xmin, ymin, zmin, xmax, ymax, zmax in get_block_boxes(b.get("type"), b.get("facing", "front")):
-                if xmin - 0.2 <= lx <= xmax + 0.2 and ymin - 0.2 <= ly <= ymax + 0.2:
-                    if zmax > max_z: max_z = zmax
-            if max_z > 0:
-                return bz + max_z
+        if (ix, iy, bz) in srv.blocks:
+            b = srv.blocks[(ix, iy, bz)]
+            if b.get("type") != "torch":
+                btype = b.get("type", "")
+                if "slab" in btype: return bz + 0.5
+                if "stairs" in btype:
+                    facing = b.get("facing", "front")
+                    dx, dy = x - ix, y - iy
+                    if facing == "front" and dy < 0.5: return bz + 0.5
+                    if facing == "back" and dy >= 0.5: return bz + 0.5
+                    if facing == "right" and dx >= 0.5: return bz + 0.5
+                    if facing == "left" and dx < 0.5: return bz + 0.5
+                    return bz + 1.0
+                return bz + 1.0
     return tz
 
 def is_blocked(srv, x, y, z):
     ix, iy = int(math.floor(x)), int(math.floor(y))
-    for pz in [z + 0.1, z + 0.8, z + 1.5]:
-        bz = int(math.floor(pz))
+    for bz in [int(math.floor(z + 0.1)), int(math.floor(z + 1.6))]:
         b = srv.blocks.get((ix, iy, bz))
         if b and b.get("type") != "torch":
-            lx, ly, lz = x - ix, y - iy, pz - bz
-            for xmin, ymin, zmin, xmax, ymax, zmax in get_block_boxes(b.get("type"), b.get("facing", "front")):
-                if xmin - 0.2 <= lx <= xmax + 0.2 and ymin - 0.2 <= ly <= ymax + 0.2 and zmin <= lz <= zmax:
-                    return True
+            btype = b.get("type", "")
+            if "slab" in btype:
+                if z < bz + 0.5: return True
+            elif "stairs" in btype:
+                facing = b.get("facing", "front")
+                dx, dy = x - ix, y - iy
+                top_half = False
+                if facing == "front" and dy >= 0.5: top_half = True
+                if facing == "back" and dy < 0.5: top_half = True
+                if facing == "right" and dx < 0.5: top_half = True
+                if facing == "left" and dx >= 0.5: top_half = True
+                
+                if top_half:
+                    if z < bz + 1.0: return True
+                else:
+                    if z < bz + 0.5: return True
+            else:
+                return True
     return False
 
 def init_player(uid, s_id, name):
@@ -1237,7 +1286,7 @@ def update_crafting(st):
     if sg == [["wood"]]: res = {"type": "planks", "count": 4}
     elif sg == [["planks"], ["planks"]]: res = {"type": "stick", "count": 4}
     elif sg == [["planks", "planks"], ["planks", "planks"]]: res = {"type": "workbench", "count": 1}
-    elif sg == [["sand", "sand"], ["sand", "sand"]]: res = {"type": "sandstone", "count": 1}
+    elif sg == [["sand", "sand"], ["sand", "sand"]]: res = {"type": "sandstone", "count": 4}
     elif sg == [["cobblestone", "cobblestone", "cobblestone"], ["cobblestone", None, "cobblestone"], ["cobblestone", "cobblestone", "cobblestone"]]: 
         res = {"type": "furnace", "count": 1}
     elif sg == [["planks", "planks", "planks"], ["planks", None, "planks"], ["planks", "planks", "planks"]]: 
@@ -1273,7 +1322,7 @@ def update_crafting(st):
     elif sg == [["iron_ingot"], ["iron_ingot"], ["stick"]]: res = {"type": "iron_mech", "count": 1, "durability": 90}
     elif sg == [["diamond"], ["diamond"], ["stick"]]: res = {"type": "diamond_mech", "count": 1, "durability": 120}
 
-    # Torches
+    # Torches (coal & d_ugol)
     elif sg in ([["coal"], ["stick"]], [["d_ugol"], ["stick"]]): res = {"type": "torch", "count": 4}
 
     # Полублоки
@@ -1516,12 +1565,17 @@ def ray_pick(px, py, pz, pa, pt, s_id, ignore_uid=None):
         cb = (int(math.floor(wx)), int(math.floor(wy)), int(math.floor(wz)))
         if cb in srv.blocks:
             b = srv.blocks[cb]
-            lx, ly, lz = wx - cb[0], wy - cb[1], wz - cb[2]
-            for xmin, ymin, zmin, xmax, ymax, zmax in get_block_boxes(b.get("type"), b.get("facing", "front")):
-                if xmin <= lx <= xmax and ymin <= ly <= ymax and zmin <= lz <= zmax:
-                    return ("block", cb, prev_cb, t)
-        
-        prev_cb = cb
+            btype = b.get("type", "")
+            bx, by, bz = cb
+            aabbs = get_block_aabbs(btype, b)
+            hit = False
+            for minx, miny, minz, maxx, maxy, maxz in aabbs:
+                if (bx+minx) <= wx <= (bx+maxx) and (by+miny) <= wy <= (by+maxy) and (bz+minz) <= wz <= (bz+maxz):
+                    hit = True
+                    break
+            if hit: return ("block", cb, prev_cb, t)
+        else:
+            prev_cb = cb
         t += RAY_STEP
     return None
 
@@ -1539,7 +1593,11 @@ async def send_view(cid, uid):
     st = get_st(uid)
     if not st: return
     
-    async with get_user_lock(uid):
+    # Блокировка от конфликтов
+    u_lock = get_user_lock(uid)
+    if u_lock.locked(): return 
+    
+    async with u_lock:
         try:
             kb = get_keyboard(uid)
 
@@ -1585,35 +1643,34 @@ def server_menu():
 @bot.message_handler(commands=["creative"])
 async def h_creative(m):
     if m.from_user.id != ADMIN_ID: return
+    parts = m.text.split()
     uid = m.from_user.id
     st = get_st(uid)
     if not st: return
-    parts = m.text.split() if m.text else []
+    s_id = user_server_map.get(uid)
     if len(parts) > 1:
         if parts[1].lower() == "on":
             st["creative"] = True
             await bot.send_message(m.chat.id, "Креатив включен! Вы можете летать (кнопка Прыжок: +1 блок к высоте, Прыжок и шаг 0.5: -1 блок к высоте).")
         elif parts[1].lower() == "off":
             st["creative"] = False
-            srv = SERVERS[user_server_map[uid]]
-            st["z"] = get_ground_z(st["x"], st["y"], srv, st["z"])
-            await bot.send_message(m.chat.id, "Креатив выключен! Вы опустились на землю.")
+            # Автоматическое падение на землю при отключении
+            st["z"] = get_ground_z(st["x"], st["y"], SERVERS[s_id], st["z"])
+            await bot.send_message(m.chat.id, "Креатив выключен!")
             asyncio.create_task(send_view(m.chat.id, uid))
 
 @bot.message_handler(commands=["start"])
 async def h_start(m):
     uid = m.from_user.id
-    
     try: await bot.delete_message(m.chat.id, m.message_id)
-    except Exception: pass
+    except: pass
     
-    try:
-        conn = sqlite3.connect(str(DB_PATH))
-        name = m.from_user.first_name if m.from_user.first_name else "Player"
-        conn.execute("INSERT OR IGNORE INTO users (id, username) VALUES (?, ?)", (uid, name))
-        conn.commit()
-        conn.close()
-    except Exception: pass
+    if m.text.startswith("/start"):
+        try:
+            conn = sqlite3.connect(str(DB_PATH))
+            conn.execute("INSERT OR IGNORE INTO users (id, username) VALUES (?, ?)", (uid, m.from_user.first_name))
+            conn.commit(); conn.close()
+        except: pass
         
     old_s = user_server_map.get(uid)
     changed = False
@@ -1621,7 +1678,7 @@ async def h_start(m):
     if old_s and old_s in SERVERS:
         if uid in SERVERS[old_s].players:
             ps = SERVERS[old_s].players[uid]
-            if ps.get("online"):
+            if ps["online"]:
                 ps["online"] = False
                 changed = True
                 SERVERS[old_s].broadcast(f"💨 {ps['name']} вышел")
@@ -1631,11 +1688,9 @@ async def h_start(m):
         user_server_map.pop(uid, None)
         save_all_data()
         
-    try:
-        msg = await bot.send_message(m.chat.id, "Выбери сервер:", reply_markup=server_menu())
-        ACTIVE_MENUS[uid] = {"chat_id": m.chat.id, "msg_id": msg.message_id}
-        if changed: await update_server_menus()
-    except Exception: pass
+    msg = await bot.send_message(m.chat.id, "Выбери сервер:", reply_markup=server_menu())
+    ACTIVE_MENUS[uid] = {"chat_id": m.chat.id, "msg_id": msg.message_id}
+    if changed: await update_server_menus()
 
 @bot.message_handler(commands=["give"])
 async def h_give(m):
@@ -1648,7 +1703,7 @@ async def h_give(m):
     st = get_st(uid)
     if not st: return
     
-    parts = m.text.split() if m.text else []
+    parts = m.text.split()
     if len(parts) < 2:
         items_str = "grass, dirt, sand, sandstone, glass, stone, bedrock, wood, leaves, planks, workbench, chest, furnace, cobblestone, coal_ore, iron_ore, diamond_ore, stick, wood_pickaxe, stone_pickaxe, iron_pickaxe, diamond_pickaxe, wood_axe, stone_axe, iron_axe, diamond_axe, wood_lopata, stone_lopata, iron_lopata, diamond_lopata, wood_motiga, stone_motiga, iron_motiga, diamond_motiga, wood_mech, stone_mech, iron_mech, diamond_mech, coal, d_ugol, iron, diamond, iron_ingot, torch, planks_slab, cobblestone_slab, stone_slab, planks_stairs, cobblestone_stairs, stone_stairs"
         await bot.send_message(m.chat.id, f"Использование: /give <предмет> [кол-во]\n\nДоступные предметы:\n{items_str}")
@@ -1684,7 +1739,7 @@ async def h_give(m):
 @bot.message_handler(commands=["reset"])
 async def h_reset(m):
     if m.from_user.id != ADMIN_ID: return
-    parts = m.text.split() if m.text else []
+    parts = m.text.split()
     if len(parts)==3 and parts[2] in ["1","2"]:
         s_id = int(parts[2])
         SERVERS[s_id].generate()
@@ -1708,7 +1763,7 @@ async def h_block(m):
 @bot.message_handler(content_types=["text"])
 async def h_text(m):
     uid = m.from_user.id
-    if not m.text or m.text.startswith("/"): return
+    if m.text.startswith("/"): return
     try: await bot.delete_message(m.chat.id, m.message_id)
     except: pass
 
@@ -1994,7 +2049,9 @@ async def h_cb(c):
                     nx, ny = clamp(nx, 0.5, srv.size-0.5), clamp(ny, 0.5, srv.size-0.5)
                     
                 if srv.type == "survival":
-                    srv.load_chunks_around(nx, ny, radius=2)
+                    # Бесконечная генерация привязана к дальности прорисовки
+                    load_radius = max(1, st.get("view_radius", 8) // 16 + 1)
+                    srv.load_chunks_around(nx, ny, radius=load_radius)
                     
                 tz = get_ground_z(nx, ny, srv, st["z"])
                     
@@ -2083,7 +2140,7 @@ async def h_cb(c):
                 elif srv.type == "classic":
                     ix, iy, iz = int(math.floor(st["x"])), int(math.floor(st["y"])), int(math.floor(st["z"]))
                     if not is_blocked(srv, st["x"], st["y"], st["z"] + 1) and not is_blocked(srv, st["x"], st["y"], st["z"] + 2):
-                        srv.blocks[(ix, iy, iz)] = {"color": (255,255,255), "type": "stone"}
+                        srv.blocks[(ix, iy, iz)] = {"color": (255,255,255)}
                         st["z"] += 1.0
                         srv.rebuild_mesh()
                         st["jump"] = False
@@ -2134,7 +2191,7 @@ async def h_cb(c):
                                     elif btype == "chest": srv.blocks[nb] = {"type": "chest", "facing": facing, "inv": {i:None for i in range(15)}}
                                     else: srv.blocks[nb] = {"type": btype, "facing": facing}
                                 else:
-                                    srv.blocks[nb] = {"type": btype} if srv.type=="survival" else {"color":(255,255,255), "type": "stone"}
+                                    srv.blocks[nb] = {"type": btype} if srv.type=="survival" else {"color":(255,255,255)}
                                     
                                 if item:
                                     item["count"] -= 1
@@ -2157,7 +2214,7 @@ async def h_cb(c):
                         btype = srv.blocks[pb[1]].get("type", "stone")
                         base_type = btype.replace("_slab", "").replace("_stairs", "")
                         
-                        if base_type in ("stone", "sandstone", "cobblestone", "coal_ore", "iron_ore", "diamond_ore", "furnace"):
+                        if base_type in ("stone", "cobblestone", "coal_ore", "iron_ore", "diamond_ore", "furnace"):
                             if t_type == "diamond_pickaxe": mhp = 1
                             elif t_type == "iron_pickaxe": mhp = 3
                             elif t_type == "stone_pickaxe": mhp = 6
