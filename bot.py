@@ -441,9 +441,8 @@ def get_body_front_tex(color, item_type):
         img = Image.new("RGBA", (128, 128), color)
         if item_type:
             icon = get_inv_icon(item_type).copy().convert("RGBA")
-            w, h = 48, 24 # Установлен требуемый размер 48x24
+            w, h = 48, 24 
             icon = icon.resize((w, h), Image.Resampling.NEAREST)
-            # Размещаем предмет на верхней части груди
             img.paste(icon, (64 - w//2, 48 - h//2), icon)
         HELD_ITEM_TEX_CACHE[cache_key] = img
     return HELD_ITEM_TEX_CACHE[cache_key]
@@ -524,8 +523,8 @@ class Server:
 
         self.rebuild_mesh()
 
-    def load_chunks_around(self, px, py, radius=2):
-        if self.type == "classic": return
+    def load_chunks_around(self, px, py, radius=2, rebuild=True):
+        if self.type == "classic": return False
         cx, cy = int(px // 16), int(py // 16)
         changed = False
         for dx in range(-radius, radius + 1):
@@ -535,7 +534,8 @@ class Server:
                     self.generate_chunk(chunk[0], chunk[1])
                     self.chunks_loaded.add(chunk)
                     changed = True
-        if changed: self.rebuild_mesh()
+        if changed and rebuild: self.rebuild_mesh()
+        return changed
 
     def generate_chunk(self, cx, cy):
         is_desert = math.sin(cx*0.5 + self.seed) + math.cos(cy*0.5 - self.seed) > 0.8
@@ -608,7 +608,6 @@ class Server:
     def rebuild_mesh(self):
         new_faces = []
         
-        # --- ОПТИМИЗАЦИЯ ДЛЯ БЕСКОНЕЧНОГО МИРА ---
         active_chunks = set()
         if self.type == "survival":
             for p in self.players.values():
@@ -827,7 +826,7 @@ async def physics_ticker():
             if srv.type != "survival": continue
             mesh_needs_rebuild = False
             falls = []
-            for pos, b in list(srv.blocks.items()):
+            for pos, b in srv.blocks.items():
                 if b.get("type") == "sand":
                     under = (pos[0], pos[1], pos[2]-1)
                     if under not in srv.blocks or srv.blocks[under].get("type") == "torch":
@@ -855,7 +854,7 @@ async def furnace_ticker():
         for s_id, srv in SERVERS.items():
             if srv.type != "survival": continue
             mesh_needs_rebuild = False
-            for pos, b in list(srv.blocks.items()):
+            for pos, b in srv.blocks.items():
                 if b.get("type") == "furnace":
                     inv = b.get("inv", {0: None, 1: None, 2: None}) 
                     is_burning_before = b.get("burn_time", 0) > 0
@@ -901,7 +900,6 @@ async def furnace_ticker():
                     if is_burning_before != is_burning_after:
                         mesh_needs_rebuild = True
                         
-                    # Обновление в реальном времени для игроков смотрящих в печку
                     if b.get("burn_time", 0) > 0 or b.get("smelt_time", 0) > 0 or is_burning_before != is_burning_after:
                         for p_uid, ps in srv.players.items():
                             if ps.get("online") and ps.get("inv_mode") == "furnace" and ps.get("furnace_pos") == pos:
@@ -969,12 +967,11 @@ def is_blocked(srv, x, y, z):
     ix, iy = int(math.floor(x)), int(math.floor(y))
     dx, dy = x - ix, y - iy
     p_min = z
-    p_max = z + 1.5 # Рост игрока (запас 0.1 для исключения застреваний)
+    p_max = z + 1.5
     
     min_bz = int(math.floor(p_min))
     max_bz = int(math.floor(p_max))
     
-    # Проверка коллизии по пересечению хитбоксов (AABB)
     for bz in range(min_bz, max_bz + 1):
         b = srv.blocks.get((ix, iy, bz))
         if b and b.get("type") != "torch":
@@ -984,20 +981,20 @@ def is_blocked(srv, x, y, z):
             if "slab" in btype:
                 boxes.append((0.0, 0.5))
             elif "stairs" in btype:
-                boxes.append((0.0, 0.5)) # Нижняя половина есть всегда
+                boxes.append((0.0, 0.5))
                 facing = b.get("facing", "front")
                 top_half = False
                 if facing == "front" and dy >= 0.5: top_half = True
                 if facing == "back" and dy < 0.5: top_half = True
                 if facing == "right" and dx < 0.5: top_half = True
                 if facing == "left" and dx >= 0.5: top_half = True
-                if top_half: boxes.append((0.5, 1.0)) # Верхняя 1/4 часть ступени
+                if top_half: boxes.append((0.5, 1.0))
             else:
                 boxes.append((0.0, 1.0))
                 
             for b_min, b_max in boxes:
                 if p_max > bz + b_min + 0.05 and p_min < bz + b_max - 0.05:
-                    return True # Коллизия обнаружена
+                    return True
     return False
 
 def init_player(uid, s_id, name):
@@ -1570,7 +1567,6 @@ def ray_pick(px, py, pz, pa, pt, s_id, ignore_uid=None):
             hit = False
 
             if btype == "torch":
-                # Тонкий хитбокс факела
                 if bx+0.35 <= wx <= bx+0.65 and by+0.35 <= wy <= by+0.65 and bz <= wz <= bz+0.6: hit = True
             elif "slab" in btype:
                 if wz <= bz + 0.5: hit = True
@@ -1588,7 +1584,6 @@ def ray_pick(px, py, pz, pa, pt, s_id, ignore_uid=None):
 
             if hit: return ("block", cb, prev_cb, t)
 
-        # Обновляем prev_cb только если мы находимся ВНЕ хитбокса
         if cb not in srv.blocks or not hit:
             if prev_cb != cb: prev_cb = cb
             
@@ -2071,9 +2066,10 @@ async def h_cb(c):
                 if srv.type == "classic":
                     nx, ny = clamp(nx, 0.5, srv.size-0.5), clamp(ny, 0.5, srv.size-0.5)
                     
+                chunks_generated = False
                 if srv.type == "survival":
                     vr_chunks = max(2, int((st.get("view_radius", 8) + 16) // 16))
-                    srv.load_chunks_around(nx, ny, radius=vr_chunks)
+                    chunks_generated = srv.load_chunks_around(nx, ny, radius=vr_chunks, rebuild=False)
                     
                 tz = get_ground_z(nx, ny, srv, st["z"])
                     
@@ -2093,6 +2089,9 @@ async def h_cb(c):
                                     await broadcast_chat(s_id, f"💀 {st['name']} разбился!")
                                     st["x"], st["y"], st["z"], st["hp"] = 0.5, 0.5, get_ground_z(0.5, 0.5, srv), 10
             st["jump"] = False
+            
+            if srv.type == "survival" and chunks_generated:
+                srv.rebuild_mesh()
             
         elif d == "refresh": 
             st["angle"] = normalize_angle(st["angle"] + math.pi); ev = True
@@ -2236,7 +2235,7 @@ async def h_cb(c):
                         btype = srv.blocks[pb[1]].get("type", "stone")
                         base_type = btype.replace("_slab", "").replace("_stairs", "")
                         
-                        if base_type in ("stone", "cobblestone", "coal_ore", "iron_ore", "diamond_ore", "furnace"):
+                        if base_type in ("stone", "cobblestone", "coal_ore", "iron_ore", "diamond_ore", "furnace", "sandstone"):
                             if t_type == "diamond_pickaxe": mhp = 1
                             elif t_type == "iron_pickaxe": mhp = 3
                             elif t_type == "stone_pickaxe": mhp = 6
@@ -2288,6 +2287,11 @@ async def h_cb(c):
                             elif btype == "diamond_ore":
                                 if t_type in ("iron_pickaxe", "diamond_pickaxe"): drop_t = "diamond"
                                 else: drop_t = None
+                                
+                            if base_type == "glass": drop_t = None
+                            if base_type in ("stone", "cobblestone", "coal_ore", "iron_ore", "furnace", "sandstone"):
+                                if t_type not in PICKAXES:
+                                    drop_t = None
 
                             if drop_t:
                                 for i in range(20):
