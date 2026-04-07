@@ -441,10 +441,10 @@ def get_body_front_tex(color, item_type):
         img = Image.new("RGBA", (128, 128), color)
         if item_type:
             icon = get_inv_icon(item_type).copy().convert("RGBA")
-            size = 48 # Фиксированный квадратный размер NxN
-            icon = icon.resize((size, size), Image.Resampling.NEAREST)
-            # Размещаем предмет на верхней части груди
-            img.paste(icon, (64 - size//2, 40 - size//2), icon)
+            w, h = 48, 24 # Размер 48x24
+            icon = icon.resize((w, h), Image.Resampling.NEAREST)
+            # Размещаем предмет на животе (чуть ниже центра)
+            img.paste(icon, (64 - w//2, 60 - h//2), icon)
         HELD_ITEM_TEX_CACHE[cache_key] = img
     return HELD_ITEM_TEX_CACHE[cache_key]
 
@@ -611,9 +611,27 @@ class Server:
         new_faces = []
         self.light_sources = [pos for pos, b in self.blocks.items() if b.get("type") == "torch" or (b.get("type") == "furnace" and b.get("burn_time", 0) > 0)]
         
+        # Определяем активные чанки для выживания, чтобы разгрузить сервер
+        active_chunks = set()
+        if self.type == "survival":
+            for p in self.players.values():
+                if p.get("online"):
+                    cx, cy = int(p["x"] // 16), int(p["y"] // 16)
+                    # Отрисовываем сетку только в радиусе +- 2 чанков вокруг каждого онлайн-игрока
+                    for dx in range(-2, 3):
+                        for dy in range(-2, 3):
+                            active_chunks.add((cx + dx, cy + dy))
+        
         try:
             for pos, bdata in self.blocks.items():
                 gx, gy, gz = pos
+                
+                # Пропускаем тяжелую обработку блоков вне зоны онлайна
+                if self.type == "survival":
+                    cx, cy = gx // 16, gy // 16
+                    if (cx, cy) not in active_chunks:
+                        continue
+                        
                 btype = bdata.get("type", "stone")
                 
                 if btype == "torch":
@@ -646,10 +664,11 @@ class Server:
                 elif "stairs" in btype:
                     boxes.append((0, 0, 0, 1, 1, 0.5))
                     facing = bdata.get("facing", "front")
+                    # Правильная геометрия ступеней
                     if facing == "front": boxes.append((0, 0.5, 0.5, 1, 0.5, 0.5))
                     elif facing == "back": boxes.append((0, 0, 0.5, 1, 0.5, 0.5))
-                    elif facing == "right": boxes.append((0, 0, 0.5, 0.5, 1, 0.5))
-                    elif facing == "left": boxes.append((0.5, 0, 0.5, 0.5, 1, 0.5))
+                    elif facing == "right": boxes.append((0.5, 0, 0.5, 0.5, 1, 0.5))
+                    elif facing == "left": boxes.append((0, 0, 0.5, 0.5, 1, 0.5))
                 else:
                     boxes.append((0, 0, 0, 1, 1, 1))
 
@@ -938,11 +957,11 @@ def get_ground_z(x, y, srv, pz=None):
                 if "stairs" in btype:
                     facing = b.get("facing", "front")
                     dx, dy = x - ix, y - iy
-                    if facing == "front" and dy < 0.5: return bz + 0.5
-                    if facing == "back" and dy >= 0.5: return bz + 0.5
-                    if facing == "right" and dx >= 0.5: return bz + 0.5
-                    if facing == "left" and dx < 0.5: return bz + 0.5
-                    return bz + 1.0
+                    if facing == "front" and dy >= 0.5: return bz + 1.0
+                    if facing == "back" and dy < 0.5: return bz + 1.0
+                    if facing == "right" and dx >= 0.5: return bz + 1.0
+                    if facing == "left" and dx < 0.5: return bz + 1.0
+                    return bz + 0.5
                 return bz + 1.0
     return tz
 
@@ -953,20 +972,21 @@ def is_blocked(srv, x, y, z):
         if b and b.get("type") != "torch":
             btype = b.get("type", "")
             if "slab" in btype:
-                if z < bz + 0.5: return True
+                # 0.49 чтобы погрешность float не вызывала застревание
+                if z < bz + 0.49: return True
             elif "stairs" in btype:
                 facing = b.get("facing", "front")
                 dx, dy = x - ix, y - iy
                 top_half = False
                 if facing == "front" and dy >= 0.5: top_half = True
                 if facing == "back" and dy < 0.5: top_half = True
-                if facing == "right" and dx < 0.5: top_half = True
-                if facing == "left" and dx >= 0.5: top_half = True
+                if facing == "right" and dx >= 0.5: top_half = True
+                if facing == "left" and dx < 0.5: top_half = True
                 
                 if top_half:
-                    if z < bz + 1.0: return True
+                    if z < bz + 0.99: return True
                 else:
-                    if z < bz + 0.5: return True
+                    if z < bz + 0.49: return True
             else:
                 return True
     return False
@@ -1541,7 +1561,6 @@ def ray_pick(px, py, pz, pa, pt, s_id, ignore_uid=None):
             hit = False
 
             if btype == "torch":
-                # Тонкий хитбокс факела
                 if bx+0.35 <= wx <= bx+0.65 and by+0.35 <= wy <= by+0.65 and bz <= wz <= bz+0.6: hit = True
             elif "slab" in btype:
                 if wz <= bz + 0.5: hit = True
@@ -1552,14 +1571,13 @@ def ray_pick(px, py, pz, pa, pt, s_id, ignore_uid=None):
                     hx, hy = wx - bx, wy - by
                     if facing == "front" and hy >= 0.5: hit = True
                     elif facing == "back" and hy < 0.5: hit = True
-                    elif facing == "right" and hx < 0.5: hit = True
-                    elif facing == "left" and hx >= 0.5: hit = True
+                    elif facing == "right" and hx >= 0.5: hit = True
+                    elif facing == "left" and hx < 0.5: hit = True
             else:
                 hit = True
 
             if hit: return ("block", cb, prev_cb, t)
 
-        # Обновляем prev_cb только если мы находимся ВНЕ хитбокса
         if cb not in srv.blocks or not hit:
             if prev_cb != cb: prev_cb = cb
             
@@ -2054,8 +2072,8 @@ async def h_cb(c):
                     ev = True
                 else:
                     diff = tz - st["z"]
-                    # Разрешаем шаг до 0.5 блоков без прыжка для полублоков и ступенек!
-                    if diff <= 0.5 or (0 < diff <= 1.5 and st["jump"]):
+                    # Разрешаем шаг до 0.51 блоков без прыжка для полублоков и ступенек!
+                    if diff <= 0.51 or (0 < diff <= 1.5 and st["jump"]):
                         if not is_blocked(srv, nx, ny, tz): 
                             st["x"], st["y"], st["z"] = nx, ny, tz
                             ev = True
@@ -2180,8 +2198,10 @@ async def h_cb(c):
                                     srv.blocks[nb] = {"type": "torch", "attach": (dx, dy, dz)}
                                 elif btype in ("furnace", "chest") or "stairs" in btype:
                                     dx, dy = st["x"] - nb[0] - 0.5, st["y"] - nb[1] - 0.5
-                                    if abs(dx) > abs(dy): facing = "right" if dx > 0 else "left"
+                                    # Теперь ступеньки всегда ставятся проходимой (лицевой) стороной к игроку
+                                    if abs(dx) > abs(dy): facing = "left" if dx > 0 else "right"
                                     else: facing = "back" if dy > 0 else "front"
+                                    
                                     if btype == "furnace": srv.blocks[nb] = {"type": "furnace", "facing": facing, "inv": {0:None, 1:None, 2:None}, "burn_time": 0, "smelt_time": 0}
                                     elif btype == "chest": srv.blocks[nb] = {"type": "chest", "facing": facing, "inv": {i:None for i in range(15)}}
                                     else: srv.blocks[nb] = {"type": btype, "facing": facing}
