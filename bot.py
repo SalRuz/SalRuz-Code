@@ -54,7 +54,9 @@ CYRILLIC_TO_LATIN = {
     'Ч': 'Ch', 'Ш': 'Sh', 'Щ': 'Shch', 'Ъ': 'Sch', 'Ы': 'Y', 'Ь': '', 'Э': 'E', 'Ю': 'Yu', 'Я': 'Ya'
 }
 
-def transliterate(text): return "".join(CYRILLIC_TO_LATIN.get(c, c) for c in text)
+def transliterate(text): 
+    if not text: return "Player"
+    return "".join(CYRILLIC_TO_LATIN.get(c, c) for c in str(text))
 
 def load_font():
     paths = [
@@ -132,6 +134,7 @@ def normalize_angle(a):
 
 # Возвращает точные рамки коллизии блока (xmin, ymin, zmin, xmax, ymax, zmax)
 def get_block_boxes(btype, facing="front"):
+    if not btype: btype = ""
     if btype == "torch": return [(0.4, 0.4, 0.0, 0.6, 0.6, 0.6)]
     if "slab" in btype: return [(0.0, 0.0, 0.0, 1.0, 1.0, 0.5)]
     if "stairs" in btype:
@@ -421,6 +424,7 @@ TOOLS = PICKAXES + AXES + SHOVELS + HOES + SWORDS
 
 INV_ICONS = {}
 def get_inv_icon(itype):
+    if not itype: return Image.new("RGBA", (28, 28), (0,0,0,0))
     if itype not in INV_ICONS:
         tex_name = itype
         if "slab" in itype or "stairs" in itype:
@@ -464,7 +468,6 @@ def get_body_front_tex(color, item_type):
             icon = get_inv_icon(item_type).copy().convert("RGBA")
             new_w, new_h = 32, 32
             icon = icon.resize((new_w, new_h), Image.Resampling.NEAREST)
-            # Рисуем ровно на груди
             img.paste(icon, (64 - new_w//2, 24), icon)
         HELD_ITEM_TEX_CACHE[cache_key] = img
     return HELD_ITEM_TEX_CACHE[cache_key]
@@ -536,7 +539,7 @@ class Server:
             colors = [(230, 80, 80), (80, 230, 80), (80, 80, 230)]
             for y in range(self.size):
                 for x in range(self.size):
-                    self.blocks[(x, y, 0)] = {"color": colors[(x + y + random.randint(0, 1)) % 3]}
+                    self.blocks[(x, y, 0)] = {"color": colors[(x + y + random.randint(0, 1)) % 3], "type": "stone"}
             cx, cy = int(self.size/2), int(self.size/2)
             for dx in [0, 1]:
                 for dy in [0, 1]: self.blocks[(cx+dx, cy+dy, 0)] = {"type": "bedrock", "tex": TEX_CACHE["bedrock"]}
@@ -559,7 +562,6 @@ class Server:
         if changed: self.rebuild_mesh()
 
     def generate_chunk(self, cx, cy):
-        # Генерация мира с песчаником
         is_desert = math.sin(cx*0.5 + self.seed) + math.cos(cy*0.5 - self.seed) > 0.8
         
         for x in range(cx * 16, cx * 16 + 16):
@@ -567,7 +569,6 @@ class Server:
                 h = int(math.sin(x/10.0 + self.seed)*4 + math.cos(y/10.0 - self.seed)*4 + math.sin((x+y)/5.0)*2)
                 
                 if is_desert:
-                    # Глубина песка и песчаника детерминированно для ровных чанков
                     sand_d = 2 + int(abs(math.sin(x*1.3 + y*2.1)) * 3)
                     sst_d = 2 + int(abs(math.cos(x*0.7 + y*1.9)) * 2)
                     
@@ -584,7 +585,6 @@ class Server:
                     if z < -5:
                         cave_val = math.sin((x+self.seed)/4.0) + math.sin((y-self.seed)/4.0) + math.sin((z+self.seed)/3.0)
                         if cave_val > 1.2: continue
-                        
                     self.blocks[(x, y, z)] = {"type": "stone"}
                     
                 self.blocks[(x, y, -34)] = {"type": "bedrock"}
@@ -597,25 +597,24 @@ class Server:
                                 if dx==0 and dy==0 and dz==4: continue
                                 self.blocks[(x+dx, y+dy, h+dz)] = {"type": "leaves"}
 
-        # Руды
         for _ in range(18):
             vx, vy, vz = random.randint(cx*16, cx*16+15), random.randint(cy*16, cy*16+15), random.randint(-33, -6)
             for _ in range(random.randint(3, 5)):
-                if (vx, vy, vz) in self.blocks and self.blocks[(vx, vy, vz)]["type"] == "stone":
+                if (vx, vy, vz) in self.blocks and self.blocks[(vx, vy, vz)].get("type") == "stone":
                     self.blocks[(vx, vy, vz)] = {"type": "coal_ore"}
                 vx += random.choice([-1, 0, 1]); vy += random.choice([-1, 0, 1]); vz += random.choice([-1, 0, 1])
 
         for _ in range(12):
             vx, vy, vz = random.randint(cx*16, cx*16+15), random.randint(cy*16, cy*16+15), random.randint(-33, -12)
             for _ in range(random.randint(3, 5)):
-                if (vx, vy, vz) in self.blocks and self.blocks[(vx, vy, vz)]["type"] == "stone":
+                if (vx, vy, vz) in self.blocks and self.blocks[(vx, vy, vz)].get("type") == "stone":
                     self.blocks[(vx, vy, vz)] = {"type": "iron_ore"}
                 vx += random.choice([-1, 0, 1]); vy += random.choice([-1, 0, 1]); vz += random.choice([-1, 0, 1])
 
         for _ in range(4):
             vx, vy, vz = random.randint(cx*16, cx*16+15), random.randint(cy*16, cy*16+15), random.randint(-33, -30)
             for _ in range(random.randint(1, 5)):
-                if (vx, vy, vz) in self.blocks and self.blocks[(vx, vy, vz)]["type"] == "stone":
+                if (vx, vy, vz) in self.blocks and self.blocks[(vx, vy, vz)].get("type") == "stone":
                     self.blocks[(vx, vy, vz)] = {"type": "diamond_ore"}
                 vx += random.choice([-1, 0, 1]); vy += random.choice([-1, 0, 1]); vz += random.choice([-1, 0, 1])
 
@@ -626,9 +625,8 @@ class Server:
         try:
             for pos, bdata in self.blocks.items():
                 gx, gy, gz = pos
-                btype = bdata.get("type", "stone")
+                btype = bdata.get("type") or "stone"
                 
-                # Факел рисуем как красивый столб (визуально)
                 if btype == "torch":
                     dx, dy, dz = bdata.get("attach", (0,0,1))
                     w, h = 0.08, 0.5
@@ -666,7 +664,7 @@ class Server:
                             nb = (gx + offset[0], gy + offset[1], gz + offset[2])
                             nb_b = self.blocks.get(nb)
                             if nb_b:
-                                nbt = nb_b.get("type", "")
+                                nbt = nb_b.get("type") or ""
                                 if nbt not in ("torch", "glass") and "slab" not in nbt and "stairs" not in nbt:
                                     continue
                         
@@ -760,7 +758,9 @@ def load_all_data():
                     p_data["last_action"] = time.time()
                     p_data["action_lock"] = False
                 for pos, bd in data.get("blocks", {}).items():
-                    SERVERS[1].blocks[pos] = {"color": bd.get("color", (255,255,255)), "type": bd.get("type")}
+                    t = bd.get("type")
+                    if not t: t = "stone" # Предотвращаем None
+                    SERVERS[1].blocks[pos] = {"color": bd.get("color", (255,255,255)), "type": t}
                     if "tex_bytes" in bd:
                         try: SERVERS[1].blocks[pos]["tex"] = Image.open(io.BytesIO(bd["tex_bytes"])).convert("RGBA")
                         except Exception: pass
@@ -774,6 +774,8 @@ def load_all_data():
                     p_data["online"] = False
                     p_data["last_action"] = time.time()
                     p_data["action_lock"] = False
+                for pos, bd in data.get("blocks", {}).items():
+                    if not bd.get("type"): bd["type"] = "stone"
                 SERVERS[2].blocks = data.get("blocks", {})
                 SERVERS[2].block_damage = data.get("damage", {})
                 SERVERS[2].seed = data.get("seed", random.randint(0, 999999))
@@ -932,7 +934,7 @@ def get_ground_z(x, y, srv, pz=None):
         if b and b.get("type") != "torch":
             lx, ly = x - ix, y - iy
             max_z = 0.0
-            for xmin, ymin, zmin, xmax, ymax, zmax in get_block_boxes(b.get("type", ""), b.get("facing", "front")):
+            for xmin, ymin, zmin, xmax, ymax, zmax in get_block_boxes(b.get("type"), b.get("facing", "front")):
                 if xmin - 0.2 <= lx <= xmax + 0.2 and ymin - 0.2 <= ly <= ymax + 0.2:
                     if zmax > max_z: max_z = zmax
             if max_z > 0:
@@ -941,13 +943,12 @@ def get_ground_z(x, y, srv, pz=None):
 
 def is_blocked(srv, x, y, z):
     ix, iy = int(math.floor(x)), int(math.floor(y))
-    # Проверяем 3 точки высоты игрока (ноги, туловище, голова) для точных коллизий
     for pz in [z + 0.1, z + 0.8, z + 1.5]:
         bz = int(math.floor(pz))
         b = srv.blocks.get((ix, iy, bz))
         if b and b.get("type") != "torch":
             lx, ly, lz = x - ix, y - iy, pz - bz
-            for xmin, ymin, zmin, xmax, ymax, zmax in get_block_boxes(b.get("type", ""), b.get("facing", "front")):
+            for xmin, ymin, zmin, xmax, ymax, zmax in get_block_boxes(b.get("type"), b.get("facing", "front")):
                 if xmin - 0.2 <= lx <= xmax + 0.2 and ymin - 0.2 <= ly <= ymax + 0.2 and zmin <= lz <= zmax:
                     return True
     return False
@@ -1516,7 +1517,7 @@ def ray_pick(px, py, pz, pa, pt, s_id, ignore_uid=None):
         if cb in srv.blocks:
             b = srv.blocks[cb]
             lx, ly, lz = wx - cb[0], wy - cb[1], wz - cb[2]
-            for xmin, ymin, zmin, xmax, ymax, zmax in get_block_boxes(b.get("type", ""), b.get("facing", "front")):
+            for xmin, ymin, zmin, xmax, ymax, zmax in get_block_boxes(b.get("type"), b.get("facing", "front")):
                 if xmin <= lx <= xmax and ymin <= ly <= ymax and zmin <= lz <= zmax:
                     return ("block", cb, prev_cb, t)
         
@@ -1538,7 +1539,6 @@ async def send_view(cid, uid):
     st = get_st(uid)
     if not st: return
     
-    # Блокировка гарантирует отсутствие конфликтов рендера от печки и кнопок
     async with get_user_lock(uid):
         try:
             kb = get_keyboard(uid)
@@ -1585,11 +1585,10 @@ def server_menu():
 @bot.message_handler(commands=["creative"])
 async def h_creative(m):
     if m.from_user.id != ADMIN_ID: return
-    if not m.text: return
-    parts = m.text.split()
     uid = m.from_user.id
     st = get_st(uid)
     if not st: return
+    parts = m.text.split() if m.text else []
     if len(parts) > 1:
         if parts[1].lower() == "on":
             st["creative"] = True
@@ -1604,16 +1603,17 @@ async def h_creative(m):
 @bot.message_handler(commands=["start"])
 async def h_start(m):
     uid = m.from_user.id
-    if not m.text: return
-    try: await bot.delete_message(m.chat.id, m.message_id)
-    except: pass
     
-    if m.text.startswith("/start"):
-        try:
-            conn = sqlite3.connect(str(DB_PATH))
-            conn.execute("INSERT OR IGNORE INTO users (id, username) VALUES (?, ?)", (uid, m.from_user.first_name))
-            conn.commit(); conn.close()
-        except: pass
+    try: await bot.delete_message(m.chat.id, m.message_id)
+    except Exception: pass
+    
+    try:
+        conn = sqlite3.connect(str(DB_PATH))
+        name = m.from_user.first_name if m.from_user.first_name else "Player"
+        conn.execute("INSERT OR IGNORE INTO users (id, username) VALUES (?, ?)", (uid, name))
+        conn.commit()
+        conn.close()
+    except Exception: pass
         
     old_s = user_server_map.get(uid)
     changed = False
@@ -1621,7 +1621,7 @@ async def h_start(m):
     if old_s and old_s in SERVERS:
         if uid in SERVERS[old_s].players:
             ps = SERVERS[old_s].players[uid]
-            if ps["online"]:
+            if ps.get("online"):
                 ps["online"] = False
                 changed = True
                 SERVERS[old_s].broadcast(f"💨 {ps['name']} вышел")
@@ -1631,14 +1631,15 @@ async def h_start(m):
         user_server_map.pop(uid, None)
         save_all_data()
         
-    msg = await bot.send_message(m.chat.id, "Выбери сервер:", reply_markup=server_menu())
-    ACTIVE_MENUS[uid] = {"chat_id": m.chat.id, "msg_id": msg.message_id}
-    if changed: await update_server_menus()
+    try:
+        msg = await bot.send_message(m.chat.id, "Выбери сервер:", reply_markup=server_menu())
+        ACTIVE_MENUS[uid] = {"chat_id": m.chat.id, "msg_id": msg.message_id}
+        if changed: await update_server_menus()
+    except Exception: pass
 
 @bot.message_handler(commands=["give"])
 async def h_give(m):
     if m.from_user.id != ADMIN_ID: return
-    if not m.text: return
     uid = m.from_user.id
     s_id = user_server_map.get(uid)
     if not s_id or s_id != 2:
@@ -1647,7 +1648,7 @@ async def h_give(m):
     st = get_st(uid)
     if not st: return
     
-    parts = m.text.split()
+    parts = m.text.split() if m.text else []
     if len(parts) < 2:
         items_str = "grass, dirt, sand, sandstone, glass, stone, bedrock, wood, leaves, planks, workbench, chest, furnace, cobblestone, coal_ore, iron_ore, diamond_ore, stick, wood_pickaxe, stone_pickaxe, iron_pickaxe, diamond_pickaxe, wood_axe, stone_axe, iron_axe, diamond_axe, wood_lopata, stone_lopata, iron_lopata, diamond_lopata, wood_motiga, stone_motiga, iron_motiga, diamond_motiga, wood_mech, stone_mech, iron_mech, diamond_mech, coal, d_ugol, iron, diamond, iron_ingot, torch, planks_slab, cobblestone_slab, stone_slab, planks_stairs, cobblestone_stairs, stone_stairs"
         await bot.send_message(m.chat.id, f"Использование: /give <предмет> [кол-во]\n\nДоступные предметы:\n{items_str}")
@@ -1683,8 +1684,7 @@ async def h_give(m):
 @bot.message_handler(commands=["reset"])
 async def h_reset(m):
     if m.from_user.id != ADMIN_ID: return
-    if not m.text: return
-    parts = m.text.split()
+    parts = m.text.split() if m.text else []
     if len(parts)==3 and parts[2] in ["1","2"]:
         s_id = int(parts[2])
         SERVERS[s_id].generate()
@@ -2083,7 +2083,7 @@ async def h_cb(c):
                 elif srv.type == "classic":
                     ix, iy, iz = int(math.floor(st["x"])), int(math.floor(st["y"])), int(math.floor(st["z"]))
                     if not is_blocked(srv, st["x"], st["y"], st["z"] + 1) and not is_blocked(srv, st["x"], st["y"], st["z"] + 2):
-                        srv.blocks[(ix, iy, iz)] = {"color": (255,255,255)}
+                        srv.blocks[(ix, iy, iz)] = {"color": (255,255,255), "type": "stone"}
                         st["z"] += 1.0
                         srv.rebuild_mesh()
                         st["jump"] = False
@@ -2134,7 +2134,7 @@ async def h_cb(c):
                                     elif btype == "chest": srv.blocks[nb] = {"type": "chest", "facing": facing, "inv": {i:None for i in range(15)}}
                                     else: srv.blocks[nb] = {"type": btype, "facing": facing}
                                 else:
-                                    srv.blocks[nb] = {"type": btype} if srv.type=="survival" else {"color":(255,255,255)}
+                                    srv.blocks[nb] = {"type": btype} if srv.type=="survival" else {"color":(255,255,255), "type": "stone"}
                                     
                                 if item:
                                     item["count"] -= 1
