@@ -1108,12 +1108,16 @@ def init_player(uid, s_id, name):
     if srv.type == "classic": px, py = srv.size/2, srv.size/2
     
     if uid not in srv.players:
+        # ИСПРАВЛЕНИЕ: Обязательно загружаем чанки спавна перед просчетом высоты Z
+        if srv.type == "survival":
+            srv.load_chunks_around(px, py, radius=1)
+
         srv.players[uid] = {
-            "x": px, "y": py, "z": get_ground_z(px, py, srv), 
+            "x": px, "y": py, "z": get_ground_z(px, py, srv),
             "angle": 0.0, "tilt": 0.0, "jump": False, "last_action": time.time(),
             "name": transliterate(name), "msg_id": None, "view_radius": 8, "res_level": 2, "hp": 10, "flash_time": 0,
             "inv": {0: {"type": "wood", "count": 10}}, "inv_open": False, "inv_mode": "normal", "inv_cursor": 5 if s_id == 1 else 0, "drag_item": None,
-            "classic_hotbar": {}, # Ячейки для картинок в классике
+            "classic_hotbar": {},
             "furnace_pos": None, "chest_pos": None, "step_size": 1.0,
             "is_busy": False, "online": True, "hit_time": 0, "last_state_hash": None, "action_lock": False, "creative": False
         }
@@ -1933,10 +1937,15 @@ async def cb_join(c):
     except: pass
     
     st = init_player(uid, s_id, c.from_user.first_name)
-    
+
+    # ИСПРАВЛЕНИЕ: Загружаем чанки вокруг игрока, если они были выгружены, пока он был оффлайн
+    if SERVERS[s_id].type == "survival":
+        SERVERS[s_id].load_chunks_around(st["x"], st["y"], radius=1)
+        # Корректируем высоту на случай, если игрок падал в пустоту из-за отсутствия чанков
+        st["z"] = get_ground_z(st["x"], st["y"], SERVERS[s_id], st.get("z"))
+
     # ОБЯЗАТЕЛЬНО: Пересобираем мир после того, как игрок получил статус Online
-    # Иначе сервер отрендерит пустоту (так как оптимизация скрывает пустые чанки)
-    SERVERS[s_id].rebuild_mesh() 
+    SERVERS[s_id].rebuild_mesh()
     
     SERVERS[s_id].broadcast(f"🎉 {st['name']} присоединился!")
     
@@ -1976,7 +1985,7 @@ async def h_photo(m):
         elif mode and mode[0] == "hotbar" and s_id == 1:
             st["classic_hotbar"][mode[1]] = tex
             del pending_skin_mode[uid]
-            await broadcast_chat(s_id, f"🖼 {un} задал новую текстуру в хотбар!")
+            # Убрано уведомление в чат о смене текстуры хотбара
             tasks.append(send_view(uid, uid, force=True))
         elif m.caption and "/skin" in m.caption.lower():
             player_skins[uid] = {"base": tex.copy(), "face": bake_face(tex)}
