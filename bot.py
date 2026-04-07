@@ -441,10 +441,10 @@ def get_body_front_tex(color, item_type):
         img = Image.new("RGBA", (128, 128), color)
         if item_type:
             icon = get_inv_icon(item_type).copy().convert("RGBA")
-            w, h = 48, 24 # Установлен требуемый размер 48x24
-            icon = icon.resize((w, h), Image.Resampling.NEAREST)
+            size = 48 # Фиксированный квадратный размер NxN
+            icon = icon.resize((size, size), Image.Resampling.NEAREST)
             # Размещаем предмет на верхней части груди
-            img.paste(icon, (64 - w//2, 48 - h//2), icon)
+            img.paste(icon, (64 - size//2, 40 - size//2), icon)
         HELD_ITEM_TEX_CACHE[cache_key] = img
     return HELD_ITEM_TEX_CACHE[cache_key]
 
@@ -524,7 +524,7 @@ class Server:
 
         self.rebuild_mesh()
 
-    def load_chunks_around(self, px, py, radius=2): # <-- Changed to 2
+    def load_chunks_around(self, px, py, radius=1):
         if self.type == "classic": return
         cx, cy = int(px // 16), int(py // 16)
         changed = False
@@ -924,61 +924,51 @@ def get_st(uid):
 def get_ground_z(x, y, srv, pz=None):
     tz = -34 if srv.type == "survival" else -64
     ix, iy = int(math.floor(x)), int(math.floor(y))
-    dx, dy = x - ix, y - iy
     
     start_z = 20
     if pz is not None:
         start_z = min(20, int(math.floor(pz)) + 1)
         
     for bz in range(start_z, tz-1, -1):
-        b = srv.blocks.get((ix, iy, bz))
-        if b and b.get("type") != "torch":
-            btype = b.get("type", "")
-            if "slab" in btype: return bz + 0.5
-            if "stairs" in btype:
-                facing = b.get("facing", "front")
-                top_half = False
-                if facing == "front" and dy >= 0.5: top_half = True
-                if facing == "back" and dy < 0.5: top_half = True
-                if facing == "right" and dx < 0.5: top_half = True
-                if facing == "left" and dx >= 0.5: top_half = True
-                return bz + 1.0 if top_half else bz + 0.5
-            return bz + 1.0
+        if (ix, iy, bz) in srv.blocks:
+            b = srv.blocks[(ix, iy, bz)]
+            if b.get("type") != "torch":
+                btype = b.get("type", "")
+                if "slab" in btype: return bz + 0.5
+                if "stairs" in btype:
+                    facing = b.get("facing", "front")
+                    dx, dy = x - ix, y - iy
+                    if facing == "front" and dy < 0.5: return bz + 0.5
+                    if facing == "back" and dy >= 0.5: return bz + 0.5
+                    if facing == "right" and dx >= 0.5: return bz + 0.5
+                    if facing == "left" and dx < 0.5: return bz + 0.5
+                    return bz + 1.0
+                return bz + 1.0
     return tz
 
 def is_blocked(srv, x, y, z):
     ix, iy = int(math.floor(x)), int(math.floor(y))
-    dx, dy = x - ix, y - iy
-    p_min = z
-    p_max = z + 1.5 # Рост игрока (запас 0.1 для исключения застреваний)
-    
-    min_bz = int(math.floor(p_min))
-    max_bz = int(math.floor(p_max))
-    
-    # Проверка коллизии по пересечению хитбоксов (AABB)
-    for bz in range(min_bz, max_bz + 1):
+    for bz in [int(math.floor(z + 0.1)), int(math.floor(z + 1.6))]:
         b = srv.blocks.get((ix, iy, bz))
         if b and b.get("type") != "torch":
             btype = b.get("type", "")
-            
-            boxes = []
             if "slab" in btype:
-                boxes.append((0.0, 0.5))
+                if z < bz + 0.5: return True
             elif "stairs" in btype:
-                boxes.append((0.0, 0.5)) # Нижняя половина есть всегда
                 facing = b.get("facing", "front")
+                dx, dy = x - ix, y - iy
                 top_half = False
                 if facing == "front" and dy >= 0.5: top_half = True
                 if facing == "back" and dy < 0.5: top_half = True
                 if facing == "right" and dx < 0.5: top_half = True
                 if facing == "left" and dx >= 0.5: top_half = True
-                if top_half: boxes.append((0.5, 1.0)) # Верхняя 1/4 часть ступени
-            else:
-                boxes.append((0.0, 1.0))
                 
-            for b_min, b_max in boxes:
-                if p_max > bz + b_min + 0.05 and p_min < bz + b_max - 0.05:
-                    return True # Коллизия обнаружена
+                if top_half:
+                    if z < bz + 1.0: return True
+                else:
+                    if z < bz + 0.5: return True
+            else:
+                return True
     return False
 
 def init_player(uid, s_id, name):
@@ -2055,9 +2045,7 @@ async def h_cb(c):
                     nx, ny = clamp(nx, 0.5, srv.size-0.5), clamp(ny, 0.5, srv.size-0.5)
                     
                 if srv.type == "survival":
-                    # Бесконечная генерация: грузим чанки с учетом дальности прорисовки
-                    vr_chunks = max(2, int((st.get("view_radius", 8) + 16) // 16))
-                    srv.load_chunks_around(nx, ny, radius=vr_chunks)
+                    srv.load_chunks_around(nx, ny, radius=1)
                     
                 tz = get_ground_z(nx, ny, srv, st["z"])
                     
@@ -2066,7 +2054,7 @@ async def h_cb(c):
                     ev = True
                 else:
                     diff = tz - st["z"]
-                    # Разрешаем плавный шаг до 0.5 блоков без прыжка для полублоков и ступенек
+                    # Разрешаем шаг до 0.5 блоков без прыжка для полублоков и ступенек!
                     if diff <= 0.5 or (0 < diff <= 1.5 and st["jump"]):
                         if not is_blocked(srv, nx, ny, tz): 
                             st["x"], st["y"], st["z"] = nx, ny, tz
