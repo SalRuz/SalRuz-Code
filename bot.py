@@ -770,11 +770,9 @@ class Server:
                             elif base_type in ["dirt", "stone", "leaves", "planks", "bedrock", "cobblestone", "coal_ore", "iron_ore", "diamond_ore", "sand", "sandstone", "glass"]: tex = TEX_CACHE.get(base_type, TEX_CACHE["zemlya"])
                             # ИСПРАВЛЕНИЕ: Логика текстур для дверей и люков
                             elif btype in ("door_bottom", "door_top"):
-                                door_tex = TEX_CACHE["door_top"] if btype == "door_top" else TEX_CACHE["door_bottom"]
-                                if is_open: tex = door_tex if fn in ("left", "right") else TEX_CACHE["planks"]
-                                else: tex = door_tex if fn in ("front", "back") else TEX_CACHE["planks"]
+                                tex = TEX_CACHE[btype] if bw > bh else TEX_CACHE["planks"] # Основная текстура на широкой стороне
                             elif btype == "trapdoor":
-                                tex = TEX_CACHE["trapdoor"] if fn in ("top", "bottom") else TEX_CACHE["wood_side"]
+                                tex = TEX_CACHE["trapdoor"] if bd < 1 else TEX_CACHE["wood_side"] # Основная текстура на плоской стороне
                             face_info["tex"] = tex
                         
                         dmg = self.block_damage.get((gx,gy,gz), 0)
@@ -1011,15 +1009,16 @@ def get_ground_z(x, y, srv, pz=None):
         if (ix, iy, bz) in srv.blocks:
             b = srv.blocks[(ix, iy, bz)]
             if b.get("type") != "torch":
-                btype = b.get("type") or "" # Исправлено
+                btype = b.get("type") or ""
+                # ИСПРАВЛЕНИЕ: Добавлена физика для люка
+                if btype == "trapdoor" and not b.get("open", False):
+                    return bz + 0.2
                 if "slab" in btype: return bz + 0.5
                 if "stairs" in btype:
-                    facing = b.get("facing", "front")
-                    dx, dy = x - ix, y - iy
-                    if facing == "front" and dy >= 0.5: return bz + 1.0
-                    if facing == "back" and dy < 0.5: return bz + 1.0
-                    if facing == "right" and dx >= 0.5: return bz + 1.0
-                    if facing == "left" and dx < 0.5: return bz + 1.0
+                    facing = b.get("facing", "front"); dx, dy = x - ix, y - iy
+                    if (facing=="front" and dy>=0.5) or (facing=="back" and dy<0.5) or \
+                       (facing=="right" and dx>=0.5) or (facing=="left" and dx<0.5):
+                        return bz + 1.0
                     return bz + 0.5
                 return bz + 1.0
     return tz
@@ -1038,26 +1037,23 @@ def is_blocked(srv, x, y, z):
                 top_half = (facing == "front" and dy >= 0.5) or (facing == "back" and dy < 0.5) or \
                            (facing == "right" and dx >= 0.5) or (facing == "left" and dx < 0.5)
                 if (top_half and z < bz + 0.99) or (not top_half and z < bz + 0.49): return True
-            # ИСПРАВЛЕНИЕ: Точная коллизия для дверей и люков
+            # ИСПРАВЛЕНИЕ: Точная коллизия для дверей
             elif btype in ("door_bottom", "door_top"):
                 is_open = b.get("open", False); facing = b.get("facing", "front")
-                if is_open:
-                    if facing in ("front", "back") and dy > 0.1 and dy < 0.9: pass # Проход свободен
-                    elif facing in ("left", "right") and dx > 0.1 and dx < 0.9: pass # Проход свободен
-                    else: return True
-                else:
-                    if facing in ("front", "back") and (dy < 0.8 or dy > 1.0): pass
-                    elif facing in ("left", "right") and (dx < 0.8 or dx > 1.0): pass
-                    else: return True
+                if not is_open: # Закрыта
+                    if facing in ("front", "back") and dy >= 0.8: return True
+                    if facing in ("left", "right") and dx >= 0.8: return True
+                else: # Открыта
+                    if facing in ("front", "back") and dx <= 0.2: return True
+                    if facing in ("left", "right") and dy <= 0.2: return True
+            # ИСПРАВЛЕНИЕ: Точная коллизия для люков
             elif btype == "trapdoor":
                 is_open = b.get("open", False); facing = b.get("facing", "front")
                 if not is_open:
-                    if z < bz + 0.2: return True
-                else: # Если люк открыт, он становится стеной
-                    if facing == "front" and dy > 0.8: return True
-                    if facing == "back" and dy < 0.2: return True
-                    if facing == "right" and dx > 0.8: return True
-                    if facing == "left" and dx < 0.2: return True
+                    if z < bz + 0.19: return True # Как полублок
+                else: # Как стена
+                    if (facing == "front" and dy >= 0.8) or (facing == "back" and dy <= 0.2) or \
+                       (facing == "right" and dx >= 0.8) or (facing == "left" and dx <= 0.2): return True
             else:
                 return True
     return False
@@ -1324,8 +1320,12 @@ def draw_inv(img, d, w, h, st, srv=None):
             if "durability" in item:
                 max_dur = 120 if "diamond" in item["type"] else 90 if "iron" in item["type"] else 66 if "stone" in item["type"] else 30
                 dur_pct = max(0, item["durability"] / max_dur)
+                # ИСПРАВЛЕНИЕ: Добавлена оранжевая стадия
+                if dur_pct > 0.6: dur_color = (0,255,0)
+                elif dur_pct > 0.3: dur_color = (255,165,0)
+                else: dur_color = (255,0,0)
                 d.rectangle((sx+4, sy+32, sx+32, sy+34), fill=(50,50,50))
-                d.rectangle((sx+4, sy+32, sx+4+28*dur_pct, sy+34), fill=(0,255,0) if dur_pct>0.3 else (255,0,0))
+                d.rectangle((sx+4, sy+32, sx+4+28*dur_pct, sy+34), fill=dur_color)
             
     if st["drag_item"]:
         d.text((10, 10), f"Dragging: {st['drag_item']['count']}x {st['drag_item']['type']}", fill=(0,255,0))
@@ -1616,8 +1616,11 @@ def render_scene(px, py, pz, pa, pt, uid, s_id):
                 if "durability" in item:
                     max_dur = 120 if "diamond" in item["type"] else 90 if "iron" in item["type"] else 66 if "stone" in item["type"] else 30
                     dur_pct = max(0, item["durability"] / max_dur)
+                    if dur_pct > 0.6: dur_color = (0,255,0)
+                    elif dur_pct > 0.3: dur_color = (255,165,0)
+                    else: dur_color = (255,0,0)
                     d.rectangle((hx+i*40+4, out_h-13, hx+i*40+32, out_h-11), fill=(50,50,50))
-                    d.rectangle((hx+i*40+4, out_h-13, hx+i*40+4+28*dur_pct, out_h-11), fill=(0,255,0) if dur_pct>0.3 else (255,0,0))
+                    d.rectangle((hx+i*40+4, out_h-13, hx+i*40+4+28*dur_pct, out_h-11), fill=dur_color)
     elif srv.type == "classic":
         hx = out_w//2 - 120
         for i in range(6):
@@ -1827,7 +1830,8 @@ async def h_give(m):
     
     parts = m.text.split()
     if len(parts) < 2:
-        items_str = "grass, dirt, sand, sandstone, glass, stone, bedrock, wood, leaves, planks, workbench, chest, furnace, cobblestone, coal_ore, iron_ore, diamond_ore, stick, wood_pickaxe, stone_pickaxe, iron_pickaxe, diamond_pickaxe, wood_axe, stone_axe, iron_axe, diamond_axe, wood_lopata, stone_lopata, iron_lopata, diamond_lopata, wood_motiga, stone_motiga, iron_motiga, diamond_motiga, wood_mech, stone_mech, iron_mech, diamond_mech, coal, d_ugol, iron, diamond, iron_ingot, torch, planks_slab, cobblestone_slab, stone_slab, planks_stairs, cobblestone_stairs, stone_stairs"
+        # ИСПРАВЛЕНИЕ: Добавлены дверь и люк
+        items_str = "grass, dirt, sand, sandstone, glass, stone, bedrock, wood, leaves, planks, workbench, chest, furnace, cobblestone, coal_ore, iron_ore, diamond_ore, stick, wood_pickaxe, stone_pickaxe, iron_pickaxe, diamond_pickaxe, wood_axe, stone_axe, iron_axe, diamond_axe, wood_lopata, stone_lopata, iron_lopata, diamond_lopata, wood_motiga, stone_motiga, iron_motiga, diamond_motiga, wood_mech, stone_mech, iron_mech, diamond_mech, coal, d_ugol, iron, diamond, iron_ingot, torch, planks_slab, cobblestone_slab, stone_slab, planks_stairs, cobblestone_stairs, stone_stairs, door, trapdoor"
         await bot.send_message(m.chat.id, f"Использование: /give <предмет> [кол-во]\n\nДоступные предметы:\n{items_str}")
         return
         
@@ -2251,8 +2255,8 @@ async def h_cb(c):
             st["jump"] = not st["jump"]
             ev = True
             
-        elif d == "cycle_view": st["view_radius"] = 16 if st["view_radius"]==8 else 32 if st["view_radius"]==16 else 8
-        elif d == "cycle_res": st["res_level"] = st["res_level"]+1 if st["res_level"]<4 else 1
+        elif d == "cycle_view": st["view_radius"] = 16 if st["view_radius"]==8 else 32 if st["view_radius"]==16 else 8; ev = True
+        elif d == "cycle_res": st["res_level"] = st["res_level"]+1 if st["res_level"]<4 else 1; ev = True
         elif d == "paint":
             if srv.type == "classic":
                 st["classic_hotbar"] = st.get("classic_hotbar", {})
@@ -2274,7 +2278,7 @@ async def h_cb(c):
                     try: await bot.edit_message_reply_markup(c.message.chat.id, c.message.message_id, reply_markup=make_keyboard(uid))
                     except: pass
             else: 
-                st["inv_open"] = True; st["inv_mode"] = "normal"
+                st["inv_open"] = True; st["inv_mode"] = "normal"; ev = True
 
         elif d == "build":
             pass_normal_build = True
