@@ -1700,43 +1700,64 @@ def ray_pick(px, py, pz, pa, pt, s_id, ignore_uid=None):
     dx, dy, dz = math.sin(pa)*math.cos(pt), math.cos(pa)*math.cos(pt), -math.sin(pt)
     t = 0.0
     prev_cb = None
+
     while t <= RAY_MAX_DIST:
-        wx, wy, wz = px+dx*t, py+dy*t, pz+dz*t
+        wx, wy, wz = px + dx*t, py + dy*t, pz + dz*t
+
+        # попадание по игрокам
         for pid, ps in srv.players.items():
-            if pid == ignore_uid or not ps.get("online", True): continue
-            if abs(wx-ps["x"])<0.3 and abs(wy-ps["y"])<0.3 and ps["z"]<=wz<=ps["z"]+2.0:
+            if pid == ignore_uid or not ps.get("online", True):
+                continue
+            if abs(wx-ps["x"]) < 0.3 and abs(wy-ps["y"]) < 0.3 and ps["z"] <= wz <= ps["z"] + 2.0:
                 return ("player", pid, None, t)
-                
+
         cb = (int(math.floor(wx)), int(math.floor(wy)), int(math.floor(wz)))
+
+        hit = False
         if cb in srv.blocks:
-            b = srv.blocks[cb]; btype = b.get("type") or ""; bx, by, bz_block = cb
-            hit = False; hx, hy = wx - bx, wy - by
+            b = srv.blocks[cb]
+            btype = b.get("type") or ""
+            bx, by, bz_block = cb
+
+            lx, ly, lz = wx - bx, wy - by, wz - bz_block
 
             if btype == "torch":
-                if bx+0.35 <= wx <= bx+0.65 and by+0.35 <= wy <= by+0.65 and bz_block <= wz <= bz_block+0.6: hit = True
+                if 0.35 <= lx <= 0.65 and 0.35 <= ly <= 0.65 and 0.0 <= lz <= 0.6:
+                    hit = True
+
             elif "slab" in btype:
-                if wz <= bz_block + 0.5: hit = True
+                if lz <= 0.5:
+                    hit = True
+
             elif "stairs" in btype:
-                facing = b.get("facing", "front")
-                top_half = (facing == "front" and hy >= 0.5) or (facing == "back" and hy < 0.5) or \
-                           (facing == "right" and hx >= 0.5) or (facing == "left" and hx < 0.5)
-                if (top_half and wz <= bz_block + 1.0) or (not top_half and wz <= bz_block + 0.5): hit = True
-            # ИСПРАВЛЕНИЕ: Тонкий хитбокс луча для дверей и люков (через AABB)
+                if lz <= 0.5:
+                    hit = True
+                else:
+                    facing = b.get("facing", "front")
+                    hx, hy = lx, ly
+                    if facing == "front" and hy >= 0.5: hit = True
+                    elif facing == "back" and hy < 0.5: hit = True
+                    elif facing == "right" and hx >= 0.5: hit = True
+                    elif facing == "left" and hx < 0.5: hit = True
+
             elif btype in ("door_bottom", "door_top"):
-                lx, ly, lz = wx - bx, wy - by, wz - bz
                 hit = any(point_in_box(lx, ly, lz, box) for box in get_door_boxes(b))
 
             elif btype == "trapdoor":
-                lx, ly, lz = wx - bx, wy - by, wz - bz
                 hit = any(point_in_box(lx, ly, lz, box) for box in get_trapdoor_boxes(b))
+
             else:
                 hit = True
 
-            if hit: return ("block", cb, prev_cb, t)
+            if hit:
+                return ("block", cb, prev_cb, t)
 
         if cb not in srv.blocks or not hit:
-            if prev_cb != cb: prev_cb = cb
+            if prev_cb != cb:
+                prev_cb = cb
+
         t += RAY_STEP
+
     return None
 
 async def broadcast_chat(s_id, txt):
