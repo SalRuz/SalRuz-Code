@@ -713,20 +713,10 @@ class Server:
                     elif facing == "right": boxes.append((0.5, 0, 0.5, 0.5, 1, 0.5))
                     elif facing == "left": boxes.append((0, 0, 0.5, 0.5, 1, 0.5))
                 elif btype in ("door_bottom", "door_top"):
-                    door_thickness = 0.1875 # 3/16-х блока
-                    if not is_open:
-                        boxes.append((0, 1 - door_thickness, 0, 1, door_thickness, 1))
-                    else:
-                        if facing in ("front", "back"): boxes.append((1 - door_thickness, 0, 0, door_thickness, 1, 1))
-                        else: boxes.append((0, 1 - door_thickness, 0, 1, door_thickness, 1))
+                    boxes.extend(get_door_boxes(bdata))
+
                 elif btype == "trapdoor":
-                    trapdoor_thickness = 0.1875
-                    if not is_open: boxes.append((0, 0, 1 - trapdoor_thickness, 1, 1, trapdoor_thickness))
-                    else:
-                        if facing == "front": boxes.append((0, 0, 0, 1, trapdoor_thickness, 1))
-                        elif facing == "back": boxes.append((0, 1 - trapdoor_thickness, 0, 1, trapdoor_thickness, 1))
-                        elif facing == "right": boxes.append((0, 0, 0, trapdoor_thickness, 1, 1))
-                        elif facing == "left": boxes.append((1 - trapdoor_thickness, 0, 0, trapdoor_thickness, 1, 1))
+                    boxes.extend(get_trapdoor_boxes(bdata))
                 else: boxes.append((0, 0, 0, 1, 1, 1))
 
                 is_complex = len(boxes) > 1 or boxes[0] != (0, 0, 0, 1, 1, 1)
@@ -769,18 +759,22 @@ class Server:
                                 elif fn == facing: tex = TEX_CACHE["sunduk"]
                                 else: tex = TEX_CACHE["sunduk_bok"]
                             elif base_type in ["dirt", "stone", "leaves", "planks", "bedrock", "cobblestone", "coal_ore", "iron_ore", "diamond_ore", "sand", "sandstone", "glass"]: tex = TEX_CACHE.get(base_type, TEX_CACHE["zemlya"])
-                            # ИСПРАВЛЕНИЕ: Новая логика текстур для дверей и люков
+                            # ИСПРАВЛЕНИЕ: Текстуры дверей/люков по широким граням (не зависят от open/close напрямую)
                             elif btype in ("door_bottom", "door_top"):
-                                door_tex = TEX_CACHE["door_top"] if btype == "door_top" else TEX_CACHE["door_bottom"]
-                                if not is_open:
-                                    tex = door_tex if fn in ("front", "back") else TEX_CACHE["planks"]
-                                else:
-                                    tex = door_tex if fn in ("left", "right") else TEX_CACHE["planks"]
+                                door_tex = TEX_CACHE["door_bottom"] if btype == "door_bottom" else TEX_CACHE["door_top"]
+                                is_x_thin = bw < 0.5
+                                wide_faces = ("left", "right") if is_x_thin else ("front", "back")
+                                tex = door_tex if fn in wide_faces else TEX_CACHE["planks"]
+
                             elif btype == "trapdoor":
-                                if not is_open:
-                                    tex = TEX_CACHE["trapdoor"] if fn in ("top", "bottom") else TEX_CACHE["wood_side"]
+                                trap_tex = TEX_CACHE["trapdoor"]
+                                if bd < 0.5:
+                                    wide_faces = ("top", "bottom")
+                                elif bw < 0.5:
+                                    wide_faces = ("left", "right")
                                 else:
-                                    tex = TEX_CACHE["trapdoor"] if fn in ("front", "back") else TEX_CACHE["wood_side"]
+                                    wide_faces = ("front", "back")
+                                tex = trap_tex if fn in wide_faces else TEX_CACHE["wood_side"]
                             face_info["tex"] = tex
                         
                         dmg = self.block_damage.get((gx,gy,gz), 0)
@@ -1005,6 +999,43 @@ def get_st(uid):
     s_id = user_server_map.get(uid)
     return SERVERS[s_id].players.get(uid) if s_id else None
 
+# === ХЕЛПЕРЫ ДЛЯ ДВЕРЕЙ/ЛЮКОВ (единый источник AABB) ===
+DOOR_T = 1.0 / 6.0        # ~0.166 — толщина двери
+TRAPDOOR_T = 1.0 / 6.0    # ~0.166 — толщина люка
+
+def get_door_boxes(bdata):
+    """Возвращает список box (bx,by,bz,bw,bh,bd) в локальных координатах блока."""
+    t = DOOR_T
+    facing = bdata.get("facing", "front")
+    is_open = bdata.get("open", False)
+    if facing in ("front", "back"):
+        if not is_open:
+            return [(0.0, 0.5 - t/2, 0.0, 1.0, t, 1.0)]
+        else:
+            return [(1.0 - t, 0.0, 0.0, t, 1.0, 1.0)]
+    else:
+        if not is_open:
+            return [(0.5 - t/2, 0.0, 0.0, t, 1.0, 1.0)]
+        else:
+            return [(0.0, 1.0 - t, 0.0, 1.0, t, 1.0)]
+
+def get_trapdoor_boxes(bdata):
+    """Люк: закрыт — горизонтальная пластина снизу. Открыт — вертикальная на правой грани."""
+    t = TRAPDOOR_T
+    facing = bdata.get("facing", "front")
+    is_open = bdata.get("open", False)
+    if not is_open:
+        return [(0.0, 0.0, 0.0, 1.0, 1.0, t)]
+    else:
+        if facing in ("front", "back"):
+            return [(1.0 - t, 0.0, 0.0, t, 1.0, 1.0)]
+        else:
+            return [(0.0, 1.0 - t, 0.0, 1.0, t, 1.0)]
+
+def point_in_box(lx, ly, lz, box):
+    bx, by, bz, bw, bh, bd = box
+    return (bx <= lx <= bx + bw) and (by <= ly <= by + bh) and (bz <= lz <= bz + bd)
+
 def get_ground_z(x, y, srv, pz=None):
     tz = -34 if srv.type == "survival" else -64
     ix, iy = int(math.floor(x)), int(math.floor(y))
@@ -1033,38 +1064,53 @@ def get_ground_z(x, y, srv, pz=None):
 
 def is_blocked(srv, x, y, z):
     ix, iy = int(math.floor(x)), int(math.floor(y))
-    for bz in [int(math.floor(z + 0.1)), int(math.floor(z + 1.7))]: # Увеличена высота игрока для люков
+    lx, ly = x - ix, y - iy
+
+    # две контрольные точки: ноги и голова
+    for test_z in (z + 0.1, z + 1.6):
+        bz = int(math.floor(test_z))
+        lz = test_z - bz
+
         b = srv.blocks.get((ix, iy, bz))
-        if b and b.get("type") != "torch":
-            btype = b.get("type") or ""; dx, dy = x - ix, y - iy
-            door_thickness = 0.1875
-            if "slab" in btype:
-                if z < bz + 0.49: return True
-            elif "stairs" in btype:
-                facing = b.get("facing", "front")
-                top_half = (facing=="front" and dy>=0.5) or (facing=="back" and dy<0.5) or \
-                           (facing=="right" and dx>=0.5) or (facing=="left" and dx<0.5)
-                if (top_half and z < bz + 0.99) or (not top_half and z < bz + 0.49): return True
-            # ИСПРАВЛЕНИЕ: Точная коллизия для двери
-            elif btype in ("door_bottom", "door_top"):
-                is_open = b.get("open", False)
-                if not is_open:
-                    if dy > 1 - door_thickness: return True
-                else:
-                    if dx > 1 - door_thickness: return True
-            # ИСПРАВЛЕНИЕ: Точная коллизия для люка
-            elif btype == "trapdoor":
-                is_open = b.get("open", False); facing = b.get("facing", "front")
-                if not is_open:
-                     # Если стоим на блоке с люком, но люк над головой
-                    if bz > z and z + 1.8 > bz + (1 - door_thickness): return True
-                else: # Если люк открыт, он становится вертикальной преградой
-                    if facing == "front" and dy < door_thickness: return True
-                    if facing == "back" and dy > 1 - door_thickness: return True
-                    if facing == "right" and dx < door_thickness: return True
-                    if facing == "left" and dx > 1 - door_thickness: return True
-            else:
+        if not b:
+            continue
+
+        btype = b.get("type") or ""
+        if btype == "torch":
+            continue
+
+        if btype in ("door_bottom", "door_top"):
+            for box in get_door_boxes(b):
+                if point_in_box(lx, ly, lz, box):
+                    return True
+            continue
+
+        if btype == "trapdoor":
+            for box in get_trapdoor_boxes(b):
+                if point_in_box(lx, ly, lz, box):
+                    return True
+            continue
+
+        # остальная логика (slab/stairs)
+        if "slab" in btype:
+            if z < bz + 0.49:
                 return True
+        elif "stairs" in btype:
+            facing = b.get("facing", "front")
+            dx, dy = lx, ly
+            top_half = False
+            if facing == "front" and dy >= 0.5: top_half = True
+            if facing == "back" and dy < 0.5: top_half = True
+            if facing == "right" and dx >= 0.5: top_half = True
+            if facing == "left" and dx < 0.5: top_half = True
+
+            if top_half:
+                if z < bz + 0.99: return True
+            else:
+                if z < bz + 0.49: return True
+        else:
+            return True
+
     return False
 
 def init_player(uid, s_id, name):
@@ -1675,22 +1721,14 @@ def ray_pick(px, py, pz, pa, pt, s_id, ignore_uid=None):
                 top_half = (facing == "front" and hy >= 0.5) or (facing == "back" and hy < 0.5) or \
                            (facing == "right" and hx >= 0.5) or (facing == "left" and hx < 0.5)
                 if (top_half and wz <= bz_block + 1.0) or (not top_half and wz <= bz_block + 0.5): hit = True
-            # ИСПРАВЛЕНИЕ: Тонкий хитбокс луча для дверей и люков
+            # ИСПРАВЛЕНИЕ: Тонкий хитбокс луча для дверей и люков (через AABB)
             elif btype in ("door_bottom", "door_top"):
-                is_open = b.get("open", False); facing = b.get("facing", "front")
-                if is_open:
-                    if facing in ("front", "back") and 0 <= hy <= 0.2: hit = True
-                    elif facing in ("left", "right") and 0 <= hx <= 0.2: hit = True
-                else:
-                    if facing in ("front", "back") and 0.8 <= hy <= 1.0: hit = True
-                    elif facing in ("left", "right") and 0.8 <= hx <= 1.0: hit = True
+                lx, ly, lz = wx - bx, wy - by, wz - bz
+                hit = any(point_in_box(lx, ly, lz, box) for box in get_door_boxes(b))
+
             elif btype == "trapdoor":
-                is_open = b.get("open", False); facing = b.get("facing", "front")
-                if not is_open:
-                    if bz_block <= wz <= bz_block + 0.2: hit = True
-                else:
-                    if (facing == "front" and 0.8 <= hy <= 1.0) or (facing == "back" and 0 <= hy <= 0.2) or \
-                       (facing == "right" and 0.8 <= hx <= 1.0) or (facing == "left" and 0 <= hx <= 0.2): hit = True
+                lx, ly, lz = wx - bx, wy - by, wz - bz
+                hit = any(point_in_box(lx, ly, lz, box) for box in get_trapdoor_boxes(b))
             else:
                 hit = True
 
