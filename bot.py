@@ -75,6 +75,7 @@ MIN_TILT = -1.5
 NEAR_CLIP = 0.05
 RAY_STEP = 0.02
 RAY_MAX_DIST = 24
+MAX_HP = 12  # 6 сердец
 
 PLAYER_BODY_SIZE = 0.6
 PLAYER_BODY_HEIGHT = 1.3 
@@ -1081,6 +1082,21 @@ def get_ground_z(x, y, srv, pz=None):
 
     return tz
 
+def path_blocked(srv, x0, y0, z0, x1, y1, z1):
+    dx, dy, dz = x1 - x0, y1 - y0, z1 - z0
+    dist = max(abs(dx), abs(dy))
+    # шаг проверки ~0.05 блока (достаточно, чтобы поймать пластину 1/6)
+    steps = max(1, int(dist / 0.05))
+
+    for i in range(1, steps + 1):
+        t = i / steps
+        xi = x0 + dx * t
+        yi = y0 + dy * t
+        zi = z0 + dz * t
+        if is_blocked(srv, xi, yi, zi):
+            return True
+    return False
+
 def is_blocked(srv, x, y, z):
     ix, iy = int(math.floor(x)), int(math.floor(y))
     lx, ly = x - ix, y - iy
@@ -1146,7 +1162,7 @@ def init_player(uid, s_id, name):
         srv.players[uid] = {
             "x": px, "y": py, "z": get_ground_z(px, py, srv),
             "angle": 0.0, "tilt": 0.0, "jump": False, "last_action": time.time(),
-            "name": transliterate(name), "msg_id": None, "view_radius": 8, "res_level": 2, "hp": 10, "flash_time": 0,
+            "name": transliterate(name), "msg_id": None, "view_radius": 8, "res_level": 2, "hp": MAX_HP, "flash_time": 0,
             "inv": {0: {"type": "wood", "count": 10}}, "inv_open": False, "inv_mode": "normal", "inv_cursor": 5 if s_id == 1 else 0, "drag_item": None,
             "classic_hotbar": {},
             "furnace_pos": None, "chest_pos": None, "step_size": 1.0,
@@ -1669,8 +1685,8 @@ def render_scene(px, py, pz, pa, pt, uid, s_id):
     d.rectangle((5,5, 150,25), fill=(0,0,0,150))
     d.text((10,8), f"X:{px:.1f} Z:{pz-1.6:.1f} Y:{py:.1f}", fill=(255,255,255))
 
-    for i in range(5):
-        hx, hy = out_w - 90 + i*16, 10
+    for i in range(6):
+        hx, hy = out_w - 106 + i*16, 10
         if st["hp"] >= i*2+2: tex = TEX_CACHE["full_hp"]
         elif st["hp"] == i*2+1: tex = TEX_CACHE["half_hp"]
         else: tex = TEX_CACHE["non_hp"]
@@ -1960,7 +1976,7 @@ async def h_reset(m):
             if s_id == 1: p["x"], p["y"] = SERVERS[s_id].size/2, SERVERS[s_id].size/2
             else: p["x"], p["y"] = 0.5, 0.5
             p["z"] = get_ground_z(p["x"], p["y"], SERVERS[s_id], p.get("z"))
-            p["hp"] = 10
+            p["hp"] = MAX_HP
             p["inv"].clear()
             p["furnace_pos"] = None
             p["chest_pos"] = None
@@ -2308,7 +2324,7 @@ async def h_cb(c):
                     diff = tz - st["z"]
                     # Разрешаем шаг до 0.51 блоков без прыжка для полублоков и ступенек!
                     if diff <= 0.51 or (0 < diff <= 1.5 and st["jump"]):
-                        if not is_blocked(srv, nx, ny, tz): 
+                        if not is_blocked(srv, nx, ny, tz) and not path_blocked(srv, st["x"], st["y"], st["z"], nx, ny, tz):
                             st["x"], st["y"], st["z"] = nx, ny, tz
                             ev = True
                             if diff <= -4:
@@ -2316,7 +2332,7 @@ async def h_cb(c):
                                 st["flash_time"] = time.time()
                                 if st["hp"]<=0:
                                     await broadcast_chat(s_id, f"💀 {st['name']} разбился!")
-                                    st["x"], st["y"], st["z"], st["hp"] = 0.5, 0.5, get_ground_z(0.5, 0.5, srv), 10
+                                    st["x"], st["y"], st["z"], st["hp"] = 0.5, 0.5, get_ground_z(0.5, 0.5, srv), MAX_HP
             
             # Проверяем, перешли ли мы в новый чанк
             new_cx, new_cy = int(st["x"] // 16), int(st["y"] // 16)
@@ -2655,7 +2671,7 @@ async def h_cb(c):
                     tgt["flash_time"] = time.time()
                     if tgt["hp"] <= 0:
                         await broadcast_chat(s_id, f"💀 {tgt['name']} был убит игроком {st['name']}!")
-                        tgt["hp"], tgt["x"], tgt["y"], tgt["z"] = 10, 0.5, 0.5, get_ground_z(0.5, 0.5, srv)
+                        tgt["hp"], tgt["x"], tgt["y"], tgt["z"] = MAX_HP, 0.5, 0.5, get_ground_z(0.5, 0.5, srv)
                     ev = True
                     st["hit_time"] = time.time()
                     
