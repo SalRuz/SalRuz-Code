@@ -1039,27 +1039,46 @@ def point_in_box(lx, ly, lz, box):
 def get_ground_z(x, y, srv, pz=None):
     tz = -34 if srv.type == "survival" else -64
     ix, iy = int(math.floor(x)), int(math.floor(y))
-    
+
     start_z = 20
     if pz is not None:
         start_z = min(20, int(math.floor(pz)) + 1)
-        
-    for bz in range(start_z, tz-1, -1):
-        if (ix, iy, bz) in srv.blocks:
-            b = srv.blocks[(ix, iy, bz)]
-            if b.get("type") != "torch":
-                btype = b.get("type") or ""
-                # ИСПРАВЛЕНИЕ: Добавлена физика для люка
-                if btype == "trapdoor" and not b.get("open", False):
-                    return bz + 0.2
-                if "slab" in btype: return bz + 0.5
-                if "stairs" in btype:
-                    facing = b.get("facing", "front"); dx, dy = x - ix, y - iy
-                    if (facing=="front" and dy>=0.5) or (facing=="back" and dy<0.5) or \
-                       (facing=="right" and dx>=0.5) or (facing=="left" and dx<0.5):
-                        return bz + 1.0
-                    return bz + 0.5
-                return bz + 1.0
+
+    for bz in range(start_z, tz - 1, -1):
+        b = srv.blocks.get((ix, iy, bz))
+        if not b:
+            continue
+
+        btype = b.get("type") or ""
+        if btype == "torch":
+            continue
+
+        # Дверь не является "землей" — пропускаем и ищем ниже
+        if btype in ("door_bottom", "door_top"):
+            continue
+
+        # Люк: закрытый = пол тонкой толщины, открытый = не пол
+        if btype == "trapdoor":
+            if not b.get("open", False):
+                return bz + TRAPDOOR_T
+            else:
+                continue
+
+        # обычные блоки
+        if "slab" in btype:
+            return bz + 0.5
+
+        if "stairs" in btype:
+            facing = b.get("facing", "front")
+            dx, dy = x - ix, y - iy
+            if facing == "front" and dy >= 0.5: return bz + 1.0
+            if facing == "back" and dy < 0.5: return bz + 1.0
+            if facing == "right" and dx >= 0.5: return bz + 1.0
+            if facing == "left" and dx < 0.5: return bz + 1.0
+            return bz + 0.5
+
+        return bz + 1.0
+
     return tz
 
 def is_blocked(srv, x, y, z):
@@ -2073,6 +2092,7 @@ async def h_cb(c):
         srv = SERVERS[s_id]; d = c.data; ev = False; player_fell = False
         
         if st.get("inv_open"):
+            old_cursor = st["inv_cursor"]
             c_idx = st["inv_cursor"]
             mode = st.get("inv_mode", "normal")
             
@@ -2223,9 +2243,14 @@ async def h_cb(c):
                         if p_uid != uid and ps.get("online") and ps.get("inv_open") and ps.get("inv_mode") == mode:
                             p_pos = ps.get("chest_pos") if mode == "chest" else ps.get("furnace_pos")
                             if p_pos == c_pos: asyncio.create_task(send_view(p_uid, p_uid))
-            # ИСПРАВЛЕНИЕ: Гарантируем отправку кадра после любого действия в инвентаре
-            st["last_state_hash"] = None
-            await send_view(c.message.chat.id, uid, force=True)
+            # ИСПРАВЛЕНИЕ: Обновляем кадр только если курсор реально сдвинулся или было действие
+            cursor_changed = (st["inv_cursor"] != old_cursor)
+            must_redraw = cursor_changed or (d in ("inv_click", "inv_click_1", "inv_close"))
+
+            if must_redraw:
+                st["last_state_hash"] = None
+                await send_view(c.message.chat.id, uid, force=True)
+
             return
 
         elif d == "hotbar_prev":
