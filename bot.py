@@ -426,9 +426,10 @@ def get_inv_icon(itype):
         tex = TEX_CACHE.get(tex_name, TEX_CACHE.get(itype, TEX_CACHE["zemlya"]))
 
         if itype == "torch":
-            base = tex.resize((14, 28), Image.Resampling.NEAREST)
+            # ИСПРАВЛЕНИЕ: Иконка факела сделана в 2 раза уже
+            base = tex.resize((7, 28), Image.Resampling.NEAREST) 
             icon = Image.new("RGBA", (28, 28), (0,0,0,0))
-            icon.paste(base, (7, 0), base) 
+            icon.paste(base, (10, 0), base) 
             INV_ICONS[itype] = icon
         elif "slab" in itype or "stairs" in itype:
             base = tex.resize((28, 28), Image.Resampling.NEAREST).convert("RGBA")
@@ -665,13 +666,11 @@ class Server:
         new_faces = []
         self.light_sources = [pos for pos, b in self.blocks.items() if b.get("type") == "torch" or (b.get("type") == "furnace" and b.get("burn_time", 0) > 0)]
         
-        # Определяем активные чанки для выживания, чтобы разгрузить сервер
         active_chunks = set()
         if self.type == "survival":
             for p in self.players.values():
                 if p.get("online"):
                     cx, cy = int(p["x"] // 16), int(p["y"] // 16)
-                    # Отрисовываем сетку только в радиусе +- 2 чанков вокруг каждого онлайн-игрока
                     for dx in range(-2, 3):
                         for dy in range(-2, 3):
                             active_chunks.add((cx + dx, cy + dy))
@@ -680,137 +679,110 @@ class Server:
             for pos, bdata in self.blocks.items():
                 gx, gy, gz = pos
                 
-                # Пропускаем тяжелую обработку блоков вне зоны онлайна
                 if self.type == "survival":
                     cx, cy = gx // 16, gy // 16
                     if (cx, cy) not in active_chunks:
                         continue
                         
-                btype = bdata.get("type") or "stone" # Исправлено
+                btype = bdata.get("type") or "stone"
                 
                 if btype == "torch":
                     dx, dy, dz = bdata.get("attach", (0,0,1))
                     w, h = 0.08, 0.5
-                    
                     if dx == 1:   cx, cy, cz = gx+0.1, gy+0.5, gz+0.25; a_x, a_y = 0, 0.4
                     elif dx == -1: cx, cy, cz = gx+0.9, gy+0.5, gz+0.25; a_x, a_y = 0, -0.4
                     elif dy == 1:  cx, cy, cz = gx+0.5, gy+0.1, gz+0.25; a_x, a_y = -0.4, 0
                     elif dy == -1: cx, cy, cz = gx+0.5, gy+0.9, gz+0.25; a_x, a_y = 0.4, 0
                     else:          cx, cy, cz = gx+0.5, gy+0.5, gz;     a_x, a_y = 0, 0
-
                     vw = []
                     for vx, vy, vz in [(-w,-w,0), (w,-w,0), (w,w,0), (-w,w,0), (-w,-w,h), (w,-w,h), (w,w,h), (-w,w,h)]:
-                        rx = vx + vz * a_y
-                        ry = vy - vz * a_x
+                        rx = vx + vz * a_y; ry = vy - vz * a_x
                         vw.append((cx + rx, cy + ry, cz + vz))
-
                     for fn, idx, offset in BLOCK_FACES_DATA:
-                        n = face_normal(vw, idx)
-                        lf = calc_light(n)
+                        n = face_normal(vw, idx); lf = calc_light(n)
                         tex = TEX_CACHE["torch_top"] if fn == "top" else TEX_CACHE["wood_top"] if fn == "bottom" else TEX_CACHE["torch_side"]
-                        face_info = {"cx": cx, "cy": cy, "cz": cz+h/2, "verts": [vw[i] for i in idx], "n": n, "lf": lf, "tl": 1.0, "tex": tex, "pos": pos}
-                        new_faces.append(face_info)
+                        new_faces.append({"cx": cx, "cy": cy, "cz": cz+h/2, "verts": [vw[i] for i in idx], "n": n, "lf": lf, "tl": 1.0, "tex": tex, "pos": pos})
                     continue
 
-                boxes = []
-                if "slab" in btype:
-                    boxes.append((0, 0, 0, 1, 1, 0.5))
+                boxes = []; facing = bdata.get("facing", "front"); is_open = bdata.get("open", False)
+                if "slab" in btype: boxes.append((0, 0, 0, 1, 1, 0.5))
                 elif "stairs" in btype:
                     boxes.append((0, 0, 0, 1, 1, 0.5))
-                    facing = bdata.get("facing", "front")
-                    # Правильная геометрия ступеней
                     if facing == "front": boxes.append((0, 0.5, 0.5, 1, 0.5, 0.5))
                     elif facing == "back": boxes.append((0, 0, 0.5, 1, 0.5, 0.5))
                     elif facing == "right": boxes.append((0.5, 0, 0.5, 0.5, 1, 0.5))
                     elif facing == "left": boxes.append((0, 0, 0.5, 0.5, 1, 0.5))
                 elif btype in ("door_bottom", "door_top"):
-                    facing = bdata.get("facing", "front")
-                    is_open = bdata.get("open", False)
-                    if facing == "front": boxes.append((0.8, 0, 0, 0.2, 1, 1) if is_open else (0, 0.8, 0, 1, 0.2, 1))
-                    elif facing == "back": boxes.append((0, 0, 0, 0.2, 1, 1) if is_open else (0, 0, 0, 1, 0.2, 1))
-                    elif facing == "right": boxes.append((0, 0.8, 0, 1, 0.2, 1) if is_open else (0.8, 0, 0, 0.2, 1, 1))
-                    elif facing == "left": boxes.append((0, 0, 0, 1, 0.2, 1) if is_open else (0, 0, 0, 0.2, 1, 1))
+                    if is_open:
+                        if facing in ("front", "back"): boxes.append((0, 0, 0, 1, 0.2, 1))
+                        else: boxes.append((0, 0, 0, 0.2, 1, 1))
+                    else:
+                        if facing in ("front", "back"): boxes.append((0, 0.8, 0, 1, 0.2, 1))
+                        else: boxes.append((0.8, 0, 0, 0.2, 1, 1))
                 elif btype == "trapdoor":
-                    facing = bdata.get("facing", "front")
-                    is_open = bdata.get("open", False)
                     if not is_open: boxes.append((0, 0, 0, 1, 1, 0.2))
                     else:
                         if facing == "front": boxes.append((0, 0.8, 0, 1, 0.2, 1))
                         elif facing == "back": boxes.append((0, 0, 0, 1, 0.2, 1))
                         elif facing == "right": boxes.append((0.8, 0, 0, 0.2, 1, 1))
                         elif facing == "left": boxes.append((0, 0, 0, 0.2, 1, 1))
-                else:
-                    boxes.append((0, 0, 0, 1, 1, 1))
+                else: boxes.append((0, 0, 0, 1, 1, 1))
 
                 is_complex = len(boxes) > 1 or boxes[0] != (0, 0, 0, 1, 1, 1)
 
                 for bx, by, bz, bw, bh, bd in boxes:
-                    vw = [
-                        (gx+bx, gy+by, gz+bz), (gx+bx+bw, gy+by, gz+bz), (gx+bx+bw, gy+by+bh, gz+bz), (gx+bx, gy+by+bh, gz+bz),
-                        (gx+bx, gy+by, gz+bz+bd), (gx+bx+bw, gy+by, gz+bz+bd), (gx+bx+bw, gy+by+bh, gz+bz+bd), (gx+bx, gy+by+bh, gz+bz+bd)
-                    ]
-
+                    vw = [ (gx+bx, gy+by, gz+bz), (gx+bx+bw, gy+by, gz+bz), (gx+bx+bw, gy+by+bh, gz+bz), (gx+bx, gy+by+bh, gz+bz), (gx+bx, gy+by, gz+bz+bd), (gx+bx+bw, gy+by, gz+bz+bd), (gx+bx+bw, gy+by+bh, gz+bz+bd), (gx+bx, gy+by+bh, gz+bz+bd)]
                     for fn, idx, offset in BLOCK_FACES_DATA:
                         if not is_complex:
                             nb = (gx + offset[0], gy + offset[1], gz + offset[2])
                             nb_b = self.blocks.get(nb)
                             if nb_b:
-                                nbt = nb_b.get("type") or "" # Исправлено
-                                if nbt not in ("torch", "glass") and "slab" not in nbt and "stairs" not in nbt:
+                                nbt = nb_b.get("type") or ""
+                                # ИСПРАВЛЕНИЕ: Двери и люки пропускают свет и не скрывают блоки за собой
+                                if nbt not in ("torch", "glass", "door_bottom", "door_top", "trapdoor") and "slab" not in nbt and "stairs" not in nbt:
                                     continue
                         
-                        n = face_normal(vw, idx)
-                        lf = calc_light(n)
-                        br = 1.0 if fn == "top" else 0.85
-                        
-                        tl = 0.0
+                        n = face_normal(vw, idx); lf = calc_light(n); br = 1.0 if fn == "top" else 0.85; tl = 0.0
                         if self.type == "survival":
-                            for tx, ty, tz in self.light_sources:
-                                dist = math.sqrt((gx-tx)**2 + (gy-ty)**2 + (gz-tz)**2)
+                            for tx, ty, tz_light in self.light_sources:
+                                dist = math.sqrt((gx-tx)**2 + (gy-ty)**2 + (gz-tz_light)**2)
                                 if dist < 4.0: tl = max(tl, 1.0 - (dist / 4.0))
 
                         face_info = {"cx": gx+0.5, "cy": gy+0.5, "cz": gz+0.5, "verts": [vw[i] for i in idx], "n": n, "lf": lf*br, "tl": tl, "pos": pos}
                         
                         if self.type == "classic":
-                            c_val = bdata.get("color")
-                            if not c_val: c_val = (40,40,40) if btype == "bedrock" else (255,255,255)
-                            face_info["sc"] = apply_light(c_val, lf*br)
-                            face_info["tex"] = bdata.get("tex")
+                            c_val = bdata.get("color"); face_info["sc"] = apply_light(c_val if c_val else (40,40,40) if btype == "bedrock" else (255,255,255), lf*br); face_info["tex"] = bdata.get("tex")
                         else:
-                            tex = None
-                            base_type = btype.replace("_slab", "").replace("_stairs", "")
-                            
+                            tex = None; base_type = btype.replace("_slab", "").replace("_stairs", "")
                             if base_type == "grass": tex = TEX_CACHE["trava_top"] if fn=="top" else TEX_CACHE["trava_side"] if fn not in ["top","bottom"] else TEX_CACHE["zemlya"]
                             elif base_type == "wood": tex = TEX_CACHE["wood_top"] if fn in ["top","bottom"] else TEX_CACHE["wood_side"]
                             elif base_type == "workbench": tex = TEX_CACHE["workbench_top"] if fn=="top" else TEX_CACHE["planks"] if fn=="bottom" else TEX_CACHE["workbench_side"]
                             elif base_type == "furnace":
-                                facing_val = bdata.get("facing", "front")
                                 is_lit = bdata.get("burn_time", 0) > 0
                                 if fn == "top": tex = TEX_CACHE["v_pech"]
                                 elif fn == "bottom": tex = TEX_CACHE["stone"]
-                                elif fn == facing_val: tex = TEX_CACHE["pech_gorit"] if is_lit else TEX_CACHE["pech"]
+                                elif fn == facing: tex = TEX_CACHE["pech_gorit"] if is_lit else TEX_CACHE["pech"]
                                 else: tex = TEX_CACHE["pech_bok"]
                             elif base_type == "chest":
-                                facing_val = bdata.get("facing", "front")
                                 if fn in ["top", "bottom"]: tex = TEX_CACHE["vn_sunduk"]
-                                elif fn == facing_val: tex = TEX_CACHE["sunduk"]
+                                elif fn == facing: tex = TEX_CACHE["sunduk"]
                                 else: tex = TEX_CACHE["sunduk_bok"]
-                            elif base_type in ["dirt", "stone", "leaves", "planks", "bedrock", "cobblestone", "coal_ore", "iron_ore", "diamond_ore", "sand", "sandstone", "glass"]:
-                                tex = TEX_CACHE.get(base_type, TEX_CACHE["zemlya"])
-                            elif btype == "door_bottom": tex = TEX_CACHE["door_bottom"] if fn in ("front", "back") else TEX_CACHE["planks"]
-                            elif btype == "door_top": tex = TEX_CACHE["door_top"] if fn in ("front", "back") else TEX_CACHE["planks"]
-                            elif btype == "trapdoor": tex = TEX_CACHE["trapdoor"] if fn in ("top", "bottom") else TEX_CACHE["wood_side"]
+                            elif base_type in ["dirt", "stone", "leaves", "planks", "bedrock", "cobblestone", "coal_ore", "iron_ore", "diamond_ore", "sand", "sandstone", "glass"]: tex = TEX_CACHE.get(base_type, TEX_CACHE["zemlya"])
+                            # ИСПРАВЛЕНИЕ: Логика текстур для дверей и люков
+                            elif btype in ("door_bottom", "door_top"):
+                                door_tex = TEX_CACHE["door_top"] if btype == "door_top" else TEX_CACHE["door_bottom"]
+                                if is_open: tex = door_tex if fn in ("left", "right") else TEX_CACHE["planks"]
+                                else: tex = door_tex if fn in ("front", "back") else TEX_CACHE["planks"]
+                            elif btype == "trapdoor":
+                                tex = TEX_CACHE["trapdoor"] if fn in ("top", "bottom") else TEX_CACHE["wood_side"]
                             face_info["tex"] = tex
                         
                         dmg = self.block_damage.get((gx,gy,gz), 0)
                         if dmg > 0 and self.type == "survival" and btype != "bedrock":
-                            mhp = 5 if base_type in ("planks", "workbench", "chest") else 12 if base_type in ("stone", "cobblestone", "coal_ore", "diamond_ore", "furnace", "iron_ore") else BLOCK_STATS.get(base_type, 3)
+                            mhp = BLOCK_STATS.get(base_type, 3)
                             stage = min(4, int((dmg / mhp) * 5))
                             if face_info.get("tex"):
-                                combined = face_info["tex"].copy()
-                                combined.alpha_composite(CRACK_TEX[stage])
-                                face_info["tex"] = combined
-                        
+                                combined = face_info["tex"].copy(); combined.alpha_composite(CRACK_TEX[stage]); face_info["tex"] = combined
                         new_faces.append(face_info)
             self.faces = new_faces
         except Exception as e: pass
@@ -1057,48 +1029,35 @@ def is_blocked(srv, x, y, z):
     for bz in [int(math.floor(z + 0.1)), int(math.floor(z + 1.6))]:
         b = srv.blocks.get((ix, iy, bz))
         if b and b.get("type") != "torch":
-            btype = b.get("type") or "" # Исправлено
+            btype = b.get("type") or ""
+            dx, dy = x - ix, y - iy
             if "slab" in btype:
-                # 0.49 чтобы погрешность float не вызывала застревание
                 if z < bz + 0.49: return True
             elif "stairs" in btype:
                 facing = b.get("facing", "front")
-                dx, dy = x - ix, y - iy
-                top_half = False
-                if facing == "front" and dy >= 0.5: top_half = True
-                if facing == "back" and dy < 0.5: top_half = True
-                if facing == "right" and dx >= 0.5: top_half = True
-                if facing == "left" and dx < 0.5: top_half = True
-
-                if top_half:
-                    if z < bz + 0.99: return True
-                else:
-                    if z < bz + 0.49: return True
+                top_half = (facing == "front" and dy >= 0.5) or (facing == "back" and dy < 0.5) or \
+                           (facing == "right" and dx >= 0.5) or (facing == "left" and dx < 0.5)
+                if (top_half and z < bz + 0.99) or (not top_half and z < bz + 0.49): return True
+            # ИСПРАВЛЕНИЕ: Точная коллизия для дверей и люков
             elif btype in ("door_bottom", "door_top"):
-                is_open = b.get("open", False)
-                facing = b.get("facing", "front")
-                dx, dy = x - ix, y - iy
-                if not is_open:
-                    if facing == "front" and dy >= 0.7: return True
-                    if facing == "back" and dy <= 0.3: return True
-                    if facing == "right" and dx >= 0.7: return True
-                    if facing == "left" and dx <= 0.3: return True
+                is_open = b.get("open", False); facing = b.get("facing", "front")
+                if is_open:
+                    if facing in ("front", "back") and dy > 0.1 and dy < 0.9: pass # Проход свободен
+                    elif facing in ("left", "right") and dx > 0.1 and dx < 0.9: pass # Проход свободен
+                    else: return True
                 else:
-                    if facing == "front" and dx >= 0.7: return True
-                    if facing == "back" and dx <= 0.3: return True
-                    if facing == "right" and dy >= 0.7: return True
-                    if facing == "left" and dy <= 0.3: return True
+                    if facing in ("front", "back") and (dy < 0.8 or dy > 1.0): pass
+                    elif facing in ("left", "right") and (dx < 0.8 or dx > 1.0): pass
+                    else: return True
             elif btype == "trapdoor":
-                is_open = b.get("open", False)
+                is_open = b.get("open", False); facing = b.get("facing", "front")
                 if not is_open:
                     if z < bz + 0.2: return True
-                else:
-                    facing = b.get("facing", "front")
-                    dx, dy = x - ix, y - iy
-                    if facing == "front" and dy >= 0.7: return True
-                    if facing == "back" and dy <= 0.3: return True
-                    if facing == "right" and dx >= 0.7: return True
-                    if facing == "left" and dx <= 0.3: return True
+                else: # Если люк открыт, он становится стеной
+                    if facing == "front" and dy > 0.8: return True
+                    if facing == "back" and dy < 0.2: return True
+                    if facing == "right" and dx > 0.8: return True
+                    if facing == "left" and dx < 0.2: return True
             else:
                 return True
     return False
@@ -1692,28 +1651,34 @@ def ray_pick(px, py, pz, pa, pt, s_id, ignore_uid=None):
                 
         cb = (int(math.floor(wx)), int(math.floor(wy)), int(math.floor(wz)))
         if cb in srv.blocks:
-            b = srv.blocks[cb]
-            btype = b.get("type") or "" # Исправлено
-            bx, by, bz = cb[0], cb[1], cb[2]
-            hit = False
+            b = srv.blocks[cb]; btype = b.get("type") or ""; bx, by, bz_block = cb
+            hit = False; hx, hy = wx - bx, wy - by
 
             if btype == "torch":
-                if bx+0.35 <= wx <= bx+0.65 and by+0.35 <= wy <= by+0.65 and bz <= wz <= bz+0.6: hit = True
+                if bx+0.35 <= wx <= bx+0.65 and by+0.35 <= wy <= by+0.65 and bz_block <= wz <= bz_block+0.6: hit = True
             elif "slab" in btype:
-                if wz <= bz + 0.5: hit = True
+                if wz <= bz_block + 0.5: hit = True
             elif "stairs" in btype:
-                if wz <= bz + 0.5: hit = True
-                else:
-                    facing = b.get("facing", "front")
-                    hx, hy = wx - bx, wy - by
-                    if facing == "front" and hy >= 0.5: hit = True
-                    elif facing == "back" and hy < 0.5: hit = True
-                    elif facing == "right" and hx >= 0.5: hit = True
-                    elif facing == "left" and hx < 0.5: hit = True
+                facing = b.get("facing", "front")
+                top_half = (facing == "front" and hy >= 0.5) or (facing == "back" and hy < 0.5) or \
+                           (facing == "right" and hx >= 0.5) or (facing == "left" and hx < 0.5)
+                if (top_half and wz <= bz_block + 1.0) or (not top_half and wz <= bz_block + 0.5): hit = True
+            # ИСПРАВЛЕНИЕ: Тонкий хитбокс луча для дверей и люков
             elif btype in ("door_bottom", "door_top"):
-                hit = True # Упрощенный хитбокс луча
+                is_open = b.get("open", False); facing = b.get("facing", "front")
+                if is_open:
+                    if facing in ("front", "back") and 0 <= hy <= 0.2: hit = True
+                    elif facing in ("left", "right") and 0 <= hx <= 0.2: hit = True
+                else:
+                    if facing in ("front", "back") and 0.8 <= hy <= 1.0: hit = True
+                    elif facing in ("left", "right") and 0.8 <= hx <= 1.0: hit = True
             elif btype == "trapdoor":
-                hit = True
+                is_open = b.get("open", False); facing = b.get("facing", "front")
+                if not is_open:
+                    if bz_block <= wz <= bz_block + 0.2: hit = True
+                else:
+                    if (facing == "front" and 0.8 <= hy <= 1.0) or (facing == "back" and 0 <= hy <= 0.2) or \
+                       (facing == "right" and 0.8 <= hx <= 1.0) or (facing == "left" and 0 <= hx <= 0.2): hit = True
             else:
                 hit = True
 
@@ -1721,7 +1686,6 @@ def ray_pick(px, py, pz, pa, pt, s_id, ignore_uid=None):
 
         if cb not in srv.blocks or not hit:
             if prev_cb != cb: prev_cb = cb
-            
         t += RAY_STEP
     return None
 
@@ -2020,6 +1984,7 @@ async def h_cb(c):
     s_id = user_server_map.get(uid)
     if not s_id: return
     st = get_st(uid)
+    if not st: return
     st["last_action"] = time.time()
 
     if st.get("action_lock"): 
@@ -2033,9 +1998,7 @@ async def h_cb(c):
         try: await bot.answer_callback_query(c.id)
         except: pass
             
-        srv = SERVERS[s_id]
-        d = c.data
-        ev = False
+        srv = SERVERS[s_id]; d = c.data; ev = False; player_fell = False
         
         if st.get("inv_open"):
             c_idx = st["inv_cursor"]
@@ -2187,10 +2150,10 @@ async def h_cb(c):
                     for p_uid, ps in srv.players.items():
                         if p_uid != uid and ps.get("online") and ps.get("inv_open") and ps.get("inv_mode") == mode:
                             p_pos = ps.get("chest_pos") if mode == "chest" else ps.get("furnace_pos")
-                            if p_pos == c_pos:
-                                asyncio.create_task(send_view(p_uid, p_uid))
-
-            await send_view(c.message.chat.id, uid)
+                            if p_pos == c_pos: asyncio.create_task(send_view(p_uid, p_uid))
+            # ИСПРАВЛЕНИЕ: Гарантируем отправку кадра после любого действия в инвентаре
+            st["last_state_hash"] = None
+            await send_view(c.message.chat.id, uid, force=True)
             return
 
         elif d == "hotbar_prev":
@@ -2350,14 +2313,13 @@ async def h_cb(c):
                         pass_normal_build = False
                         
                 elif srv.type == "classic":
+                    # ИСПРАВЛЕНИЕ: Строительство вверх в классике с текстурой
                     ix, iy, iz = int(math.floor(st["x"])), int(math.floor(st["y"])), int(math.floor(st["z"]))
                     if not is_blocked(srv, st["x"], st["y"], st["z"] + 1) and not is_blocked(srv, st["x"], st["y"], st["z"] + 2):
-                        srv.blocks[(ix, iy, iz)] = {"color": (255,255,255)}
-                        st["z"] += 1.0
-                        srv.rebuild_mesh()
-                        st["jump"] = False
-                        ev = True
-                        pass_normal_build = False
+                        c_tex = None
+                        if st.get("inv_cursor", 5) < 5: c_tex = st["classic_hotbar"].get(st["inv_cursor"])
+                        srv.blocks[(ix, iy, iz)] = {"color":(255,255,255), "tex": c_tex}
+                        st["z"] += 1.0; srv.rebuild_mesh(); st["jump"] = False; ev = True; pass_normal_build = False
                     else:
                         st["jump"] = False
                         ev = True
@@ -2389,7 +2351,13 @@ async def h_cb(c):
                                 bot_b = (pb[1][0], pb[1][1], pb[1][2]-1)
                                 if bot_b in srv.blocks: srv.blocks[bot_b]["open"] = tgt["open"]
                             srv.rebuild_mesh(); ev = True
-                            return # Прерываем, мы только открыли дверь
+                            # ИСПРАВЛЕНИЕ: Принудительно обновляем экран после взаимодействия
+                            st["last_state_hash"] = None
+                            await send_view(c.message.chat.id, uid, force=True)
+                            if ev: # Обновляем мир и для других игроков
+                                for p_uid, ps in list(srv.players.items()):
+                                    if p_uid != uid and ps.get("online", True): asyncio.create_task(send_view(p_uid, p_uid))
+                            return
                     
                     if not st.get("inv_open") and pb[2] is not None:
                         nb = pb[2] 
@@ -2559,7 +2527,11 @@ async def h_cb(c):
                             srv.deleted_blocks.add(pb[1])
                             srv.modified_blocks.discard(pb[1])
                         srv.rebuild_mesh()
-                        
+
+                    # ИСПРАВЛЕНИЕ: Физика падения игрока
+                    current_ground_z = get_ground_z(st["x"], st["y"], srv, st["z"])
+                    if st["z"] > current_ground_z: st["z"] = current_ground_z; player_fell = True
+
                     if is_tool:
                         tool["durability"] -= 1
                         if tool["durability"] <= 0: del st["inv"][c_slot]
@@ -2604,12 +2576,14 @@ async def h_cb(c):
 
                     if st.get("msg_id"): asyncio.create_task(reset_hit_btn(c.message.chat.id, uid, st["msg_id"]))
 
-        tasks = [send_view(c.message.chat.id, uid, force=True)]
-        if ev:
+        # ИСПРАВЛЕНИЕ: Гарантируем отправку сообщения, если были изменения или игрок упал
+        if ev or player_fell:
+            st["last_state_hash"] = None # Сбрасываем хэш, чтобы кадр точно обновился
+            tasks = [send_view(c.message.chat.id, uid, force=True)]
             for p_uid, ps in list(srv.players.items()):
                 if p_uid != uid and ps.get("online", True) and abs(ps["x"]-st["x"])<ps.get("view_radius", 8) and abs(ps["y"]-st["y"])<ps.get("view_radius", 8):
                     tasks.append(send_view(p_uid, p_uid, force=False))
-        await asyncio.gather(*tasks, return_exceptions=True)
+            await asyncio.gather(*tasks, return_exceptions=True)
     finally:
         st["action_lock"] = False
 
